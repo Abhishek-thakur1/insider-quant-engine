@@ -1,27 +1,21 @@
 version: "3.8"
 
 services:
-  # The Ingestion Engine & Telegram Dispatcher
-  quant-engine:
-    build: .
-    container_name: quant_engine_node
-    volumes:
-      # Syncs your local code to the container so you don't have to rebuild on every save
-      - .:/usr/src/app
-      - /usr/src/app/node_modules
-    env_file:
-      - .env
-    environment:
-      # Tells Node to look for Redis at the container name, not 'localhost'
-      - REDIS_HOST=redis_cache
-      - REDIS_PORT=6379
-    depends_on:
-      - redis_cache
-
-  # The In-Memory Message Broker
   redis_cache:
     image: redis:7-alpine
-    container_name: quant_engine_redis
+    container_name: quant_redis
     ports:
       - "6379:6379"
-    command: redis-server --save 60 1 --loglevel warning
+
+  quant_engine:
+    build: .
+    container_name: quant_engine
+    ports:
+      - "3000:3000" # Exposes the Fastify Auth server to your local browser
+    volumes:
+      - ./:/app # Syncs your VS Code files live into the container
+      - /app/node_modules # Prevents local Windows/Mac node_modules from crashing Linux
+    env_file:
+      - .env
+    depends_on:
+      - redis_cache
