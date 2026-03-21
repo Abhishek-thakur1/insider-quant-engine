@@ -15,5 +15,5 @@ export interface TickData {
 export interface IDetector {
     name: string;
     symbol: string;
-    analyze(liveTick: TickData): void;
+    analyze(liveTick: TickData): Promise<void>;
 }

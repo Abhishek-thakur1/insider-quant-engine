@@ -1,11 +1,12 @@
-import type { IDetector } from '../core/types.js';
 import { sendTelegramAlert } from '../workers/telegramWorker.js';
+import type { IDetector, TickData } from '../core/types.js';
+import { redisClient } from '../config/redis.js';
 
 export class VcpDetector implements IDetector {
     public name: string = "VCP Breakout";
     public symbol: string;
+
     private memoryLength: number;
-    private tickHistory: { price: number; volume: number }[] = [];
     private isArmed: boolean = false;
 
     constructor(symbol: string, memoryLength: number = 10) {
@@ -13,10 +14,16 @@ export class VcpDetector implements IDetector {
         this.memoryLength = memoryLength;
     }
 
-    public analyze(liveTick: { price: number; volume: number }) {
-        if (this.tickHistory.length === this.memoryLength) {
-            const prices = this.tickHistory.map(t => t.price);
-            const volumes = this.tickHistory.map(t => t.volume);
+    public async analyze(liveTick: TickData): Promise<void> {
+        const redisKey = `memory:vcp:${this.symbol}`;
+
+        const rawMemory = await redisClient.lRange(redisKey, 0, -1);
+
+        const tickHistory: TickData[] = rawMemory.map(item => JSON.parse(item));
+
+        if (tickHistory.length === this.memoryLength) {
+            const prices = tickHistory.map(t => t.price);
+            const volumes = tickHistory.map(t => t.volume);
 
             const boxHigh = Math.max(...prices);
             const boxLow = Math.min(...prices);
@@ -39,7 +46,8 @@ export class VcpDetector implements IDetector {
                     });
 
                     this.isArmed = false;
-                    this.tickHistory = [];
+
+                    await redisClient.del(redisKey);
                     return;
                 }
             }
@@ -53,9 +61,7 @@ export class VcpDetector implements IDetector {
             }
         }
 
-        this.tickHistory.push(liveTick);
-        if (this.tickHistory.length > this.memoryLength) {
-            this.tickHistory.shift();
-        }
+        await redisClient.lPush(redisKey, JSON.stringify(liveTick));
+        await redisClient.lTrim(redisKey, 0, this.memoryLength - 1);
     }
 }
