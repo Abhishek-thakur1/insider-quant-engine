@@ -1,63 +1,134 @@
-import { sendTelegramAlert } from '../workers/telegramWorker.js';
-import type { IDetector, TickData } from '../core/types.js';
-import { redisClient } from '../config/redis.js';
+import { sendTelegramAlert } from "../workers/telegramWorker.js";
+import type { IDetector, TickData } from "../core/types.js";
+import { redisClient } from "../config/redis.js";
+import { getVwap, getMarketBias } from "../utils/vwapUtils.js";
+
+const BASELINE_MEMORY_LENGTH = 100;
+const VOLUME_SPIKE_MULTIPLIER = 6;
+const MIN_BLOCK_VALUE = 5_000_000;
+const COOLDOWN_SECONDS = 900;
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Opening 30 min has structurally abnormal volume that would spam alerts constantly.
+const getISTMinutes = (): number => {
+  const istMs = Date.now() + 5.5 * 60 * 60 * 1000;
+  const d = new Date(istMs);
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
+};
+const isMarketHours = (): boolean => {
+  const m = getISTMinutes();
+  return m >= 9 * 60 + 30 && m <= 15 * 60;
+};
 
 export class VolumeSpikeDetector implements IDetector {
-    public name: string = "Volume Squeeze & Spike";
-    public symbol: string;
+  public name: string = "Institutional Volume Absorption";
+  public symbol: string;
 
-    private memoryLength: number;
+  constructor(symbol: string) {
+    this.symbol = symbol;
+  }
 
-    constructor(symbol: string, memoryLength: number = 5) {
-        this.symbol = symbol;
-        this.memoryLength = memoryLength;
+  public async analyze(liveTick: TickData): Promise<void> {
+    if (!isMarketHours()) return;
+
+    const memoryKey = `memory:volume:${this.symbol}`;
+    const cooldownKey = `cooldown:volume:${this.symbol}`;
+
+    const isCoolingDown = await redisClient.get(cooldownKey);
+    if (isCoolingDown) {
+      await redisClient
+        .multi()
+        .lPush(memoryKey, JSON.stringify(liveTick))
+        .lTrim(memoryKey, 0, BASELINE_MEMORY_LENGTH - 1)
+        .exec();
+      return;
     }
 
-    public async analyze(liveTick: TickData): Promise<void> {
-        const memoryKey = `memory:volume:${this.symbol}`;
-        const cooldownKey = `cooldown:volume:${this.symbol}`;
+    const rawMemory = await redisClient.lRange(memoryKey, 0, -1);
+    const tickHistory: TickData[] = rawMemory.map(
+      (item) => JSON.parse(item) as TickData,
+    );
 
-        const rawMemory = await redisClient.lRange(memoryKey, 0, -1);
-        const tickHistory: TickData[] = rawMemory.map(item => JSON.parse(item));
+    if (tickHistory.length >= BASELINE_MEMORY_LENGTH) {
+      const volumes = tickHistory.map((t) => t.volume);
+      const avgVolume = volumes.reduce((a, b) => a + b, 0) / volumes.length;
+      const avgPrice =
+        tickHistory.reduce((a, t) => a + t.price, 0) / tickHistory.length;
 
-        const isCoolingDown = await redisClient.get(cooldownKey);
+      // ── FILTER 1: Institutional block value floor ─────────────────
 
-        if (tickHistory.length === this.memoryLength && !isCoolingDown) {
-            const volumes = tickHistory.map(t => t.volume);
-            const avgVolume = volumes.reduce((a, b) => a + b, 0) / volumes.length;
+      // This is the single most important filter for reducing noise.
+      const blockValue = liveTick.price * liveTick.volume;
+      const isInstitutionalSz = blockValue >= MIN_BLOCK_VALUE;
 
-            const lastTick = tickHistory[0];
+      // ── FILTER 2: Volume surge ────────────────────────────────────
+      //  6× the 100-tick rolling baseline
+      const isVolumeSurge =
+        liveTick.volume > avgVolume * VOLUME_SPIKE_MULTIPLIER;
 
-            if (lastTick) {
-                // --- 1. THE INSTITUTIONAL BLOCK FLOOR ---
-                // Require at least 5,000 shares in a SINGLE TICK to filter out retail dust.
-                // (Adjust this up to 10k or 20k if highly liquid stocks still spam you).
-                if (liveTick.volume >= 5000) {
+      // ── FILTER 3: Price above VWAP ────────────────────────────────
 
-                    // --- 2. THE MULTIPLIER SQUEEZE ---
-                    const isVolumeSurge = liveTick.volume > (avgVolume * 4);
-                    const isBullish = liveTick.price > lastTick.price;
+      const vwap = await getVwap(this.symbol);
+      const isAboveVwap = vwap !== null ? liveTick.price > vwap : true;
 
-                    if (isVolumeSurge && isBullish) {
-                        console.log(`\n🌊 [VOLUME DETECTOR] Massive block buying in ${this.symbol}!`);
+      // ── FILTER 4: Market regime ───────────────────────────────────
+      const marketBias = await getMarketBias();
+      const isBullishMkt = marketBias !== "bearish";
 
-                        sendTelegramAlert({
-                            symbol: this.symbol,
-                            price: liveTick.price,
-                            percentageChange: Number((((liveTick.price - lastTick.price) / lastTick.price) * 100).toFixed(2)),
-                            volumeSpikeRatio: Number((liveTick.volume / avgVolume).toFixed(1)),
-                            trigger: "📊 Raw Institutional Volume Spike"
-                        });
+      if (isInstitutionalSz && isVolumeSurge && isAboveVwap && isBullishMkt) {
+        // ── FILTER 5: Price must be LEADING, not lagging ──────────
+        // A spike where price is BELOW rolling avg = selling into liquidity.
+        // We only want spikes where price is ABOVE where it's been trading.
+        // Example: stock drifts at ₹450 avg, spike hits at ₹453 → alert.
+        //          stock drifts at ₹450 avg, spike hits at ₹447 → distribution, skip.
+        const isPriceLeading = liveTick.price > avgPrice;
 
-                        // --- 3. THE 15-MINUTE LOCKOUT ---
-                        // 900 seconds prevents duplicate alerts during a sustained breakout
-                        await redisClient.setEx(cooldownKey, 900, "true");
-                    }
-                }
-            }
+        if (isPriceLeading) {
+          console.log(
+            `\n🏛️  [BLOCK TRADE] ${this.symbol} — Institutional Absorption Confirmed`,
+          );
+          console.log(
+            `   Block: ₹${(blockValue / 100_000).toFixed(1)}L | ${liveTick.volume.toLocaleString()} shares @ ₹${liveTick.price}`,
+          );
+          console.log(
+            `   Volume: ${liveTick.volume.toLocaleString()} = ${(liveTick.volume / avgVolume).toFixed(1)}× 100-tick baseline`,
+          );
+          console.log(
+            `   Price vs Avg: ₹${liveTick.price} vs ₹${avgPrice.toFixed(2)} rolling avg ← Leading ✅`,
+          );
+          console.log(
+            `   VWAP: ₹${vwap?.toFixed(2) ?? "n/a"} | Nifty: ${marketBias}`,
+          );
+
+          sendTelegramAlert({
+            symbol: this.symbol,
+            price: liveTick.price,
+            // % change vs rolling avg price, not single previous tick
+            percentageChange: Number(
+              (((liveTick.price - avgPrice) / avgPrice) * 100).toFixed(2),
+            ),
+            volumeSpikeRatio: Number((liveTick.volume / avgVolume).toFixed(1)),
+            // Full context in trigger string — actionable without opening charts
+            trigger: `🏛️ Block ₹${(blockValue / 100_000).toFixed(1)}L | ${(liveTick.volume / avgVolume).toFixed(1)}× surge | ${vwap ? `VWAP ₹${vwap.toFixed(2)}` : ""} | Nifty ${marketBias}`,
+          });
+
+          // Pipeline: set cooldown AND write baseline in one round trip
+          await redisClient
+            .multi()
+            .setEx(cooldownKey, COOLDOWN_SECONDS, "true")
+            .lPush(memoryKey, JSON.stringify(liveTick))
+            .lTrim(memoryKey, 0, BASELINE_MEMORY_LENGTH - 1)
+            .exec();
+          return;
         }
-
-        await redisClient.lPush(memoryKey, JSON.stringify(liveTick));
-        await redisClient.lTrim(memoryKey, 0, this.memoryLength - 1);
+      }
     }
+
+    // Pipeline write — was 2 sequential calls = 2 round trips
+    await redisClient
+      .multi()
+      .lPush(memoryKey, JSON.stringify(liveTick))
+      .lTrim(memoryKey, 0, BASELINE_MEMORY_LENGTH - 1)
+      .exec();
+  }
 }
