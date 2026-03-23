@@ -1,9 +1,10 @@
-import fyersApi from "fyers-api-v3";
+import fyers from "fyers-api-v3";
 import fs from "fs";
 import path from "path";
 import { ENV } from "../config/env.js";
 import { redisClient } from "../config/redis.js";
 import type { VwapState } from "../core/types.js";
+const fyersApi = new fyers.fyersModel({ path: "./", enableLogging: false });
 
 const TOKEN_PATH = path.resolve('/app/token', "access_token.txt");
 const WATCHLIST_PATH = path.resolve(process.cwd(), "watchlist.json");

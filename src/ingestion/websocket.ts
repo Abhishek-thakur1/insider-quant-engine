@@ -1,4 +1,4 @@
-import fyersApi from "fyers-api-v3";
+import fyers from "fyers-api-v3";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -9,6 +9,7 @@ import { VolumeSpikeDetector } from "../detectors/volumeSpikeDetector.js";
 import { updateVwap, updateNiftyBias, resetVwap } from "../utils/vwapUtils.js"; // [ADD-1]
 import type { IDetector } from "../core/types.js";
 import { seedHistoricalVwap } from "./vwapSeeder.js";
+const fyersApi = new fyers.fyersModel({ path: "./", enableLogging: false });
 
 // const TOKEN_PATH = path.resolve(process.cwd(), "access_token.txt");
 const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt');
