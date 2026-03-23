@@ -43,7 +43,7 @@ export const seedHistoricalVwap = async (): Promise<void> => {
   // We process in small batches to avoid Fyers API rate limits
   for (const symbol of activeUniverse) {
     try {
-      const response = await fyersApi.fyersHistory({
+      const response = await fyersApi.getHistory({
         symbol: symbol,
         resolution: "1",
         date_format: "1",
