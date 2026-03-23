@@ -4,18 +4,55 @@ services:
   redis_cache:
     image: redis:7-alpine
     container_name: quant_redis
+    restart: always
     ports:
       - "6379:6379"
 
-  quant_engine:
+  # — Auth Bridge
+  # Runs 24/7. Sends Telegram ping at 8:45 AM IST.
+  # Catches the Fyers /callback, writes token to shared volume, then exits.
+  # restart:always means Docker brings it back up ready for next day.
+  auth_bridge:
     build: .
-    container_name: quant_engine
+    container_name: quant_auth
+    command: npx tsx src/config/auth.ts
+    restart: always
     ports:
-      - "3000:3000" # Exposes the Fastify Auth server to your local browser
+      - "3000:3000"
     volumes:
-      - ./:/app # Syncs your VS Code files live into the container
-      - /app/node_modules # Prevents local Windows/Mac node_modules from crashing Linux
+      - token_store:/app/token
+      - /app/node_modules
     env_file:
       - .env
     depends_on:
       - redis_cache
+
+  #  quant_engine — now waits for token before booting
+  # Polls every 10s until access_token.txt appears in shared volume.
+  # restart:on-failure only — does NOT restart on clean shutdown.
+  quant_engine:
+    build: .
+    container_name: quant_engine
+    command: >
+      sh -c "
+        echo '[Engine] Waiting for access token...';
+        until [ -f /app/token/access_token.txt ]; do
+          echo '[Engine] Token not found. Retrying in 10s...';
+          sleep 10;
+        done;
+        echo '[Engine] Token found. Booting live engine.';
+        pm2-runtime start src/ingestion/websocket.ts --interpreter ./node_modules/.bin/tsx --name quant-router
+      "
+    restart: on-failure
+    volumes:
+      - token_store:/app/token #  same shared volume
+      - /app/node_modules
+    env_file:
+      - .env
+    depends_on:
+      - redis_cache
+      - auth_bridge
+
+# Named volume — persists token between container restarts
+volumes:
+  token_store:

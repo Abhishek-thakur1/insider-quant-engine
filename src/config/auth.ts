@@ -7,7 +7,10 @@ import cron from "node-cron";
 import { ENV } from "./env.js";
 
 const fastify = Fastify({ logger: false });
-const TOKEN_PATH = path.resolve(process.cwd(), "access_token.txt");
+// const TOKEN_PATH = path.resolve(process.cwd(), "access_token.txt");
+
+// points to the shared Docker volume
+const TOKEN_PATH = path.resolve("/app/token", "access_token.txt");
 
 const fyersApi = new fyers.fyersModel({ path: "./", enableLogging: false });
 fyersApi.setAppId(ENV.FYERS_APP_ID);
