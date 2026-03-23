@@ -1,4 +1,4 @@
-import fyers from "fyers-api-v3";
+import fyers, { fyersDataSocket } from "fyers-api-v3";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -10,7 +10,6 @@ import { updateVwap, updateNiftyBias, resetVwap } from "../utils/vwapUtils.js"; 
 import type { IDetector } from "../core/types.js";
 import { seedHistoricalVwap } from "./vwapSeeder.js";
 const fyersApi = new fyers.fyersModel({ path: "./", enableLogging: false });
-
 // const TOKEN_PATH = path.resolve(process.cwd(), "access_token.txt");
 const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt');
 const WATCHLIST_PATH = path.resolve(process.cwd(), "watchlist.json");
@@ -73,8 +72,7 @@ export const startLiveEngine = async () => {
     const cleanToken = accessToken.replace(/\s/g, "");
     const wsToken = `${cleanAppId}:${cleanToken}`;
 
-    const skt = fyersApi.fyersDataSocket.getInstance(wsToken, "./logs", false);
-
+    const skt = fyersDataSocket.getInstance(wsToken, "./logs", false);
     skt.on("connect", () => {
         console.log("[Firehose] 🟢 Connected to Fyers Data Servers!");
         // Subscribe to Nifty alongside the equity universe
