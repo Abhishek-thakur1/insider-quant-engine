@@ -20,7 +20,6 @@ export class VolumeSpikeDetector implements IDetector {
         const rawMemory = await redisClient.lRange(memoryKey, 0, -1);
         const tickHistory: TickData[] = rawMemory.map(item => JSON.parse(item));
 
-
         const isCoolingDown = await redisClient.get(cooldownKey);
 
         if (tickHistory.length === this.memoryLength && !isCoolingDown) {
@@ -30,21 +29,30 @@ export class VolumeSpikeDetector implements IDetector {
             const lastTick = tickHistory[0];
 
             if (lastTick) {
-                const isVolumeSurge = liveTick.volume > (avgVolume * 4);
-                const isBullish = liveTick.price > lastTick.price;
+                // --- 1. THE INSTITUTIONAL BLOCK FLOOR ---
+                // Require at least 5,000 shares in a SINGLE TICK to filter out retail dust.
+                // (Adjust this up to 10k or 20k if highly liquid stocks still spam you).
+                if (liveTick.volume >= 5000) {
 
-                if (isVolumeSurge && isBullish) {
-                    console.log(`\n🌊 [VOLUME DETECTOR] Massive block buying in ${this.symbol}!`);
+                    // --- 2. THE MULTIPLIER SQUEEZE ---
+                    const isVolumeSurge = liveTick.volume > (avgVolume * 4);
+                    const isBullish = liveTick.price > lastTick.price;
 
-                    sendTelegramAlert({
-                        symbol: this.symbol,
-                        price: liveTick.price,
-                        percentageChange: Number((((liveTick.price - lastTick.price) / lastTick.price) * 100).toFixed(2)),
-                        volumeSpikeRatio: Number((liveTick.volume / avgVolume).toFixed(1)),
-                        trigger: "📊 Raw Institutional Volume Spike"
-                    });
+                    if (isVolumeSurge && isBullish) {
+                        console.log(`\n🌊 [VOLUME DETECTOR] Massive block buying in ${this.symbol}!`);
 
-                    await redisClient.setEx(cooldownKey, 60, "true");
+                        sendTelegramAlert({
+                            symbol: this.symbol,
+                            price: liveTick.price,
+                            percentageChange: Number((((liveTick.price - lastTick.price) / lastTick.price) * 100).toFixed(2)),
+                            volumeSpikeRatio: Number((liveTick.volume / avgVolume).toFixed(1)),
+                            trigger: "📊 Raw Institutional Volume Spike"
+                        });
+
+                        // --- 3. THE 15-MINUTE LOCKOUT ---
+                        // 900 seconds prevents duplicate alerts during a sustained breakout
+                        await redisClient.setEx(cooldownKey, 900, "true");
+                    }
                 }
             }
         }

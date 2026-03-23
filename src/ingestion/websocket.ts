@@ -41,12 +41,15 @@ export const startLiveEngine = async () => {
         redisClient.del(`cooldown:volume:${symbol}`);
     });
 
-    const wsToken = `${ENV.FYERS_APP_ID}:${accessToken}`;
+    const cleanAppId = ENV.FYERS_APP_ID.replace(/\s/g, '');
+    const cleanToken = accessToken.replace(/\s/g, '');
+
+    const wsToken = `${cleanAppId}:${cleanToken}`;
     const skt = fyersApi.fyersDataSocket.getInstance(wsToken, "./logs", false);
 
     skt.on("connect", () => {
         console.log("[Firehose] 🟢 Connected to Fyers Data Servers!");
-        skt.subscribe(activeUniverse, false);
+        skt.subscribe(activeUniverse);
         console.log(`[Firehose] ✅ Subscribed. Awaiting market ticks...`);
     });
 
