@@ -5,7 +5,7 @@ import { ENV } from "../config/env.js";
 import { redisClient } from "../config/redis.js";
 import type { VwapState } from "../core/types.js";
 
-const TOKEN_PATH = path.resolve(process.cwd(), "access_token.txt");
+const TOKEN_PATH = path.resolve('/app/token', "access_token.txt");
 const WATCHLIST_PATH = path.resolve(process.cwd(), "watchlist.json");
 
 // Helper to get today's date in YYYY-MM-DD format for the Fyers API
