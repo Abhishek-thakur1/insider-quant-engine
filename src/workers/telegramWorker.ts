@@ -24,7 +24,7 @@ export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
 _System: Fastify Quant Engine_
     `;
 
-        await bot.telegram.sendMessage(ENV.TELEGRAM_CHAT_ID, message, {
+        await bot.telegram.sendMessage(ENV.TELEGRAM_CHANNEL_ID, message, {
             parse_mode: 'Markdown',
         });
 

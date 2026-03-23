@@ -9,15 +9,19 @@ export const ENV = {
 
     // Telegram Credentials
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
-    TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '',
+    TELEGRAM_CHANNEL_ID: process.env.TELEGRAM_CHANNEL_ID || '',
+    TELEGRAM_ADMIN_ID: process.env.TELEGRAM_ADMIN_ID || '',
+
+
 
     // Redis Credentials
     REDIS_HOST: process.env.REDIS_HOST || 'localhost',
     REDIS_PORT: Number(process.env.REDIS_PORT) || 6379,
+    PORT: process.env.PORT || "3000",
 };
 
 // Fail fast if critical Telegram keys are missing
-if (!ENV.TELEGRAM_BOT_TOKEN || !ENV.TELEGRAM_CHAT_ID) {
+if (!ENV.TELEGRAM_BOT_TOKEN || !ENV.TELEGRAM_CHANNEL_ID) {
     console.error("❌ CRITICAL: Telegram credentials missing in .env");
     process.exit(1);
 }
