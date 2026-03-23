@@ -83,8 +83,15 @@ export const seedHistoricalVwap = async (): Promise<void> => {
           successCount++;
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(`[Seeder] ⚠️ Failed to fetch history for ${symbol}`);
+
+      // Expose the raw API rejection payload
+      if (error.response && error.response.data) {
+        console.error(`[Fyers Rejection]:`, JSON.stringify(error.response.data));
+      } else {
+        console.error(`[System Error]:`, error.message || error);
+      }
     }
 
     // 100ms delay between requests to respect Fyers API rate limits
