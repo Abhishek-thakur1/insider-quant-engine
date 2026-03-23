@@ -44,3 +44,6 @@ bhavcopy_*.csv
 # ---------------------------------------------------
 pgdata/
 redis_data/
+
+
+access_token.txt
