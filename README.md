@@ -60,6 +60,11 @@ FYERS_REDIRECT_URI=http://YOUR_ELASTIC_AWS_IP:3000/callback
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 TELEGRAM_ADMIN_ID=123***789          # Your personal DM Chat ID (Secure commands)
 TELEGRAM_CHANNEL_ID=-1009*******7    # Your Broadcast Channel ID (Alerts & Signals)
+
+# Redis Config (Matches the docker-compose service name)
+REDIS_HOST=redis_cache
+REDIS_PORT=6379
+PORT=3000
 ```
 
 
