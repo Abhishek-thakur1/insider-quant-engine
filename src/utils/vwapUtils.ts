@@ -1,26 +1,11 @@
-// ============================================================
-//
-//
-// Why this exists as a separate module:
-//   Both VcpDetector and VolumeSpikeDetector need VWAP and
-//   market bias. Duplicating the logic in each class creates
-//   two separate Redis write paths that can drift out of sync.
-//   One writer (websocket.ts), many readers (detectors).
-//
-// CHANGE SUMMARY (all additions — new file)
-// [ADD-1] updateVwap()     — called by websocket.ts on every tick
-// [ADD-2] getVwap()        — called by detectors before firing alert
-// [ADD-3] resetVwap()      — called on engine boot to clear stale state
-// [ADD-4] updateNiftyBias() — called by websocket.ts on every Nifty tick
-// [ADD-5] getMarketBias()  — called by detectors as regime filter
-// ============================================================
+
 
 import { redisClient } from "../config/redis.js";
 import type { MarketBias, VwapState } from "../core/types.js";
 
 const NIFTY_BIAS_KEY = "market:nifty:bias";
 
-// [ADD-1]
+// 
 // Called once per live tick in websocket.ts BEFORE strategies run.
 // Uses the standard cumulative VWAP formula: Σ(P×V) / Σ(V)
 // NOTE: Resets to 0 on engine restart — seed from DB once TimescaleDB is added.
@@ -48,7 +33,7 @@ export const updateVwap = async (
   return state.vwap;
 };
 
-// [ADD-2]
+// 
 // Returns null if no VWAP has been established yet (engine just started).
 // Detectors treat null as "no filter" — i.e. allow the alert through.
 export const getVwap = async (symbol: string): Promise<number | null> => {
@@ -61,14 +46,14 @@ export const getVwap = async (symbol: string): Promise<number | null> => {
   return (JSON.parse(raw) as VwapState).vwap;
 };
 
-// [ADD-3]
+// 
 // Called during engine boot in websocket.ts for each symbol in the universe.
 // Prevents stale VWAP from a previous session bleeding into current session.
 export const resetVwap = async (symbol: string): Promise<void> => {
   await redisClient.del(`vwap:${symbol}`);
 };
 
-// [ADD-4]
+// 
 // Nifty bias logic:
 //   > +0.15% above Nifty VWAP  → bullish  (broad market participating)
 //   < -0.15% below Nifty VWAP  → bearish  (suppress all long-side alerts)
@@ -90,7 +75,7 @@ export const updateNiftyBias = async (
   await redisClient.set(NIFTY_BIAS_KEY, bias);
 };
 
-// [ADD-5]
+//
 // Defaults to 'neutral' if Nifty VWAP hasn't been established yet.
 // 'neutral' allows alerts — removes nothing. Safe default.
 export const getMarketBias = async (): Promise<MarketBias> => {
