@@ -1,10 +1,11 @@
 ## ⚠️ Disclaimer
 
-* This engine is built for personal use, not financial advice to others.<br>
+
+* This engine is built for personal use, not financial advice.<br>
 * **Algorithmic trading** carries real risk — markets can humble you fast if you’re careless.<br>
-* Test your strategies thoroughly before putting real capital on the line.<br>
-* Test everything, trust nothing blindly, and don’t throw real capital without conviction.<br>
-* Use it as a tool, not a shortcut — **protect your capital first, profits later**.
+* Test thoroughly, trust nothing blindly, and don’t deploy real capital without conviction.<br>
+* Use it as a tool, not a shortcut — **protect your capital first, profits later**.<br>
+* This does not promote intraday/day-trading or high-risk F&O strategies.
 
 
 # ⚡ Insider Quant Engine
