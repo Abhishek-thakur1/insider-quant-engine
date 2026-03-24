@@ -6,9 +6,10 @@ import { ENV } from "../config/env.js";
 import { bootRedis, redisClient } from "../config/redis.js";
 import { VcpDetector } from "../detectors/vcpDetector.js";
 import { VolumeSpikeDetector } from "../detectors/volumeSpikeDetector.js";
-import { updateVwap, updateNiftyBias, resetVwap } from "../utils/vwapUtils.js"; // [ADD-1]
+import { updateVwap, updateNiftyBias, resetVwap } from "../utils/vwapUtils.js";
 import type { IDetector } from "../core/types.js";
 import { seedHistoricalVwap } from "./vwapSeeder.js";
+import { CandleBreakoutDetector } from "../detectors/candleBreakoutDetector.js";
 const fyersApi = new fyers.fyersModel({ path: "./", enableLogging: false });
 // const TOKEN_PATH = path.resolve(process.cwd(), "access_token.txt");
 const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt');
@@ -46,8 +47,9 @@ export const startLiveEngine = async () => {
     await Promise.all(
         activeUniverse.map(async (symbol) => {
             strategyRouter.set(symbol, [
-                new VcpDetector(symbol), //  no memoryLength arg
-                new VolumeSpikeDetector(symbol), //  no memoryLength arg
+                new VcpDetector(symbol),
+                new VolumeSpikeDetector(symbol),
+                new CandleBreakoutDetector(symbol),
             ]);
 
             await Promise.all([
@@ -56,6 +58,8 @@ export const startLiveEngine = async () => {
                 redisClient.del(`memory:volume:${symbol}`),
                 redisClient.del(`cooldown:volume:${symbol}`),
                 redisClient.del(`cooldown:vcp:${symbol}`), // VCP cooldown was missing
+                redisClient.del(`candles:${symbol}`),
+                redisClient.del(`cooldown:candle:${symbol}`),
                 // resetVwap(symbol), //  — per-symbol VWAP state
             ]);
         }),
