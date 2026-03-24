@@ -6,9 +6,12 @@ const bot = new Telegraf(ENV.TELEGRAM_BOT_TOKEN);
 export interface AlertPayload {
     symbol: string;
     price: number;
+    side: 'LONG' | 'SHORT';
     percentageChange: number;
     volumeSpikeRatio: number;
     trigger: string;
+    vwap: number;
+    avgPrice: number;
 }
 
 export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {

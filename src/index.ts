@@ -15,4 +15,4 @@ const mockAnomaly = {
 };
 
 // Fire the test alert instantly on boot
-sendTelegramAlert(mockAnomaly);
+// sendTelegramAlert(mockAnomaly);
