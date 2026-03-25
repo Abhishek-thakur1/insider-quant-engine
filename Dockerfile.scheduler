@@ -1,0 +1,13 @@
+
+FROM alpine:3.19
+
+RUN apk add --no-cache docker-cli tzdata
+
+ENV TZ=Asia/Kolkata
+
+COPY scheduler/lifecycle.sh /usr/local/bin/lifecycle.sh
+RUN chmod +x /usr/local/bin/lifecycle.sh
+
+COPY scheduler/crontab /etc/crontabs/root
+
+CMD ["crond", "-f", "-l", "2"]

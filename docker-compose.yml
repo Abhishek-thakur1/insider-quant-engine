@@ -6,15 +6,33 @@ services:
     ports:
       - "6379:6379"
 
-  # — Auth Bridge
-  # Runs 24/7. Sends Telegram ping at 8:45 AM IST.
-  # Catches the Fyers /callback, writes token to shared volume, then exits.
-  # restart:always means Docker brings it back up ready for next day.
-  auth_bridge:
-    build: .
+  # ── Scheduler ─────────────────────────────────────────────────────────────
+  # Always on. Alpine + Docker CLI only — ~5 MB RAM.
+  # Owns the full daily lifecycle: starts/stops auth + engine on IST schedule.
+  # Docker socket mount gives it control over sibling containers.
+  quant_scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
+    container_name: quant_scheduler
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - scheduler_logs:/var/log
+    depends_on:
+      - redis_cache
+
+  # ── Auth Bridge ───────────────────────────────────────────────────────────
+  # Started by scheduler at 8:45 AM.
+  # Sends Telegram ping → catches Fyers /callback → writes token → exits 0.
+  # restart: no  — stays dead after clean exit. Scheduler starts it fresh tomorrow.
+  quant_auth:
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: quant_auth
     command: npx tsx src/config/auth.ts
-    restart: always
+    restart: "no"
     ports:
       - "3000:3000"
     volumes:
@@ -25,11 +43,15 @@ services:
     depends_on:
       - redis_cache
 
-  #  quant_engine — now waits for token before booting
-  # Polls every 10s until access_token.txt appears in shared volume.
-  # restart:on-failure only — does NOT restart on clean shutdown.
+  # ── Quant Engine ──────────────────────────────────────────────────────────
+  # Started by scheduler at 9:15 AM.
+  # Polls for token → seeds VWAP → connects to Fyers WebSocket.
+  # Stopped by scheduler at 3:30 PM via `docker stop`.
+  # restart: "no" — scheduler owns the lifecycle, not Docker's restart policy.
   quant_engine:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: quant_engine
     command: >
       sh -c "
@@ -39,18 +61,77 @@ services:
           sleep 10;
         done;
         echo '[Engine] Token found. Booting live engine.';
-        pm2-runtime start src/ingestion/websocket.ts --interpreter ./node_modules/.bin/tsx --name quant-router
+        npx tsx src/ingestion/websocket.ts
       "
-    restart: on-failure
+    restart: "no"
     volumes:
-      - token_store:/app/token #  same shared volume
+      - token_store:/app/token
       - /app/node_modules
     env_file:
       - .env
     depends_on:
       - redis_cache
-      - auth_bridge
+      - quant_auth
 
-# Named volume — persists token between container restarts
+# ── Volumes ───────────────────────────────────────────────────────────────────
 volumes:
-  token_store:
+  token_store: # Shared auth token between quant_auth and quant_engine
+  scheduler_logs: # Persistent cron logs — survives scheduler restarts
+
+
+# services:
+#   redis_cache:
+#     image: redis:7-alpine
+#     container_name: quant_redis
+#     restart: always
+#     ports:
+#       - "6379:6379"
+
+#   # — Auth Bridge
+#   # Runs 24/7. Sends Telegram ping at 8:45 AM IST.
+#   # Catches the Fyers /callback, writes token to shared volume, then exits.
+#   # restart:always means Docker brings it back up ready for next day.
+#   auth_bridge:
+#     build: .
+#     container_name: quant_auth
+#     command: npx tsx src/config/auth.ts
+#     restart: always
+#     ports:
+#       - "3000:3000"
+#     volumes:
+#       - token_store:/app/token
+#       - /app/node_modules
+#     env_file:
+#       - .env
+#     depends_on:
+#       - redis_cache
+
+#   #  quant_engine — now waits for token before booting
+#   # Polls every 10s until access_token.txt appears in shared volume.
+#   # restart:on-failure only — does NOT restart on clean shutdown.
+#   quant_engine:
+#     build: .
+#     container_name: quant_engine
+#     command: >
+#       sh -c "
+#         echo '[Engine] Waiting for access token...';
+#         until [ -f /app/token/access_token.txt ]; do
+#           echo '[Engine] Token not found. Retrying in 10s...';
+#           sleep 10;
+#         done;
+#         echo '[Engine] Token found. Booting live engine.';
+#         pm2-runtime start src/ingestion/websocket.ts --interpreter ./node_modules/.bin/tsx --name quant-router
+#       "
+#     restart: on-failure
+#     volumes:
+#       - token_store:/app/token #  same shared volume
+#       - /app/node_modules
+#     env_file:
+#       - .env
+#     depends_on:
+#       - redis_cache
+#       - auth_bridge
+
+# # Named volume — persists token between container restarts
+# volumes:
+#   token_store:
