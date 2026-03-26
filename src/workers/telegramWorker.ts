@@ -59,7 +59,7 @@ ${sideEmoji} *INSTITUTIONAL ${sideLabel} SIGNAL*
 🛑 *Stop Loss:* ₹${stopLoss} (${slLabel})
 🎯 *Target 1:* ₹${target1} (1:1.5 RR)
 🎯 *Target 2:* ₹${target2} (1:2.5 RR)
-📐 *VWAP:* ₹${data.vwap}
+📐 *VWAP:* ₹${data.vwap.toFixed(2)}
 ─────────────────────
 ⚠️ _Verify on chart before entry. Intraday only — exit by 3:15 PM._
         `;

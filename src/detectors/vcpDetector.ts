@@ -158,8 +158,8 @@ export class VcpDetector implements IDetector {
                 const isBreakingSupport = liveTick.price < boxLow * 0.999;
                 const isBreakdownVolume = liveTick.volume > (baselineAvgVol * BREAKOUT_VOL_MULTIPLIER);
                 const isBelowVwap = vwap !== null ? liveTick.price < vwap : false;
-                const isBearishMkt = marketBias !== 'bullish';
-
+                const isBearishMkt = marketBias === 'bearish' ||
+                    (marketBias === 'neutral' && liveTick.price < (vwap ?? liveTick.price));
                 if (isBreakingSupport && isBreakdownVolume && isBelowVwap && isBearishMkt) {
                     console.log(`\n🔴 [VCP BREAKDOWN] ${this.symbol} — Institutional Flush`);
 

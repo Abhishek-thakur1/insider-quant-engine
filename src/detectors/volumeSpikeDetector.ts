@@ -4,8 +4,8 @@ import { redisClient } from "../config/redis.js";
 import { getVwap, getMarketBias } from "../utils/vwapUtils.js";
 
 const BASELINE_MEMORY_LENGTH = 150;        // longer baseline = harder to spike
-const VOLUME_SPIKE_MULTIPLIER = 8;          // was 6× — raise the bar
-const MIN_BLOCK_VALUE = 10_000_000; // ₹1Cr minimum block — institutional only
+const VOLUME_SPIKE_MULTIPLIER = 12;
+const MIN_BLOCK_VALUE = 20_000_000; // ₹1Cr minimum block — institutional only
 const COOLDOWN_SECONDS = 900;       // 15 min lockout per symbol
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -17,7 +17,7 @@ const getISTMinutes = (): number => {
 };
 const isMarketHours = (): boolean => {
     const m = getISTMinutes();
-    return m >= 9 * 60 + 30 && m <= 15 * 60;
+    return m >= 9 * 60 + 40 && m <= 15 * 60;
 };
 
 export class VolumeSpikeDetector implements IDetector {
@@ -73,7 +73,7 @@ export class VolumeSpikeDetector implements IDetector {
             const isAboveVwap = vwap !== null ? liveTick.price > vwap : null;
             const isPriceLeadingUp = liveTick.price > avgPrice;
             const isPriceLeadingDown = liveTick.price < avgPrice;
-            const isPriceMoving = Math.abs((liveTick.price - avgPrice) / avgPrice) * 100 >= 0.15;
+            const isPriceMoving = Math.abs((liveTick.price - avgPrice) / avgPrice) * 100 >= 0.4;
 
 
             // ── FILTER 4: Market regime ───────────────────────────────────
@@ -119,7 +119,8 @@ export class VolumeSpikeDetector implements IDetector {
                 isAboveVwap === false &&
                 isPriceLeadingDown &&
                 isPriceMoving &&
-                marketBias !== 'bullish'
+                marketBias === 'bearish' ||
+                (marketBias === 'neutral' && liveTick.price < (vwap ?? liveTick.price))
             ) {
                 console.log(`\n🔴 [SHORT SIGNAL] ${this.symbol} — Institutional Selling`);
 
