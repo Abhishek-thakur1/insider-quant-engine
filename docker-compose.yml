@@ -1,4 +1,5 @@
 services:
+  # ── Redis ──────────────────────────────────────────────────────────────────
   redis_cache:
     image: redis:7-alpine
     container_name: quant_redis
@@ -7,9 +8,7 @@ services:
       - "6379:6379"
 
   # ── Scheduler ─────────────────────────────────────────────────────────────
-  # Always on. Alpine + Docker CLI only — ~5 MB RAM.
-  # Owns the full daily lifecycle: starts/stops auth + engine on IST schedule.
-  # Docker socket mount gives it control over sibling containers.
+  # Always on. Owns the full daily lifecycle via cron + docker start/stop.
   quant_scheduler:
     build:
       context: .
@@ -23,8 +22,8 @@ services:
       - redis_cache
 
   # ── Auth Bridge ───────────────────────────────────────────────────────────
-  # NOT started by `docker compose up` — scheduler calls `docker start quant_auth`.
-  # profiles: [manual] means compose ignores it unless explicitly targeted.
+  # Created at compose up but kept stopped — scheduler calls `docker start quant_auth`.
+  # restart:no means Docker never auto-restarts it after quant_auth exits cleanly.
   quant_auth:
     build:
       context: .
@@ -32,7 +31,6 @@ services:
     container_name: quant_auth
     command: npx tsx src/config/auth.ts
     restart: "no"
-    profiles: [manual]
     ports:
       - "3000:3000"
     volumes:
@@ -44,8 +42,8 @@ services:
       - redis_cache
 
   # ── Quant Engine ──────────────────────────────────────────────────────────
-  # NOT started by `docker compose up` — scheduler calls `docker start quant_engine`.
-  # profiles: [manual] means compose ignores it unless explicitly targeted.
+  # Created at compose up but kept stopped — scheduler calls `docker start quant_engine`.
+  # restart:no means Docker never auto-restarts it after scheduler calls `docker stop`.
   quant_engine:
     build:
       context: .
@@ -62,7 +60,6 @@ services:
         npx tsx src/ingestion/websocket.ts
       "
     restart: "no"
-    profiles: [manual]
     volumes:
       - token_store:/app/token
       - /app/node_modules
@@ -71,11 +68,9 @@ services:
     depends_on:
       - redis_cache
 
-# ── Volumes ───────────────────────────────────────────────────────────────────
 volumes:
-  token_store: # Shared auth token between quant_auth and quant_engine
-  scheduler_logs: # Persistent cron logs — survives scheduler restarts
-
+  token_store:
+  scheduler_logs:
 
 # services:
 #   redis_cache:

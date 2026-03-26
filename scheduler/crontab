@@ -1,14 +1,7 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# Quant Engine Daily Schedule  (all times IST — TZ=Asia/Kolkata set in image)
-#
-# Format: minute hour day month weekday command
-# ─────────────────────────────────────────────────────────────────────────────
-
-# 8:45 AM Mon–Fri → Boot auth bridge, send Telegram login ping
-45 8 * * 1-5 /usr/local/bin/lifecycle.sh start_auth >> /var/log/scheduler.log 2>&1
-
-# 9:15 AM Mon–Fri → Boot quant_engine (market opens 9:15 AM IST)
+# Write new crontab with 8:58 AM trigger
+docker exec quant_scheduler sh -c 'echo "58 8 * * 1-5 /usr/local/bin/lifecycle.sh start_auth >> /var/log/scheduler.log 2>&1
 15 9 * * 1-5 /usr/local/bin/lifecycle.sh start_engine >> /var/log/scheduler.log 2>&1
+30 15 * * 1-5 /usr/local/bin/lifecycle.sh stop_engine >> /var/log/scheduler.log 2>&1" | crontab -'
 
-# 3:30 PM Mon–Fri → Stop engine + purge stale token
-30 15 * * 1-5 /usr/local/bin/lifecycle.sh stop_engine >> /var/log/scheduler.log 2>&1
+# Verify it took effect
+docker exec quant_scheduler crontab -l
