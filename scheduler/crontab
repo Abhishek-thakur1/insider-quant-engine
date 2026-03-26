@@ -1,3 +1,14 @@
-13 9 * * 1-5 /usr/local/bin/lifecycle.sh start_auth >> /var/log/scheduler.log 2>&1
+# ── Auth bridge — 8:45 AM Mon–Fri
+45 8 * * 1-5 /usr/local/bin/lifecycle.sh start_auth >> /var/log/scheduler.log 2>&1
+
+# ── Market open message — 9:07 AM Mon–Fri
+07 9 * * 1-5 /usr/local/bin/market_message.sh open >> /var/log/scheduler.log 2>&1
+
+# ── Quant engine boot — 9:15 AM Mon–Fri
 15 9 * * 1-5 /usr/local/bin/lifecycle.sh start_engine >> /var/log/scheduler.log 2>&1
+
+# ── Market close message — 3:17 PM Mon–Fri
+17 15 * * 1-5 /usr/local/bin/market_message.sh close >> /var/log/scheduler.log 2>&1
+
+# ── Stop engine — 3:30 PM Mon–Fri
 30 15 * * 1-5 /usr/local/bin/lifecycle.sh stop_engine >> /var/log/scheduler.log 2>&1

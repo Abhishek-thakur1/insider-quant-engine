@@ -1,13 +1,14 @@
-
 FROM alpine:3.19
 
-RUN apk add --no-cache docker-cli tzdata
+
+RUN apk add --no-cache docker-cli tzdata curl
 
 ENV TZ=Asia/Kolkata
 
 COPY scheduler/lifecycle.sh /usr/local/bin/lifecycle.sh
-RUN chmod +x /usr/local/bin/lifecycle.sh
-
+COPY scheduler/market_message.sh /usr/local/bin/market_message.sh
 COPY scheduler/crontab /etc/crontabs/root
+
+RUN chmod +x /usr/local/bin/lifecycle.sh /usr/local/bin/market_message.sh
 
 CMD ["crond", "-f", "-l", "2"]
