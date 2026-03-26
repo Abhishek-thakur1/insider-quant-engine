@@ -1,7 +1,3 @@
-# Write new crontab with 8:58 AM trigger
-docker exec quant_scheduler sh -c 'echo "58 8 * * 1-5 /usr/local/bin/lifecycle.sh start_auth >> /var/log/scheduler.log 2>&1
+04 9 * * 1-5 /usr/local/bin/lifecycle.sh start_auth >> /var/log/scheduler.log 2>&1
 15 9 * * 1-5 /usr/local/bin/lifecycle.sh start_engine >> /var/log/scheduler.log 2>&1
-30 15 * * 1-5 /usr/local/bin/lifecycle.sh stop_engine >> /var/log/scheduler.log 2>&1" | crontab -'
-
-# Verify it took effect
-docker exec quant_scheduler crontab -l
+30 15 * * 1-5 /usr/local/bin/lifecycle.sh stop_engine >> /var/log/scheduler.log 2>&1
