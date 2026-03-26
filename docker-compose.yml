@@ -23,9 +23,8 @@ services:
       - redis_cache
 
   # ── Auth Bridge ───────────────────────────────────────────────────────────
-  # Started by scheduler at 8:45 AM.
-  # Sends Telegram ping → catches Fyers /callback → writes token → exits 0.
-  # restart: no  — stays dead after clean exit. Scheduler starts it fresh tomorrow.
+  # NOT started by `docker compose up` — scheduler calls `docker start quant_auth`.
+  # profiles: [manual] means compose ignores it unless explicitly targeted.
   quant_auth:
     build:
       context: .
@@ -33,6 +32,7 @@ services:
     container_name: quant_auth
     command: npx tsx src/config/auth.ts
     restart: "no"
+    profiles: [manual]
     ports:
       - "3000:3000"
     volumes:
@@ -44,10 +44,8 @@ services:
       - redis_cache
 
   # ── Quant Engine ──────────────────────────────────────────────────────────
-  # Started by scheduler at 9:15 AM.
-  # Polls for token → seeds VWAP → connects to Fyers WebSocket.
-  # Stopped by scheduler at 3:30 PM via `docker stop`.
-  # restart: "no" — scheduler owns the lifecycle, not Docker's restart policy.
+  # NOT started by `docker compose up` — scheduler calls `docker start quant_engine`.
+  # profiles: [manual] means compose ignores it unless explicitly targeted.
   quant_engine:
     build:
       context: .
@@ -64,6 +62,7 @@ services:
         npx tsx src/ingestion/websocket.ts
       "
     restart: "no"
+    profiles: [manual]
     volumes:
       - token_store:/app/token
       - /app/node_modules
@@ -71,7 +70,6 @@ services:
       - .env
     depends_on:
       - redis_cache
-      - quant_auth
 
 # ── Volumes ───────────────────────────────────────────────────────────────────
 volumes:
