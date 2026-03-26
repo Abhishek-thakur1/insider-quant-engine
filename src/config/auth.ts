@@ -40,11 +40,14 @@ const sendIgnitionPing = async () => {
     console.log("[Auth Bridge] 📤 8:45 AM Auto-Ping sent to Telegram.");
 };
 
-cron.schedule("45 8 * * 1-5", () => {
-    sendIgnitionPing();
-}, {
-    timezone: "Asia/Kolkata"
-});
+// cron.schedule("45 8 * * 1-5", () => {
+//     sendIgnitionPing();
+// }, {
+//     timezone: "Asia/Kolkata"
+// });
+
+sendIgnitionPing();
+
 
 
 // ─── TELEGRAM LISTENER: Manual Override ────────────────────
