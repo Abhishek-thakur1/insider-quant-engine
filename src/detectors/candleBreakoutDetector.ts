@@ -166,17 +166,11 @@ export class CandleBreakoutDetector implements IDetector {
 
                 // ── SHORT: Bearish breakdown candle ──────────
                 // Close below box low + bearish candle body + below VWAP
-                // const isBearishBreakdown =
-                //     completedCandle.close < boxLow &&
-                //     completedCandle.close < completedCandle.open &&  // red candle
-                //     (vwap !== null ? completedCandle.close < vwap : true) &&
-                //     marketBias !== 'bullish';
                 const isBearishBreakdown =
                     completedCandle.close < boxLow &&
-                    completedCandle.close < completedCandle.open &&
+                    completedCandle.close < completedCandle.open &&  // red candle
                     (vwap !== null ? completedCandle.close < vwap : true) &&
-                    (marketBias === 'bearish' ||
-                        (marketBias === 'neutral' && completedCandle.close < (vwap ?? completedCandle.close)));
+                    marketBias !== 'bullish';
 
                 if (isBlockSized && isVolumeExplosion && isRealBody && isBearishBreakdown) {
                     console.log(`\n💥 [CANDLE BREAKDOWN SHORT] ${this.symbol}`);
@@ -206,7 +200,5 @@ export class CandleBreakoutDetector implements IDetector {
             .lPush(candleKey, JSON.stringify(completedCandle))
             .lTrim(candleKey, 0, CONSOLIDATION_CANDLES + 2)
             .exec();
-
-
     }
 }

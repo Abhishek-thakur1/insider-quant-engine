@@ -11,7 +11,7 @@ const VOLUME_CONTRACTION_RATIO = 0.7; // box avg vol must be < 70% of baseline t
 const BREAKOUT_VOL_MULTIPLIER = 5; // breakout tick must be > 5× baseline avg vol
 const BREAKOUT_PRICE_BUFFER = 1.001; // price must exceed boxHigh by 0.1% to confirm break
 const FAILURE_PRICE_BUFFER = 0.999; // price below boxLow × 0.999 = pattern failed
-const COOLDOWN_SECONDS = 900; // 15 min between alerts for same symbol
+const COOLDOWN_SECONDS = 1800; // 30 min between alerts for same symbol
 const MIN_BLOCK_VALUE = 5_000_000;
 
 const getISTMinutes = (): number => {
@@ -158,8 +158,8 @@ export class VcpDetector implements IDetector {
                 const isBreakingSupport = liveTick.price < boxLow * 0.999;
                 const isBreakdownVolume = liveTick.volume > (baselineAvgVol * BREAKOUT_VOL_MULTIPLIER);
                 const isBelowVwap = vwap !== null ? liveTick.price < vwap : false;
-                const isBearishMkt = marketBias === 'bearish' ||
-                    (marketBias === 'neutral' && liveTick.price < (vwap ?? liveTick.price));
+                const isBearishMkt = marketBias !== 'bullish';
+
                 if (isBreakingSupport && isBreakdownVolume && isBelowVwap && isBearishMkt) {
                     console.log(`\n🔴 [VCP BREAKDOWN] ${this.symbol} — Institutional Flush`);
 
