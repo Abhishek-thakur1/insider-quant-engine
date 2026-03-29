@@ -10,6 +10,9 @@ import { updateVwap, updateNiftyBias, resetVwap } from "../utils/vwapUtils.js";
 import type { IDetector } from "../core/types.js";
 import { seedHistoricalVwap } from "./vwapSeeder.js";
 import { CandleBreakoutDetector } from "../detectors/candleBreakoutDetector.js";
+import { OrbDetector } from "../detectors/orbDetector.js";
+import { NiftyOptionsDetector } from "../detectors/niftyOptionsDetector.js";
+import { buildOptionUniverse, updateOptionTick, hasATMShifted } from "../utils/optionUtils.js";
 const fyersApi = new fyers.fyersModel({ path: "./", enableLogging: false });
 // const TOKEN_PATH = path.resolve(process.cwd(), "access_token.txt");
 const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt');
@@ -21,6 +24,13 @@ const NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
 
 const strategyRouter = new Map<string, IDetector[]>();
 const previousVolumeTracker = new Map<string, number>();
+
+// Nifty options detector — singleton, tracks index directly
+const niftyOptionsDetector = new NiftyOptionsDetector();
+
+// Track last ATM to know when to resubscribe option strikes
+let lastSubscribedNiftySpot = 0;
+let subscribedOptionSymbols: string[] = [];
 
 export const startLiveEngine = async () => {
     console.log(`[Engine] 📡 Booting Institutional Quant Router...`);
@@ -50,6 +60,7 @@ export const startLiveEngine = async () => {
                 new VcpDetector(symbol),
                 new VolumeSpikeDetector(symbol),
                 new CandleBreakoutDetector(symbol),
+                new OrbDetector(symbol),
             ]);
 
             await Promise.all([
@@ -60,6 +71,7 @@ export const startLiveEngine = async () => {
                 redisClient.del(`cooldown:vcp:${symbol}`), // VCP cooldown was missing
                 redisClient.del(`candles:${symbol}`),
                 redisClient.del(`cooldown:candle:${symbol}`),
+                redisClient.del(`cooldown:orb:${symbol}`),
                 // resetVwap(symbol), //  — per-symbol VWAP state
             ]);
         }),
@@ -68,6 +80,7 @@ export const startLiveEngine = async () => {
     //Reset Nifty state on boot — stale yesterday bias must not persist
     //   await resetVwap(NIFTY_SYMBOL);
     await redisClient.del("market:nifty:bias");
+    await redisClient.del("cooldown:nifty_options");
     console.log(
         `[Engine] 🗺️  Market bias tracking initialized (${NIFTY_SYMBOL})`,
     );
@@ -113,6 +126,32 @@ export const startLiveEngine = async () => {
                 if (tick.symbol === NIFTY_SYMBOL) {
                     const niftyVwap = await updateVwap(NIFTY_SYMBOL, tick.ltp, 1);
                     await updateNiftyBias(tick.ltp, niftyVwap);
+
+                    // Route Nifty ticks to options scalping detector
+                    await niftyOptionsDetector.analyze({
+                        price: tick.ltp,
+                        volume: tick.vol_traded_today || 1,
+                        timestamp: Date.now(),
+                    });
+
+                    // Subscribe option strikes on first Nifty tick or when ATM shifts 2+ strikes
+                    if (lastSubscribedNiftySpot === 0 || hasATMShifted(tick.ltp, lastSubscribedNiftySpot)) {
+                        const newOptionSymbols = buildOptionUniverse(tick.ltp);
+                        skt.subscribe(newOptionSymbols);
+                        subscribedOptionSymbols = newOptionSymbols;
+                        lastSubscribedNiftySpot = tick.ltp;
+                        console.log(`[Options] 🔄 Subscribed ${newOptionSymbols.length} option strikes around ATM ${Math.round(tick.ltp / 50) * 50}`);
+                    }
+                    return;
+                }
+
+                // Route option ticks to the tick store for best strike selection
+                if (tick.symbol.includes('CE') || tick.symbol.includes('PE')) {
+                    updateOptionTick(tick.symbol, {
+                        ltp: tick.ltp,
+                        oi: tick.oi ?? 0,
+                        volume: tick.vol_traded_today ?? 0,
+                    });
                     return;
                 }
 
