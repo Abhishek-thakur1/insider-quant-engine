@@ -13,6 +13,8 @@ import { CandleBreakoutDetector } from "../detectors/candleBreakoutDetector.js";
 import { OrbDetector } from "../detectors/orbDetector.js";
 import { NiftyOptionsDetector } from "../detectors/niftyOptionsDetector.js";
 import { buildOptionUniverse, updateOptionTick, hasATMShifted } from "../utils/optionUtils.js";
+import { VwapPullbackDetector } from "../detectors/vwapPullbackDetector.js";
+import { LiquidityTrapDetector } from "../detectors/liquidityTrapDetector.js";
 const fyersApi = new fyers.fyersModel({ path: "./", enableLogging: false });
 // const TOKEN_PATH = path.resolve(process.cwd(), "access_token.txt");
 const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt');
@@ -26,7 +28,8 @@ const strategyRouter = new Map<string, IDetector[]>();
 const previousVolumeTracker = new Map<string, number>();
 
 // Nifty options detector — singleton, tracks index directly
-const niftyOptionsDetector = new NiftyOptionsDetector();
+// const niftyOptionsDetector = new NiftyOptionsDetector();
+const niftyOptionsDetector = new VwapPullbackDetector();
 
 // Track last ATM to know when to resubscribe option strikes
 let lastSubscribedNiftySpot = 0;
@@ -57,10 +60,11 @@ export const startLiveEngine = async () => {
     await Promise.all(
         activeUniverse.map(async (symbol) => {
             strategyRouter.set(symbol, [
-                new VcpDetector(symbol),
+                // new VcpDetector(symbol),
                 new VolumeSpikeDetector(symbol),
-                new CandleBreakoutDetector(symbol),
-                new OrbDetector(symbol),
+                // new CandleBreakoutDetector(symbol),
+                // new OrbDetector(symbol),
+                new LiquidityTrapDetector(symbol),
             ]);
 
             await Promise.all([
@@ -73,6 +77,8 @@ export const startLiveEngine = async () => {
                 redisClient.del(`cooldown:candle:${symbol}`),
                 redisClient.del(`cooldown:orb:${symbol}`),
                 // resetVwap(symbol), //  — per-symbol VWAP state
+                redisClient.del(`trap_candles:${symbol}`),
+                redisClient.del(`cooldown:trap:${symbol}`),
             ]);
         }),
     );
