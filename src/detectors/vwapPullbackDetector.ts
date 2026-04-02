@@ -10,7 +10,7 @@ const CANDLE_DURATION_MS = 60 * 1000; // 1-minute candles
 const MEMORY_LENGTH = 6;         // last 6 candles for context + volume baseline
 const COOLDOWN_SECONDS = 900;       // 15 min cooldown
 const VWAP_PROXIMITY_PCT = 0.12;      // candle must touch within 0.12% of VWAP (~27pts on 22800)
-const VOL_MULTIPLIER = 1.8;       // rejection candle must be 1.8× avg vol
+const VOL_MULTIPLIER = 1.2;       // rejection candle must be 1.8× avg vol
 const MAX_RISK_POINTS = 30;        // ignore if SL > 30 points away (too wide)
 const MIN_BODY_POINTS = 5;         // candle body must be at least 5 points (not a doji)
 // ─────────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ export class VwapPullbackDetector implements IDetector {
         const volConfirmedLong = c.volume > avgVol * VOL_MULTIPLIER;
         const trendOkLong = priorBullish || marketBias === 'bullish';
 
-        if (touchedVwapLong && closedAboveVwap && isRealBody && volConfirmedLong && trendOkLong && marketBias !== 'bearish') {
+        if (touchedVwapLong && closedAboveVwap && isRealBody && trendOkLong && marketBias !== 'bearish') {
             const indexSl = Number(c.low.toFixed(2));
             const risk = c.close - indexSl;
             if (risk > MAX_RISK_POINTS || risk <= 0) return;
@@ -157,7 +157,7 @@ export class VwapPullbackDetector implements IDetector {
         const volConfirmedShort = c.volume > avgVol * VOL_MULTIPLIER;
         const trendOkShort = priorBearish || marketBias === 'bearish';
 
-        if (touchedVwapShort && closedBelowVwap && isRealBody && volConfirmedShort && trendOkShort && marketBias !== 'bullish') {
+        if (touchedVwapShort && closedBelowVwap && isRealBody && trendOkShort && marketBias !== 'bullish') {
             const indexSl = Number(c.high.toFixed(2));
             const risk = indexSl - c.close;
             if (risk > MAX_RISK_POINTS || risk <= 0) return;
