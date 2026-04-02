@@ -99,7 +99,9 @@ export const startLiveEngine = async () => {
     skt.on("connect", () => {
         console.log("[Firehose] 🟢 Connected to Fyers Data Servers!");
         // Subscribe to Nifty alongside the equity universe
-        skt.subscribe([...activeUniverse, NIFTY_SYMBOL]);
+        // skt.subscribe([...activeUniverse, NIFTY_SYMBOL]);
+        const symbolsToSubscribe = [...activeUniverse, NIFTY_SYMBOL, ...subscribedOptionSymbols];
+        skt.subscribe(symbolsToSubscribe);
         console.log(
             `[Firehose] ✅ Subscribed: ${activeUniverse.length} equities + ${NIFTY_SYMBOL}`,
         );
@@ -141,12 +143,27 @@ export const startLiveEngine = async () => {
                     });
 
                     // Subscribe option strikes on first Nifty tick or when ATM shifts 2+ strikes
+                    // if (lastSubscribedNiftySpot === 0 || hasATMShifted(tick.ltp, lastSubscribedNiftySpot)) {
+                    //     const newOptionSymbols = buildOptionUniverse(tick.ltp);
+                    //     skt.subscribe(newOptionSymbols);
+                    //     subscribedOptionSymbols = newOptionSymbols;
+                    //     lastSubscribedNiftySpot = tick.ltp;
+                    //     console.log(`[Options] 🔄 Subscribed ${newOptionSymbols.length} option strikes around ATM ${Math.round(tick.ltp / 50) * 50}`);
+                    // }
                     if (lastSubscribedNiftySpot === 0 || hasATMShifted(tick.ltp, lastSubscribedNiftySpot)) {
                         const newOptionSymbols = buildOptionUniverse(tick.ltp);
+
+                        // 1. Unsubscribe from old options to prevent hitting Fyers max-symbol limit
+                        if (subscribedOptionSymbols.length > 0) {
+                            skt.unsubscribe(subscribedOptionSymbols);
+                        }
+
+                        // 2. Subscribe to new options
                         skt.subscribe(newOptionSymbols);
                         subscribedOptionSymbols = newOptionSymbols;
                         lastSubscribedNiftySpot = tick.ltp;
-                        console.log(`[Options] 🔄 Subscribed ${newOptionSymbols.length} option strikes around ATM ${Math.round(tick.ltp / 50) * 50}`);
+
+                        console.log(`[Options] 🔄 Shifted to ${newOptionSymbols.length} options around ATM ${Math.round(tick.ltp / 50) * 50}`);
                     }
                     return;
                 }

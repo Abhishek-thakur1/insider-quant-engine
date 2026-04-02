@@ -205,8 +205,16 @@ export const getBestStrike = (
 
 // ── Check if option symbols need resubscription (ATM shifted > 2 strikes) ────
 // Call this periodically from websocket.ts when Nifty moves significantly
+// export const hasATMShifted = (currentSpot: number, lastSubscribedSpot: number): boolean => {
+//     const currentATM = Math.round(currentSpot / STRIKE_INTERVAL) * STRIKE_INTERVAL;
+//     const lastATM = Math.round(lastSubscribedSpot / STRIKE_INTERVAL) * STRIKE_INTERVAL;
+//     return Math.abs(currentATM - lastATM) >= 2 * STRIKE_INTERVAL; // shifted 2+ strikes
+// };
 export const hasATMShifted = (currentSpot: number, lastSubscribedSpot: number): boolean => {
     const currentATM = Math.round(currentSpot / STRIKE_INTERVAL) * STRIKE_INTERVAL;
     const lastATM = Math.round(lastSubscribedSpot / STRIKE_INTERVAL) * STRIKE_INTERVAL;
-    return Math.abs(currentATM - lastATM) >= 2 * STRIKE_INTERVAL; // shifted 2+ strikes
+
+    // Require a definitive shift of strictly greater than 100 points (2 strikes)
+    // This prevents flapping if spot is oscillating right on a boundary line.
+    return Math.abs(currentATM - lastATM) > (2 * STRIKE_INTERVAL);
 };
