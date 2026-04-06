@@ -15,6 +15,7 @@ import { NiftyOptionsDetector } from "../detectors/niftyOptionsDetector.js";
 import { buildOptionUniverse, updateOptionTick, hasATMShifted } from "../utils/optionUtils.js";
 import { VwapPullbackDetector } from "../detectors/vwapPullbackDetector.js";
 import { LiquidityTrapDetector } from "../detectors/liquidityTrapDetector.js";
+import { VwapCrossoverDetector } from "../detectors/vwapCrossoverDetector.js";
 const fyersApi = new fyers.fyersModel({ path: "./", enableLogging: false });
 // const TOKEN_PATH = path.resolve(process.cwd(), "access_token.txt");
 const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt');
@@ -28,8 +29,9 @@ const strategyRouter = new Map<string, IDetector[]>();
 const previousVolumeTracker = new Map<string, number>();
 
 // Nifty options detector — singleton, tracks index directly
-// const niftyOptionsDetector = new NiftyOptionsDetector();
-const niftyOptionsDetector = new VwapPullbackDetector();
+const niftyOptionsDetector = new NiftyOptionsDetector();
+const vwapPullbackDetector = new VwapPullbackDetector();
+const vwapCrossoverDetector = new VwapCrossoverDetector();
 
 // Track last ATM to know when to resubscribe option strikes
 let lastSubscribedNiftySpot = 0;
@@ -64,7 +66,7 @@ export const startLiveEngine = async () => {
                 new VolumeSpikeDetector(symbol),
                 // new CandleBreakoutDetector(symbol),
                 // new OrbDetector(symbol),
-                new LiquidityTrapDetector(symbol),
+                // new LiquidityTrapDetector(symbol),
             ]);
 
             await Promise.all([
@@ -135,12 +137,18 @@ export const startLiveEngine = async () => {
                     const niftyVwap = await updateVwap(NIFTY_SYMBOL, tick.ltp, 1);
                     await updateNiftyBias(tick.ltp, niftyVwap);
 
-                    // Route Nifty ticks to options scalping detector
-                    await niftyOptionsDetector.analyze({
+                    const liveTick = {
                         price: tick.ltp,
                         volume: tick.vol_traded_today || 1,
                         timestamp: Date.now(),
-                    });
+                    };
+
+
+                    // Route Nifty ticks to options scalping detector
+
+                    await niftyOptionsDetector.analyze(liveTick);
+                    await vwapPullbackDetector.analyze(liveTick);
+                    await vwapCrossoverDetector.analyze(liveTick);
 
                     // Subscribe option strikes on first Nifty tick or when ATM shifts 2+ strikes
                     // if (lastSubscribedNiftySpot === 0 || hasATMShifted(tick.ltp, lastSubscribedNiftySpot)) {
