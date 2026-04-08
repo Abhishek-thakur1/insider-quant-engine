@@ -21,6 +21,7 @@ import { VwapPullbackDetector } from "../detectors/vwapPullbackDetector.js";
 import { LiquidityTrapDetector } from "../detectors/liquidityTrapDetector.js";
 import { VwapCrossoverDetector } from "../detectors/vwapCrossoverDetector.js";
 import { ValueZoneScalpDetector } from "../detectors/valueZoneScalpDetector.js";
+import { LiquiditySweepDetector } from "../detectors/liquiditySweepDetector.js";
 const fyersApi = new fyers.fyersModel({ path: "./", enableLogging: false });
 // const TOKEN_PATH = path.resolve(process.cwd(), "access_token.txt");
 const TOKEN_PATH = path.resolve("/app/token", "access_token.txt");
@@ -38,6 +39,7 @@ const niftyOptionsDetector = new NiftyOptionsDetector();
 const vwapPullbackDetector = new VwapPullbackDetector();
 const vwapCrossoverDetector = new VwapCrossoverDetector();
 const valueZoneScalpDetector = new ValueZoneScalpDetector();
+const liquiditySweepDetector = new LiquiditySweepDetector();
 
 // Track last ATM to know when to resubscribe option strikes
 let lastSubscribedNiftySpot = 0;
@@ -155,10 +157,11 @@ export const startLiveEngine = async () => {
 
           // Route Nifty ticks to options scalping detector
 
-          await niftyOptionsDetector.analyze(liveTick);
-          await vwapPullbackDetector.analyze(liveTick);
-          await vwapCrossoverDetector.analyze(liveTick);
+          //   await niftyOptionsDetector.analyze(liveTick);
+          //   await vwapPullbackDetector.analyze(liveTick);
+          //   await vwapCrossoverDetector.analyze(liveTick);
           await valueZoneScalpDetector.analyze(liveTick);
+          await liquiditySweepDetector.analyze(liveTick);
 
           // Subscribe option strikes on first Nifty tick or when ATM shifts 2+ strikes
           // if (lastSubscribedNiftySpot === 0 || hasATMShifted(tick.ltp, lastSubscribedNiftySpot)) {
