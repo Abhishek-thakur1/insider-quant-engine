@@ -64,6 +64,7 @@ services:
     restart: "no"
     volumes:
       - token_store:/app/token
+      - trade_logs:/app/logs
       - /app/node_modules
     env_file:
       - .env
@@ -73,6 +74,7 @@ services:
 volumes:
   token_store:
   scheduler_logs:
+  trade_logs:
 
 # services:
 #   redis_cache:

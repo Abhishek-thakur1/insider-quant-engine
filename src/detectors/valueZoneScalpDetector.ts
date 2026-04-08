@@ -3,6 +3,7 @@ import type { IDetector, TickData } from "../core/types.js";
 import { redisClient } from "../config/redis.js";
 import { getVwap } from "../utils/vwapUtils.js";
 import { getBestStrike } from "../utils/optionUtils.js";
+import { logShadowTrade } from "../utils/tradeLogger.js";
 
 // ─── TUNABLE CONSTANTS ───────────────────────────────────────
 const CANDLE_DURATION_MS = 3 * 60 * 1000; // 3-minute candles to filter out 1-min noise
@@ -128,11 +129,32 @@ export class ValueZoneScalpDetector implements IDetector {
     // 3. Rejection: Closed strong (green body) above the EMA
     const closedStrongLong = c.close > c.open && c.close > currentEma;
 
+    if (isUptrend && touchedValueZoneLong && !closedStrongLong) {
+      logShadowTrade({
+        strategy: "ValueZone",
+        symbol: this.symbol,
+        side: "LONG",
+        price: c.close,
+        vwap: vwap,
+        status: "NEAR_MISS",
+        reason: "Price touched 21 EMA but failed to close strong above it",
+      });
+    }
+
     // 4. Volume Exhaustion: Pullback volume must be LESS than impulse volume
     // We ignore volume if it's the Spot Index (which is a tick-count, not true volume)
     // Note: For true futures volume, you'd check: c.volume < avgImpulseVol
 
     if (isUptrend && touchedValueZoneLong && closedStrongLong) {
+      logShadowTrade({
+        strategy: "ValueZone",
+        symbol: this.symbol,
+        side: "LONG",
+        price: c.close,
+        vwap: vwap,
+        status: "FIRED",
+        reason: "Perfect Value Zone Entry",
+      });
       const indexSl = Number(c.low.toFixed(2));
       const risk = c.close - indexSl;
 
