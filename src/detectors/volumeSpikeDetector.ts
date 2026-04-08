@@ -3,10 +3,10 @@ import type { IDetector, TickData } from "../core/types.js";
 import { redisClient } from "../config/redis.js";
 import { getVwap, getMarketBias } from "../utils/vwapUtils.js";
 
-const BASELINE_MEMORY_LENGTH = 150;        // longer baseline = harder to spike
-const VOLUME_SPIKE_MULTIPLIER = 8;          // was 6× — raise the bar
-const MIN_BLOCK_VALUE = 10_000_000; // ₹1Cr minimum block — institutional only
-const COOLDOWN_SECONDS = 1800;      // 30 min lockout per symbol
+const BASELINE_MEMORY_LENGTH = 150;
+const VOLUME_SPIKE_MULTIPLIER = 12;
+const MIN_BLOCK_VALUE = 20_000_000; // ₹2Cr minimum block — filters mid-cap noise
+const COOLDOWN_SECONDS = 900;       // 15 min lockout per symbol
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Opening 30 min has structurally abnormal volume that would spam alerts constantly.
@@ -73,7 +73,7 @@ export class VolumeSpikeDetector implements IDetector {
             const isAboveVwap = vwap !== null ? liveTick.price > vwap : null;
             const isPriceLeadingUp = liveTick.price > avgPrice;
             const isPriceLeadingDown = liveTick.price < avgPrice;
-            const isPriceMoving = Math.abs((liveTick.price - avgPrice) / avgPrice) * 100 >= 0.15;
+            const isPriceMoving = Math.abs((liveTick.price - avgPrice) / avgPrice) * 100 >= 0.4; // 0.15% was random tick noise
 
 
             // ── FILTER 4: Market regime ───────────────────────────────────
