@@ -1,73 +1,73 @@
-import { Telegraf } from "telegraf";
-import { ENV } from "../config/env.js";
+import { Telegraf } from 'telegraf'
+import { ENV } from '../config/env.js'
 
-const bot = new Telegraf(ENV.TELEGRAM_BOT_TOKEN);
+const bot = new Telegraf(ENV.TELEGRAM_BOT_TOKEN)
 
 export interface AlertPayload {
-  symbol: string;
-  price: number;
-  side: "LONG" | "SHORT";
-  percentageChange: number;
-  volumeSpikeRatio: number;
-  trigger: string;
-  vwap: number;
-  avgPrice: number;
+	symbol: string
+	price: number
+	side: 'LONG' | 'SHORT'
+	percentageChange: number
+	volumeSpikeRatio: number
+	trigger: string
+	vwap: number
+	avgPrice: number
 }
 
 export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
-  try {
-    const isLong = data.side === "LONG";
-    const isOptions = data.symbol.includes("CE") || data.symbol.includes("PE");
+	try {
+		const isLong = data.side === 'LONG'
+		const isOptions = data.symbol.includes('CE') || data.symbol.includes('PE')
 
-    let message = "";
+		let message = ''
 
-    if (isOptions) {
-      // ── OPTIONS TEMPLATE ──────────────────────────────────────
-      // Options detectors pass specific premium, SL, and targets inside the trigger string.
-      // We format it to look incredibly clean and authoritative.
+		if (isOptions) {
+			// ── OPTIONS TEMPLATE ──────────────────────────────────────
+			// Options detectors pass specific premium, SL, and targets inside the trigger string.
+			// We format it to look incredibly clean and authoritative.
 
-      const directionEmoji = isLong ? "📈" : "📉";
+			const directionEmoji = isLong ? '📈' : '📉'
 
-      message = `
+			message = `
 🚨 *NIFTY SNIPER SETUP* 🚨
 
 ${directionEmoji} *Action:* BUY ${data.symbol}
 📊 *Index Level:* ₹${data.price}
 
 *⚡ The Edge:*
-• ${data.trigger.replace(/\|/g, "\n• ")}
+• ${data.trigger.replace(/\|/g, '\n• ')}
 
 ⏳ *Horizon:* Intraday Scalp
 ⚠️ _Options decay fast. Stick to the Stop Loss._
-            `.trim();
-    } else {
-      // ── EQUITY CASH TEMPLATE ──────────────────────────────────
-      // For standard stocks, we calculate the exact RR levels natively.
+            `.trim()
+		} else {
+			// ── EQUITY CASH TEMPLATE ──────────────────────────────────
+			// For standard stocks, we calculate the exact RR levels natively.
 
-      const entry = data.price;
+			const entry = data.price
 
-      // SL: 0.2% behind VWAP protection
-      const stopLoss = isLong
-        ? Number((data.vwap * 0.998).toFixed(2))
-        : Number((data.vwap * 1.002).toFixed(2));
+			// SL: 0.2% behind VWAP protection
+			const stopLoss = isLong
+				? Number((data.vwap * 0.998).toFixed(2))
+				: Number((data.vwap * 1.002).toFixed(2))
 
-      const risk = Math.abs(entry - stopLoss);
+			const risk = Math.abs(entry - stopLoss)
 
-      const target1 = isLong
-        ? Number((entry + risk * 1.5).toFixed(2))
-        : Number((entry - risk * 1.5).toFixed(2));
+			const target1 = isLong
+				? Number((entry + risk * 1.5).toFixed(2))
+				: Number((entry - risk * 1.5).toFixed(2))
 
-      const target2 = isLong
-        ? Number((entry + risk * 2.5).toFixed(2))
-        : Number((entry - risk * 2.5).toFixed(2));
+			const target2 = isLong
+				? Number((entry + risk * 2.5).toFixed(2))
+				: Number((entry - risk * 2.5).toFixed(2))
 
-      const actionLabel = isLong ? "🟢 BUY LONG" : "🔴 SELL SHORT";
-      const volumeStr =
-        data.volumeSpikeRatio > 1.2
-          ? `\n• Volume: ${data.volumeSpikeRatio}x Institutional Surge 🔥`
-          : "";
+			const actionLabel = isLong ? '🟢 BUY LONG' : '🔴 SELL SHORT'
+			const volumeStr =
+				data.volumeSpikeRatio > 1.2
+					? `\n• Volume: ${data.volumeSpikeRatio}x Institutional Surge 🔥`
+					: ''
 
-      message = `
+			message = `
 ⚡ *NEW TRADE ALERT* ⚡
 
 ${actionLabel}
@@ -84,19 +84,19 @@ ${actionLabel}
 
 ⏳ *Horizon:* Intraday Only
 ⚖️ _Capital preservation first. Respect the levels._
-            `.trim();
-    }
+            `.trim()
+		}
 
-    // Send to Telegram using legacy Markdown parsing
-    await bot.telegram.sendMessage(ENV.TELEGRAM_CHANNEL_ID, message, {
-      parse_mode: "Markdown",
-    });
+		// Send to Telegram using legacy Markdown parsing
+		await bot.telegram.sendMessage(ENV.TELEGRAM_CHANNEL_ID, message, {
+			parse_mode: 'Markdown',
+		})
 
-    console.log(`✅ [${data.side}] Public Alert dispatched for ${data.symbol}`);
-  } catch (error) {
-    console.error(`❌ Failed to send Telegram alert:`, error);
-  }
-};
+		console.log(`✅ [${data.side}] Public Alert dispatched for ${data.symbol}`)
+	} catch (error) {
+		console.error(`❌ Failed to send Telegram alert:`, error)
+	}
+}
 
 // import { Telegraf } from 'telegraf';
 // import { ENV } from '../config/env.js';
