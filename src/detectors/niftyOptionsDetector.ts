@@ -25,7 +25,7 @@ import { getVwap } from '../utils/vwapUtils.js';
 import { getBestStrike } from '../utils/optionUtils.js';
 
 const CANDLE_DURATION_MS = 5 * 60 * 1000;
-const MIN_CANDLE_BODY_PCT = 0.1;
+const MIN_CANDLE_BODY_PCT = 0.08;
 const CONSECUTIVE_CONFIRMS = 3;
 const VWAP_DISTANCE_PCT = 0.15;
 const COOLDOWN_SECONDS = 900;

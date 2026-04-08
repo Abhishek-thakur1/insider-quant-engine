@@ -62,10 +62,10 @@ export const startLiveEngine = async () => {
     await Promise.all(
         activeUniverse.map(async (symbol) => {
             strategyRouter.set(symbol, [
-                // new VcpDetector(symbol),
+                new VcpDetector(symbol),
                 new VolumeSpikeDetector(symbol),
                 // new CandleBreakoutDetector(symbol),
-                // new OrbDetector(symbol),
+                new OrbDetector(symbol),
                 // new LiquidityTrapDetector(symbol),
             ]);
 
