@@ -1,1 +1,1 @@
-declare module 'fyers-api-v3';
+declare module 'fyers-api-v3'

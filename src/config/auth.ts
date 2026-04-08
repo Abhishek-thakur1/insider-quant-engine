@@ -1,44 +1,43 @@
-import Fastify from "fastify";
-import fyers from "fyers-api-v3";
-import fs from "fs";
-import path from "path";
-import TelegramBot from "node-telegram-bot-api";
-import cron from "node-cron";
-import { ENV } from "./env.js";
+import Fastify from 'fastify'
+import fyers from 'fyers-api-v3'
+import fs from 'fs'
+import path from 'path'
+import TelegramBot from 'node-telegram-bot-api'
+import cron from 'node-cron'
+import { ENV } from './env.js'
 
-const fastify = Fastify({ logger: false });
+const fastify = Fastify({ logger: false })
 // const TOKEN_PATH = path.resolve(process.cwd(), "access_token.txt");
 
 // points to the shared Docker volume
-const TOKEN_PATH = path.resolve("/app/token", "access_token.txt");
+const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt')
 
-const fyersApi = new fyers.fyersModel({ path: "./", enableLogging: false });
-fyersApi.setAppId(ENV.FYERS_APP_ID);
-fyersApi.setRedirectUrl(ENV.FYERS_REDIRECT_URI);
+const fyersApi = new fyers.fyersModel({ path: './', enableLogging: false })
+fyersApi.setAppId(ENV.FYERS_APP_ID)
+fyersApi.setRedirectUrl(ENV.FYERS_REDIRECT_URI)
 
 // Initialize Telegram Bot
-const bot = new TelegramBot(ENV.TELEGRAM_BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(ENV.TELEGRAM_BOT_TOKEN, { polling: true })
 
-console.log("\n[Auth Bridge] 🛡️  Telegram Auth Bridge Started.");
-console.log(`[Auth Bridge] 📱 Send '/arm' to your Telegram bot to initiate login.\n`);
-
+console.log('\n[Auth Bridge] 🛡️  Telegram Auth Bridge Started.')
+console.log(`[Auth Bridge] 📱 Send '/arm' to your Telegram bot to initiate login.\n`)
 
 // ───THE ALARM CLOCK (Auto-Ping at 8:45 AM) ────────────────
 const sendIgnitionPing = async () => {
-    const authUrl = fyersApi.generateAuthCode();
+	const authUrl = fyersApi.generateAuthCode()
 
-    await bot.sendMessage(
-        ENV.TELEGRAM_ADMIN_ID,
-        `⏰ *Pre-Market Alert: 8:45 AM*\n\nThe market opens in 30 minutes. Tap the link below to authenticate via Fyers and arm the execution engine for the day.`,
-        {
-            parse_mode: "Markdown",
-            reply_markup: {
-                inline_keyboard: [[{ text: "Log in to Fyers", url: authUrl }]],
-            },
-        }
-    );
-    console.log("[Auth Bridge] 📤 8:45 AM Auto-Ping sent to Telegram.");
-};
+	await bot.sendMessage(
+		ENV.TELEGRAM_ADMIN_ID,
+		`⏰ *Pre-Market Alert: 8:45 AM*\n\nThe market opens in 30 minutes. Tap the link below to authenticate via Fyers and arm the execution engine for the day.`,
+		{
+			parse_mode: 'Markdown',
+			reply_markup: {
+				inline_keyboard: [[{ text: 'Log in to Fyers', url: authUrl }]],
+			},
+		},
+	)
+	console.log('[Auth Bridge] 📤 8:45 AM Auto-Ping sent to Telegram.')
+}
 
 // cron.schedule("45 8 * * 1-5", () => {
 //     sendIgnitionPing();
@@ -46,88 +45,86 @@ const sendIgnitionPing = async () => {
 //     timezone: "Asia/Kolkata"
 // });
 
-sendIgnitionPing();
-
-
+sendIgnitionPing()
 
 // ─── TELEGRAM LISTENER: Manual Override ────────────────────
 bot.onText(/\/arm/, async (msg) => {
+	if (msg.chat.id.toString() !== ENV.TELEGRAM_ADMIN_ID) {
+		console.log('[Debug] ❌ SECURITY BLOCK: Chat ID mismatch. Ignoring intruder.')
+		return // Drops the message silently
+	}
 
+	const authUrl = fyersApi.generateAuthCode()
 
-    if (msg.chat.id.toString() !== ENV.TELEGRAM_ADMIN_ID) {
-        console.log("[Debug] ❌ SECURITY BLOCK: Chat ID mismatch. Ignoring intruder.");
-        return; // Drops the message silently
-    }
-
-    const authUrl = fyersApi.generateAuthCode();
-
-    await bot.sendMessage(
-        ENV.TELEGRAM_ADMIN_ID,
-        `🔐 *Engine Ignition Sequence*\n\nTap the link below to authenticate via Fyers. The engine is waiting for the cryptographic payload.`,
-        {
-            parse_mode: "Markdown",
-            reply_markup: {
-                inline_keyboard: [[{ text: "Log in to Fyers", url: authUrl }]],
-            },
-        }
-    );
-    console.log("[Auth Bridge] 📤 Manual Ignition link sent to Telegram.");
-});
-
+	await bot.sendMessage(
+		ENV.TELEGRAM_ADMIN_ID,
+		`🔐 *Engine Ignition Sequence*\n\nTap the link below to authenticate via Fyers. The engine is waiting for the cryptographic payload.`,
+		{
+			parse_mode: 'Markdown',
+			reply_markup: {
+				inline_keyboard: [[{ text: 'Log in to Fyers', url: authUrl }]],
+			},
+		},
+	)
+	console.log('[Auth Bridge] 📤 Manual Ignition link sent to Telegram.')
+})
 
 // ─── FASTIFY SERVER: Catch the Fyers Redirect ──────────────
-fastify.get("/callback", async (request, reply) => {
-    const { auth_code, error } = request.query as { auth_code?: string; error?: string };
+fastify.get('/callback', async (request, reply) => {
+	const { auth_code, error } = request.query as { auth_code?: string; error?: string }
 
-    if (error) {
-        await bot.sendMessage(ENV.TELEGRAM_ADMIN_ID, `❌ *Auth Failed:* ${error}`, { parse_mode: "Markdown" });
-        return reply.status(400).send("Authentication failed. Check Telegram.");
-    }
+	if (error) {
+		await bot.sendMessage(ENV.TELEGRAM_ADMIN_ID, `❌ *Auth Failed:* ${error}`, {
+			parse_mode: 'Markdown',
+		})
+		return reply.status(400).send('Authentication failed. Check Telegram.')
+	}
 
-    if (auth_code) {
-        console.log("[Auth Bridge] 📥 Payload intercepted. Forging token...");
+	if (auth_code) {
+		console.log('[Auth Bridge] 📥 Payload intercepted. Forging token...')
 
-        try {
-            const response = await fyersApi.generate_access_token({
-                client_id: ENV.FYERS_APP_ID,
-                secret_key: ENV.FYERS_SECRET_ID,
-                auth_code: auth_code,
-            });
+		try {
+			const response = await fyersApi.generate_access_token({
+				client_id: ENV.FYERS_APP_ID,
+				secret_key: ENV.FYERS_SECRET_ID,
+				auth_code: auth_code,
+			})
 
-            if (response.s === "ok") {
-                fs.writeFileSync(TOKEN_PATH, response.access_token);
+			if (response.s === 'ok') {
+				fs.writeFileSync(TOKEN_PATH, response.access_token)
 
-                await bot.sendMessage(
-                    ENV.TELEGRAM_ADMIN_ID,
-                    `✅ *Token Forged Successfully*\n\nThe core engine is armed and mathematically synced. Ready for market open.`,
-                    { parse_mode: "Markdown" }
-                );
+				await bot.sendMessage(
+					ENV.TELEGRAM_ADMIN_ID,
+					`✅ *Token Forged Successfully*\n\nThe core engine is armed and mathematically synced. Ready for market open.`,
+					{ parse_mode: 'Markdown' },
+				)
 
-                console.log("[Auth Bridge] 🟢 Token written to disk. Shutting down bridge.");
-                reply.send("Handshake complete. You can close this window.");
+				console.log('[Auth Bridge] 🟢 Token written to disk. Shutting down bridge.')
+				reply.send('Handshake complete. You can close this window.')
 
-                // Clean shutdown
-                setTimeout(() => process.exit(0), 1000);
-            } else {
-                throw new Error(response.message || "Unknown Fyers API error");
-            }
-        } catch (err: any) {
-            console.error("[Auth Bridge] ❌ Token Generation Error:", err);
-            await bot.sendMessage(ENV.TELEGRAM_ADMIN_ID, `❌ *Error Forging Token:* ${err.message}`, { parse_mode: "Markdown" });
-            reply.status(500).send("Failed to generate token.");
-        }
-    } else {
-        reply.status(400).send("No auth_code provided.");
-    }
-});
+				// Clean shutdown
+				setTimeout(() => process.exit(0), 1000)
+			} else {
+				throw new Error(response.message || 'Unknown Fyers API error')
+			}
+		} catch (err: any) {
+			console.error('[Auth Bridge] ❌ Token Generation Error:', err)
+			await bot.sendMessage(ENV.TELEGRAM_ADMIN_ID, `❌ *Error Forging Token:* ${err.message}`, {
+				parse_mode: 'Markdown',
+			})
+			reply.status(500).send('Failed to generate token.')
+		}
+	} else {
+		reply.status(400).send('No auth_code provided.')
+	}
+})
 
-fastify.listen({ port: parseInt(ENV.PORT || "3000"), host: "0.0.0.0" }, (err) => {
-    if (err) {
-        console.error(err);
-        process.exit(1);
-    }
-});
-
+fastify.listen({ port: parseInt(ENV.PORT || '3000'), host: '0.0.0.0' }, (err) => {
+	if (err) {
+		console.error(err)
+		process.exit(1)
+	}
+})
 
 // import Fastify from 'fastify';
 // import fyersApi from 'fyers-api-v3';
