@@ -5,7 +5,7 @@ services:
     container_name: quant_redis
     restart: always
     ports:
-      - "6379:6379"
+      - '6379:6379'
 
   # ── Scheduler ─────────────────────────────────────────────────────────────
   # Always on. Owns the full daily lifecycle via cron + docker start/stop.
@@ -32,9 +32,9 @@ services:
       dockerfile: Dockerfile
     container_name: quant_auth
     command: npx tsx src/config/auth.ts
-    restart: "no"
+    restart: 'no'
     ports:
-      - "3000:3000"
+      - '3000:3000'
     volumes:
       - token_store:/app/token
       - /app/node_modules
@@ -61,10 +61,9 @@ services:
         echo '[Engine] Token found. Booting live engine.';
         npx tsx src/ingestion/websocket.ts
       "
-    restart: "no"
+    restart: 'no'
     volumes:
       - token_store:/app/token
-      - trade_logs:/app/logs
       - /app/node_modules
     env_file:
       - .env
@@ -74,7 +73,6 @@ services:
 volumes:
   token_store:
   scheduler_logs:
-  trade_logs:
 
 # services:
 #   redis_cache:
