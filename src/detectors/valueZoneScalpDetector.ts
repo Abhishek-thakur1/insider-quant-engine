@@ -7,7 +7,7 @@ import { getBestStrike } from "../utils/optionUtils.js";
 // ─── TUNABLE CONSTANTS ───────────────────────────────────────
 const CANDLE_DURATION_MS = 3 * 60 * 1000; // 3-minute candles to filter out 1-min noise
 const EMA_PERIOD = 21; // Institutional trend baseline
-const COOLDOWN_SECONDS = 7200; // 2 Hour Cooldown (Guarantees max 2-3 trades a day)
+const COOLDOWN_SECONDS = 3600;
 const MAX_RISK_POINTS = 25; // Reject if Stop Loss is wider than 25 index points
 // ─────────────────────────────────────────────────────────────
 
@@ -19,7 +19,7 @@ const getISTMinutes = (): number => {
 // Ignore first 45 minutes of the day to let the trend and VWAP establish
 const isActiveWindow = (): boolean => {
   const m = getISTMinutes();
-  return m >= 9 * 60 + 45 && m <= 15 * 60;
+  return m >= 9 * 60 + 30 && m <= 15 * 60;
 };
 
 interface Candle {
