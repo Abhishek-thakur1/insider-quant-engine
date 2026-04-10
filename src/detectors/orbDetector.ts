@@ -1,5 +1,5 @@
 // ============================================================
-//— Opening Range Breakout Detector
+// Opening Range Breakout Detector
 //
 // Logic:
 //   Builds TWO opening ranges simultaneously per symbol:
@@ -7,12 +7,6 @@
 //     - 30-min range: 9:15 → 9:45
 //   Fires on whichever breaks first with volume + VWAP confirmation.
 //   Once one fires, the other is discarded (cooldown kicks in).
-//
-// Why ORB works:
-//   The opening range captures the initial price discovery battle
-//   between bulls and bears. A breakout with volume means one side
-//   has decisively won. Institutions front-load orders at open —
-//   the range is their footprint.
 // ============================================================
 
 import { sendTelegramAlert } from '../workers/telegramWorker.js'
@@ -21,17 +15,17 @@ import { redisClient } from '../config/redis.js'
 import { getVwap, getMarketBias } from '../utils/vwapUtils.js'
 
 // ─── TUNABLE CONSTANTS ───────────────────────────────────────
-const RANGE_15_END_MIN = 9 * 60 + 30 // 9:30 AM IST
-const RANGE_30_END_MIN = 9 * 60 + 45 // 9:45 AM IST
-const TRADE_START_MIN = 9 * 60 + 30 // no alerts before 9:30
-const TRADE_END_MIN = 14 * 60 + 30 // no new entries after 2:30 PM
-const BREAKOUT_BUFFER = 1.002 // price must exceed range by 0.2% to confirm
-const BREAKDOWN_BUFFER = 0.998 // price must break below range by 0.2%
-const MIN_RANGE_PCT = 0.2 // ignore symbols with range < 0.2% (too tight)
-const MAX_RANGE_PCT = 3.0 // ignore symbols with range > 3% (too wild)
-const VOL_MULTIPLIER = 3 // breakout tick must be > 3× baseline avg vol
-const MIN_BLOCK_VALUE = 5_000_000 // ₹50L minimum block
-const COOLDOWN_SECONDS = 1800 // 30 min between alerts per symbol
+const RANGE_15_END_MIN = 9 * 60 + 30
+const RANGE_30_END_MIN = 9 * 60 + 45
+const TRADE_START_MIN = 9 * 60 + 30
+const TRADE_END_MIN = 14 * 60 + 30
+const BREAKOUT_BUFFER = 1.002
+const BREAKDOWN_BUFFER = 0.998
+const MIN_RANGE_PCT = 0.2
+const MAX_RANGE_PCT = 3.0
+const VOL_MULTIPLIER = 3
+const MIN_BLOCK_VALUE = 5_000_000
+const COOLDOWN_SECONDS = 1800
 // ─────────────────────────────────────────────────────────────
 
 const getISTMinutes = (): number => {
@@ -42,7 +36,7 @@ const getISTMinutes = (): number => {
 interface OrbRange {
 	high: number
 	low: number
-	volumes: number[] // tick volumes during range — used as baseline
+	volumes: number[]
 	fired: boolean
 }
 
@@ -50,13 +44,17 @@ export class OrbDetector implements IDetector {
 	public name = 'ORB Breakout'
 	public symbol: string
 
-	// Both ranges built simultaneously in memory
 	private range15: OrbRange | null = null
 	private range30: OrbRange | null = null
 
-	// Track whether ranges are still being built
-	private range15Locked = false // true once 9:30 passes
-	private range30Locked = false // true once 9:45 passes
+	private range15Locked = false
+	private range30Locked = false
+
+	//  Track whether we have already persisted the locked ranges to Redis.
+	// Without this flag, we'd re-write to Redis on every tick after locking — wasteful
+	// and also unnecessary since the range doesn't change once locked.
+	private range15Persisted = false
+	private range30Persisted = false
 
 	constructor(symbol: string) {
 		this.symbol = symbol
@@ -65,9 +63,8 @@ export class OrbDetector implements IDetector {
 	public async analyze(liveTick: TickData): Promise<void> {
 		const m = getISTMinutes()
 
-		// ── : Build opening ranges (9:15 → 9:45) ─────────────────
+		// ── Build opening ranges (9:15 → 9:45) ─────────────────────────────
 		if (m >= 9 * 60 + 15 && m < RANGE_30_END_MIN) {
-			// Build 15-min range until 9:30
 			if (m < RANGE_15_END_MIN) {
 				if (!this.range15) {
 					this.range15 = { high: liveTick.price, low: liveTick.price, volumes: [], fired: false }
@@ -75,30 +72,83 @@ export class OrbDetector implements IDetector {
 					this.range15.high = Math.max(this.range15.high, liveTick.price)
 					this.range15.low = Math.min(this.range15.low, liveTick.price)
 				}
-				this.range15.volumes.push(liveTick.volume)
+				// [FIX] Cap the volumes array to avoid unbounded memory growth.
+				// We only need enough samples to compute a reliable average —
+				// keeping the last 500 ticks is more than sufficient even for
+				// the most active stocks during the opening 15 minutes.
+				if (this.range15.volumes.length < 500) {
+					this.range15.volumes.push(liveTick.volume)
+				}
 			}
 
-			// Build 30-min range until 9:45
 			if (!this.range30) {
 				this.range30 = { high: liveTick.price, low: liveTick.price, volumes: [], fired: false }
 			} else {
 				this.range30.high = Math.max(this.range30.high, liveTick.price)
 				this.range30.low = Math.min(this.range30.low, liveTick.price)
 			}
-			this.range30.volumes.push(liveTick.volume)
+			// [FIX] Same cap for 30-min range volumes
+			if (this.range30.volumes.length < 1000) {
+				this.range30.volumes.push(liveTick.volume)
+			}
 
 			return
 		}
 
-		// ── Lock ranges once their windows close ──────────────────────────
+		// ── Lock ranges and PERSIST to Redis once their windows close ────────
 		if (m >= RANGE_15_END_MIN && !this.range15Locked) {
 			this.range15Locked = true
-		}
-		if (m >= RANGE_30_END_MIN && !this.range30Locked) {
-			this.range30Locked = true
+
+			// [FIX: CRITICAL — BUG] The original OrbDetector stored range15 and range30
+			// purely as in-memory class properties and never wrote them to Redis.
+			//
+			// LiquiditySweepDetector reads:
+			//   redisClient.get(`orb:15min:high:${this.symbol}`)
+			//   redisClient.get(`orb:15min:low:${this.symbol}`)
+			//
+			// Because these keys were never written, LiquiditySweepDetector ALWAYS got
+			// null back and stayed permanently in its early-return branch
+			// (this.morningHigh === 0). The detector was fully non-functional.
+			//
+			// [WHAT TO CHANGE]: Write the locked range to Redis here, once, when the
+			// range window closes. TTL is set to 8 hours — enough for the trading day.
+			if (this.range15) {
+				await redisClient
+					.multi()
+					.set(`orb:15min:high:${this.symbol}`, String(this.range15.high))
+					.set(`orb:15min:low:${this.symbol}`, String(this.range15.low))
+					.expire(`orb:15min:high:${this.symbol}`, 8 * 3600)
+					.expire(`orb:15min:low:${this.symbol}`, 8 * 3600)
+					.exec()
+				this.range15Persisted = true
+				console.log(
+					`[ORB] 📌 15min range locked & persisted for ${this.symbol}: ` +
+						`H:${this.range15.high} L:${this.range15.low}`,
+				)
+			}
 		}
 
-		// ── : Watch for breakouts ──────────────────────────────────
+		if (m >= RANGE_30_END_MIN && !this.range30Locked) {
+			this.range30Locked = true
+
+			// [FIX] Persist 30-min range to Redis as well
+			if (this.range30) {
+				await redisClient
+					.multi()
+					.set(`orb:30min:high:${this.symbol}`, String(this.range30.high))
+					.set(`orb:30min:low:${this.symbol}`, String(this.range30.low))
+					.expire(`orb:30min:high:${this.symbol}`, 8 * 3600)
+					.expire(`orb:30min:low:${this.symbol}`, 8 * 3600)
+					.exec()
+				this.range30Persisted = true
+				console.log(
+					`[ORB] 📌 30min range locked & persisted for ${this.symbol}: ` +
+						`H:${this.range30.high} L:${this.range30.low}`,
+				)
+			}
+		}
+
+		// ── Watch for breakouts ──────────────────────────────────────────────
 		if (m < TRADE_START_MIN || m > TRADE_END_MIN) return
 		if (!this.range15Locked && !this.range30Locked) return
 
@@ -111,8 +161,6 @@ export class OrbDetector implements IDetector {
 		const blockValue = liveTick.price * liveTick.volume
 		const isBlockSized = blockValue >= MIN_BLOCK_VALUE
 
-		// Try 15-min range first (tighter = higher probability)
-		// Fall back to 30-min range if 15-min hasn't fired
 		const ranges: Array<{ range: OrbRange; label: string }> = []
 		if (this.range15 && this.range15Locked && !this.range15.fired) {
 			ranges.push({ range: this.range15, label: '15min ORB' })
@@ -124,7 +172,6 @@ export class OrbDetector implements IDetector {
 		for (const { range, label } of ranges) {
 			const rangePct = ((range.high - range.low) / range.low) * 100
 
-			// Skip ranges that are too tight or too wild
 			if (rangePct < MIN_RANGE_PCT || rangePct > MAX_RANGE_PCT) continue
 
 			const avgVol =
@@ -134,9 +181,9 @@ export class OrbDetector implements IDetector {
 			const isVolumeConfirmed = avgVol > 0 && liveTick.volume > avgVol * VOL_MULTIPLIER
 
 			const rangeSize = range.high - range.low
-			const risk = rangeSize // SL = full range size
+			const risk = rangeSize
 
-			// ── LONG: Break above range high ─────────────────────────────
+			// ── LONG: Break above range high ─────────────────────────────────
 			if (
 				liveTick.price > range.high * BREAKOUT_BUFFER &&
 				isVolumeConfirmed &&
@@ -145,7 +192,7 @@ export class OrbDetector implements IDetector {
 				marketBias !== 'bearish'
 			) {
 				const entry = liveTick.price
-				const sl = Number(range.low.toFixed(2)) // SL below range low
+				const sl = Number(range.low.toFixed(2))
 				const target1 = Number((entry + risk * 1.5).toFixed(2))
 				const target2 = Number((entry + risk * 2.5).toFixed(2))
 
@@ -171,7 +218,7 @@ export class OrbDetector implements IDetector {
 				return
 			}
 
-			// ── SHORT: Break below range low ──────────────────────────────
+			// ── SHORT: Break below range low ──────────────────────────────────
 			if (
 				liveTick.price < range.low * BREAKDOWN_BUFFER &&
 				isVolumeConfirmed &&
@@ -180,7 +227,7 @@ export class OrbDetector implements IDetector {
 				marketBias !== 'bullish'
 			) {
 				const entry = liveTick.price
-				const sl = Number(range.high.toFixed(2)) // SL above range high
+				const sl = Number(range.high.toFixed(2))
 				const target1 = Number((entry - risk * 1.5).toFixed(2))
 				const target2 = Number((entry - risk * 2.5).toFixed(2))
 
@@ -206,7 +253,5 @@ export class OrbDetector implements IDetector {
 				return
 			}
 		}
-
-		return
 	}
 }

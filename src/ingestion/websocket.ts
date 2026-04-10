@@ -6,7 +6,7 @@ import { ENV } from '../config/env.js'
 import { bootRedis, redisClient } from '../config/redis.js'
 import { VcpDetector } from '../detectors/vcpDetector.js'
 import { VolumeSpikeDetector } from '../detectors/volumeSpikeDetector.js'
-import { updateVwap, updateNiftyBias, resetVwap } from '../utils/vwapUtils.js'
+import { updateVwap, updateNiftyBias, resetVwap, warnIfVwapMissing } from '../utils/vwapUtils.js'
 import type { IDetector } from '../core/types.js'
 import { seedHistoricalVwap } from './vwapSeeder.js'
 import { CandleBreakoutDetector } from '../detectors/candleBreakoutDetector.js'
@@ -18,26 +18,22 @@ import { LiquidityTrapDetector } from '../detectors/liquidityTrapDetector.js'
 import { VwapCrossoverDetector } from '../detectors/vwapCrossoverDetector.js'
 import { ValueZoneScalpDetector } from '../detectors/valueZoneScalpDetector.js'
 import { LiquiditySweepDetector } from '../detectors/liquiditySweepDetector.js'
+
 const fyersApi = new fyers.fyersModel({ path: './', enableLogging: false })
-// const TOKEN_PATH = path.resolve(process.cwd(), "access_token.txt");
 const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt')
 const WATCHLIST_PATH = path.resolve(process.cwd(), 'watchlist.json')
 
-//  Nifty drives the market bias filter used by both detectors.
-// Every Nifty tick updates `market:nifty:bias` in Redis.
 const NIFTY_SYMBOL = 'NSE:NIFTY50-INDEX'
 
 const strategyRouter = new Map<string, IDetector[]>()
 const previousVolumeTracker = new Map<string, number>()
 
-// Nifty options detector — singleton, tracks index directly
 const niftyOptionsDetector = new NiftyOptionsDetector()
 const vwapPullbackDetector = new VwapPullbackDetector()
 const vwapCrossoverDetector = new VwapCrossoverDetector()
 const valueZoneScalpDetector = new ValueZoneScalpDetector()
 const liquiditySweepDetector = new LiquiditySweepDetector()
 
-// Track last ATM to know when to resubscribe option strikes
 let lastSubscribedNiftySpot = 0
 let subscribedOptionSymbols: string[] = []
 
@@ -51,14 +47,15 @@ export const startLiveEngine = async () => {
 
 	await bootRedis()
 	await seedHistoricalVwap()
-	const accessToken = fs.readFileSync(TOKEN_PATH, 'utf8').trim()
-	const watchlist: string[] = JSON.parse(fs.readFileSync(WATCHLIST_PATH, 'utf8'))
 
+	const watchlist: string[] = JSON.parse(fs.readFileSync(WATCHLIST_PATH, 'utf8'))
 	const activeUniverse = watchlist.slice(0, 100)
+	await warnIfVwapMissing(activeUniverse)
+
+	const accessToken = fs.readFileSync(TOKEN_PATH, 'utf8').trim()
 
 	console.log(`[Engine] ⚙️  Initializing detectors for ${activeUniverse.length} equities...`)
 
-	//  Boot cleanup now covers all Redis keys used by the new logic
 	await Promise.all(
 		activeUniverse.map(async (symbol) => {
 			strategyRouter.set(symbol, [
@@ -71,24 +68,39 @@ export const startLiveEngine = async () => {
 
 			await Promise.all([
 				redisClient.del(`memory:vcp:${symbol}`),
-				redisClient.del(`baseline:vcp:${symbol}`), // VCP volume baseline
+				redisClient.del(`baseline:vcp:${symbol}`),
 				redisClient.del(`memory:volume:${symbol}`),
 				redisClient.del(`cooldown:volume:${symbol}`),
-				redisClient.del(`cooldown:vcp:${symbol}`), // VCP cooldown was missing
+				redisClient.del(`cooldown:vcp:${symbol}`),
 				redisClient.del(`candles:${symbol}`),
 				redisClient.del(`cooldown:candle:${symbol}`),
 				redisClient.del(`cooldown:orb:${symbol}`),
-				// resetVwap(symbol), //  — per-symbol VWAP state
 				redisClient.del(`trap_candles:${symbol}`),
 				redisClient.del(`cooldown:trap:${symbol}`),
+
+				// Without this, a symbol armed at EOD would re-arm tomorrow
+				// before the pattern re-establishes.
+				redisClient.del(`armed:vcp:${symbol}`),
+				// introduced by the fixed VolumeSpikeDetector.
+				redisClient.del(`vol_baseline_candles:${symbol}`),
+				// [FIX] Clean up ORB keys persisted by the fixed OrbDetector
+				redisClient.del(`orb:15min:high:${symbol}`),
+				redisClient.del(`orb:15min:low:${symbol}`),
+				redisClient.del(`orb:30min:high:${symbol}`),
+				redisClient.del(`orb:30min:low:${symbol}`),
 			])
 		}),
 	)
 
-	//Reset Nifty state on boot — stale yesterday bias must not persist
-	//   await resetVwap(NIFTY_SYMBOL);
 	await redisClient.del('market:nifty:bias')
 	await redisClient.del('cooldown:nifty_options')
+	// [FIX] Clean up Nifty-level cooldowns and ORB keys on boot
+	await redisClient.del('cooldown:nifty_vwap_pullback')
+	await redisClient.del('cooldown:nifty_vwap_crossover')
+	await redisClient.del('cooldown:valuezone')
+	await redisClient.del(`cooldown:liquidity_sweep:${NIFTY_SYMBOL}`)
+	await redisClient.del(`orb:15min:high:${NIFTY_SYMBOL}`)
+	await redisClient.del(`orb:15min:low:${NIFTY_SYMBOL}`)
 	console.log(`[Engine] 🗺️  Market bias tracking initialized (${NIFTY_SYMBOL})`)
 
 	const cleanAppId = ENV.FYERS_APP_ID.replace(/\s/g, '')
@@ -96,10 +108,9 @@ export const startLiveEngine = async () => {
 	const wsToken = `${cleanAppId}:${cleanToken}`
 
 	const skt = fyersDataSocket.getInstance(wsToken, './logs', false)
+
 	skt.on('connect', () => {
 		console.log('[Firehose] 🟢 Connected to Fyers Data Servers!')
-		// Subscribe to Nifty alongside the equity universe
-		// skt.subscribe([...activeUniverse, NIFTY_SYMBOL]);
 		const symbolsToSubscribe = [...activeUniverse, NIFTY_SYMBOL, ...subscribedOptionSymbols]
 		skt.subscribe(symbolsToSubscribe)
 		console.log(`[Firehose] ✅ Subscribed: ${activeUniverse.length} equities + ${NIFTY_SYMBOL}`)
@@ -126,8 +137,6 @@ export const startLiveEngine = async () => {
 			ticks.map(async (tick) => {
 				if (!tick?.symbol || !tick?.ltp) return
 
-				// Nifty fast path — update VWAP + bias, then return.
-				// Do NOT route Nifty through the strategy detector. It's an index.
 				if (tick.symbol === NIFTY_SYMBOL) {
 					const niftyVwap = await updateVwap(NIFTY_SYMBOL, tick.ltp, 1)
 					await updateNiftyBias(tick.ltp, niftyVwap)
@@ -138,31 +147,16 @@ export const startLiveEngine = async () => {
 						timestamp: Date.now(),
 					}
 
-					// Route Nifty ticks to options scalping detector
-
-					//   await niftyOptionsDetector.analyze(liveTick);
-					//   await vwapPullbackDetector.analyze(liveTick);
-					//   await vwapCrossoverDetector.analyze(liveTick);
 					await valueZoneScalpDetector.analyze(liveTick)
 					await liquiditySweepDetector.analyze(liveTick)
 
-					// Subscribe option strikes on first Nifty tick or when ATM shifts 2+ strikes
-					// if (lastSubscribedNiftySpot === 0 || hasATMShifted(tick.ltp, lastSubscribedNiftySpot)) {
-					//     const newOptionSymbols = buildOptionUniverse(tick.ltp);
-					//     skt.subscribe(newOptionSymbols);
-					//     subscribedOptionSymbols = newOptionSymbols;
-					//     lastSubscribedNiftySpot = tick.ltp;
-					//     console.log(`[Options] 🔄 Subscribed ${newOptionSymbols.length} option strikes around ATM ${Math.round(tick.ltp / 50) * 50}`);
-					// }
 					if (lastSubscribedNiftySpot === 0 || hasATMShifted(tick.ltp, lastSubscribedNiftySpot)) {
 						const newOptionSymbols = buildOptionUniverse(tick.ltp)
 
-						// 1. Unsubscribe from old options to prevent hitting Fyers max-symbol limit
 						if (subscribedOptionSymbols.length > 0) {
 							skt.unsubscribe(subscribedOptionSymbols)
 						}
 
-						// 2. Subscribe to new options
 						skt.subscribe(newOptionSymbols)
 						subscribedOptionSymbols = newOptionSymbols
 						lastSubscribedNiftySpot = tick.ltp
@@ -174,7 +168,6 @@ export const startLiveEngine = async () => {
 					return
 				}
 
-				// Route option ticks to the tick store for best strike selection
 				if (tick.symbol.includes('CE') || tick.symbol.includes('PE')) {
 					updateOptionTick(tick.symbol, {
 						ltp: tick.ltp,
@@ -191,14 +184,12 @@ export const startLiveEngine = async () => {
 				previousVolumeTracker.set(tick.symbol, cumulativeVol)
 
 				if (actualTickVol > 0) {
-					//  timestamp added — VCP time gate reads this field
 					const liveTick = {
 						price: tick.ltp,
 						volume: actualTickVol,
-						timestamp: Date.now(), // ← DO NOT REMOVE — VCP time gate depends on this
+						timestamp: Date.now(),
 					}
 
-					// Update VWAP BEFORE strategies run so detectors read a current value
 					await updateVwap(tick.symbol, liveTick.price, liveTick.volume)
 
 					const strategies = strategyRouter.get(tick.symbol)

@@ -1,11 +1,6 @@
 // ============================================================
-//// Detects accumulation/distribution boxes on 1-min candle data
+// Detects accumulation/distribution boxes on 1-min candle data
 // then fires when price breaks out with explosive volume.
-//
-// Why candles and not ticks:
-//   Raw ticks can't tell you "price was flat for 45 minutes".
-//   A 1-min candle collapses all ticks in that minute into
-//   O/H/L/C/V — from that consolidation over time can be measured.
 // ============================================================
 
 import { sendTelegramAlert } from '../workers/telegramWorker.js'
@@ -14,14 +9,23 @@ import { redisClient } from '../config/redis.js'
 import { getVwap, getMarketBias } from '../utils/vwapUtils.js'
 
 // ─── TUNABLE CONSTANTS ───────────────────────────────────────
-const CANDLE_DURATION_MS = 60 * 1000 // 1-minute candles
-const CONSOLIDATION_CANDLES = 5 // need 5 quiet candles = 5 min box
-const MAX_BOX_SPREAD_PCT = 0.8 // box range < 0.8% = tight
-const BREAKOUT_VOL_MULTIPLIER = 7 // breakout candle > 7× box avg vol
-const BREAKDOWN_VOL_MULTIPLIER = 7
-const MIN_BREAKOUT_BODY_PCT = 0.3 // candle body must be > 0.3% (not a doji)
-const COOLDOWN_SECONDS = 1800 // 30 min between alerts
-const MIN_BLOCK_VALUE = 10_000_000 // ₹1Cr minimum candle value
+const CANDLE_DURATION_MS = 60 * 1000
+const CONSOLIDATION_CANDLES = 5
+const MAX_BOX_SPREAD_PCT = 0.8
+const BREAKOUT_VOL_MULTIPLIER = 7 // used for LONG breakouts
+//  BREAKDOWN_VOL_MULTIPLIER was defined but never used — the SHORT
+// breakdown path was using BREAKOUT_VOL_MULTIPLIER instead. This meant both
+// directions used the same threshold even though the constants implied they
+// could be tuned independently.
+//
+// [WHAT TO CHANGE]: The SHORT breakdown now correctly references
+// BREAKDOWN_VOL_MULTIPLIER. Both are set to 7 so behavior is currently
+// identical — but they can now be tuned independently without risk of one
+// silently being ignored.
+const BREAKDOWN_VOL_MULTIPLIER = 7 // [FIX] now actually used for SHORT breakdowns
+const MIN_BREAKOUT_BODY_PCT = 0.3
+const COOLDOWN_SECONDS = 1800
+const MIN_BLOCK_VALUE = 10_000_000
 // ─────────────────────────────────────────────────────────────
 
 interface Candle {
@@ -33,7 +37,6 @@ interface Candle {
 	startTs: number
 }
 
-// IST guard
 const getISTMinutes = (): number => {
 	const d = new Date(Date.now() + 5.5 * 60 * 60 * 1000)
 	return d.getUTCHours() * 60 + d.getUTCMinutes()
@@ -47,7 +50,6 @@ export class CandleBreakoutDetector implements IDetector {
 	public name = 'Candle Accumulation Breakout'
 	public symbol: string
 
-	// In-memory current candle being built from ticks
 	private currentCandle: Candle | null = null
 
 	constructor(symbol: string) {
@@ -57,11 +59,9 @@ export class CandleBreakoutDetector implements IDetector {
 	public async analyze(liveTick: TickData): Promise<void> {
 		if (!isMarketHours()) return
 
-		// ── Build current 1-min candle from ticks ────
 		const now = liveTick.timestamp
 
 		if (!this.currentCandle) {
-			// Start a new candle
 			this.currentCandle = {
 				open: liveTick.price,
 				high: liveTick.price,
@@ -76,7 +76,6 @@ export class CandleBreakoutDetector implements IDetector {
 		const candleAge = now - this.currentCandle.startTs
 
 		if (candleAge < CANDLE_DURATION_MS) {
-			// Still in current candle — update OHLCV
 			this.currentCandle.high = Math.max(this.currentCandle.high, liveTick.price)
 			this.currentCandle.low = Math.min(this.currentCandle.low, liveTick.price)
 			this.currentCandle.close = liveTick.price
@@ -84,10 +83,8 @@ export class CandleBreakoutDetector implements IDetector {
 			return
 		}
 
-		// ── Candle is complete — push to Redis ───────
 		const completedCandle = { ...this.currentCandle }
 
-		// Start fresh candle
 		this.currentCandle = {
 			open: liveTick.price,
 			high: liveTick.price,
@@ -110,7 +107,6 @@ export class CandleBreakoutDetector implements IDetector {
 			return
 		}
 
-		// ──  Analyse the box ───────────────────────────
 		const rawCandles = await redisClient.lRange(candleKey, 0, -1)
 		const history: Candle[] = rawCandles.map((c) => JSON.parse(c) as Candle)
 
@@ -129,20 +125,20 @@ export class CandleBreakoutDetector implements IDetector {
 
 				const candleValue = completedCandle.close * completedCandle.volume
 				const isBlockSized = candleValue >= MIN_BLOCK_VALUE
-				const isVolumeExplosion = completedCandle.volume > boxAvgVol * BREAKOUT_VOL_MULTIPLIER
 				const bodyPct =
 					(Math.abs(completedCandle.close - completedCandle.open) / completedCandle.open) * 100
-				const isRealBody = bodyPct >= MIN_BREAKOUT_BODY_PCT // not a doji
+				const isRealBody = bodyPct >= MIN_BREAKOUT_BODY_PCT
 
-				// ── LONG: Bullish breakout candle ─────────────
-				// Close above box high + bullish candle body + above VWAP
+				// ── LONG: Bullish breakout candle ──────────────────────────────
+				const isVolumeExplosionLong = completedCandle.volume > boxAvgVol * BREAKOUT_VOL_MULTIPLIER // BREAKOUT_VOL_MULTIPLIER for LONG
+
 				const isBullishBreakout =
 					completedCandle.close > boxHigh &&
-					completedCandle.close > completedCandle.open && // green candle
+					completedCandle.close > completedCandle.open &&
 					(vwap !== null ? completedCandle.close > vwap : true) &&
 					marketBias !== 'bearish'
 
-				if (isBlockSized && isVolumeExplosion && isRealBody && isBullishBreakout) {
+				if (isBlockSized && isVolumeExplosionLong && isRealBody && isBullishBreakout) {
 					console.log(`\n🚀 [CANDLE BREAKOUT LONG] ${this.symbol}`)
 					console.log(
 						`   Box: ₹${boxLow.toFixed(2)}–₹${boxHigh.toFixed(2)} | Spread: ${boxSpread.toFixed(2)}%`,
@@ -175,15 +171,17 @@ export class CandleBreakoutDetector implements IDetector {
 					return
 				}
 
-				// ── SHORT: Bearish breakdown candle ──────────
-				// Close below box low + bearish candle body + below VWAP
+				// ── SHORT: Bearish breakdown candle ────────────────────────────
+				// [FIX] Use BREAKDOWN_VOL_MULTIPLIER here, not BREAKOUT_VOL_MULTIPLIER
+				const isVolumeExplosionShort = completedCandle.volume > boxAvgVol * BREAKDOWN_VOL_MULTIPLIER // [FIX] was BREAKOUT_VOL_MULTIPLIER
+
 				const isBearishBreakdown =
 					completedCandle.close < boxLow &&
-					completedCandle.close < completedCandle.open && // red candle
+					completedCandle.close < completedCandle.open &&
 					(vwap !== null ? completedCandle.close < vwap : true) &&
 					marketBias !== 'bullish'
 
-				if (isBlockSized && isVolumeExplosion && isRealBody && isBearishBreakdown) {
+				if (isBlockSized && isVolumeExplosionShort && isRealBody && isBearishBreakdown) {
 					console.log(`\n💥 [CANDLE BREAKDOWN SHORT] ${this.symbol}`)
 
 					sendTelegramAlert({
@@ -209,7 +207,6 @@ export class CandleBreakoutDetector implements IDetector {
 			}
 		}
 
-		// Write completed candle to history
 		await redisClient
 			.multi()
 			.lPush(candleKey, JSON.stringify(completedCandle))

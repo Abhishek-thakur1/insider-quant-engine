@@ -3,15 +3,15 @@ import type { IDetector, TickData } from '../core/types.js'
 import { redisClient } from '../config/redis.js'
 import { getVwap, getMarketBias } from '../utils/vwapUtils.js'
 
-const BOX_MEMORY_LENGTH = 20 // ticks to define the consolidation box
-const BASELINE_MEMORY_LENGTH = 100 // ticks for long-term volume reference (~15 min on avg stock)
-const MIN_CONSOLIDATION_MS = 5 * 60 * 1000 // box must be at least 5 minutes old
-const MAX_SPREAD_PCT = 0.5 // box price range must be < 0.5%
-const VOLUME_CONTRACTION_RATIO = 0.7 // box avg vol must be < 70% of baseline to confirm contraction
-const BREAKOUT_VOL_MULTIPLIER = 5 // breakout tick must be > 5× baseline avg vol
-const BREAKOUT_PRICE_BUFFER = 1.001 // price must exceed boxHigh by 0.1% to confirm break
-const FAILURE_PRICE_BUFFER = 0.999 // price below boxLow × 0.999 = pattern failed
-const COOLDOWN_SECONDS = 1800 // 30 min between alerts for same symbol
+const BOX_MEMORY_LENGTH = 20
+const BASELINE_MEMORY_LENGTH = 100
+const MIN_CONSOLIDATION_MS = 5 * 60 * 1000
+const MAX_SPREAD_PCT = 0.5
+const VOLUME_CONTRACTION_RATIO = 0.7
+const BREAKOUT_VOL_MULTIPLIER = 5
+const BREAKOUT_PRICE_BUFFER = 1.001
+const FAILURE_PRICE_BUFFER = 0.999
+const COOLDOWN_SECONDS = 1800
 const MIN_BLOCK_VALUE = 5_000_000
 
 const getISTMinutes = (): number => {
@@ -28,10 +28,42 @@ export class VcpDetector implements IDetector {
 	public name: string = 'VCP Institutional Breakout'
 	public symbol: string
 
-	private isArmed: boolean = false
+	// [FIX: RESILIENCE] The original `isArmed` was a plain in-memory boolean.
+	// If the process crashed while a symbol was armed (coiled, waiting for breakout),
+	// the state was lost — the detector would restart as disarmed and miss the breakout.
+	//
+	// [WHAT TO CHANGE]: `isArmed` is now persisted in Redis under
+	// `armed:vcp:{symbol}`. We read it on every analyze() call and write it
+	// on every state transition. The websocket.ts boot cleanup already deletes
+	// this key on engine start (it deletes all vcp keys), so stale armed
+	// state from the previous day is automatically cleared.
+	//
+	// The in-memory `_armedCache` is kept as a local cache to avoid a Redis
+	// read on every single tick when we already know the state — we only
+	// re-read from Redis on the first tick after construction.
+	private _armedCache: boolean | null = null // null = "not yet read from Redis"
 
 	constructor(symbol: string) {
 		this.symbol = symbol
+	}
+
+	// [FIX] Helper: get isArmed from Redis (with in-memory cache)
+	private async getIsArmed(): Promise<boolean> {
+		if (this._armedCache !== null) return this._armedCache
+		const raw = await redisClient.get(`armed:vcp:${this.symbol}`)
+		this._armedCache = raw === 'true'
+		return this._armedCache
+	}
+
+	// [FIX] Helper: set isArmed in both Redis and local cache
+	private async setIsArmed(value: boolean): Promise<void> {
+		this._armedCache = value
+		if (value) {
+			// TTL of 8 hours — clears automatically at end of trading day
+			await redisClient.setEx(`armed:vcp:${this.symbol}`, 8 * 3600, 'true')
+		} else {
+			await redisClient.del(`armed:vcp:${this.symbol}`)
+		}
 	}
 
 	public async analyze(liveTick: TickData): Promise<void> {
@@ -79,11 +111,12 @@ export class VcpDetector implements IDetector {
 
 			const isVolumeContracting = boxAvgVol < baselineAvgVol * VOLUME_CONTRACTION_RATIO
 
-			// ── ARMED STATE: Watch for the breakout ─────────────────────────
-			if (this.isArmed) {
-				const isBreakingResistance = liveTick.price > boxHigh * BREAKOUT_PRICE_BUFFER
+			// [FIX] Read armed state from Redis (with cache)
+			const isArmed = await this.getIsArmed()
 
-				// Box volume is suppressed by design — using it as denominator inflates the ratio
+			// ── ARMED STATE: Watch for the breakout ───────────────────────────
+			if (isArmed) {
+				const isBreakingResistance = liveTick.price > boxHigh * BREAKOUT_PRICE_BUFFER
 				const isVolumeExplosion = liveTick.volume > baselineAvgVol * BREAKOUT_VOL_MULTIPLIER
 				const blockValue = liveTick.price * liveTick.volume
 				const isInstitutionalSz = blockValue >= MIN_BLOCK_VALUE
@@ -119,7 +152,6 @@ export class VcpDetector implements IDetector {
 						symbol: this.symbol,
 						price: liveTick.price,
 						side: 'LONG',
-
 						percentageChange: Number((((liveTick.price - boxLow) / boxLow) * 100).toFixed(2)),
 						volumeSpikeRatio: Number((liveTick.volume / baselineAvgVol).toFixed(1)),
 						trigger: `📦 VCP | Box ${(consolidationAge / 60000).toFixed(1)}min | Vol ${((boxAvgVol / baselineAvgVol) * 100).toFixed(0)}% contracted | ${(liveTick.volume / baselineAvgVol).toFixed(1)}× burst | ${vwap ? `VWAP ₹${vwap.toFixed(2)}` : ''}`,
@@ -127,8 +159,8 @@ export class VcpDetector implements IDetector {
 						avgPrice: prices.reduce((a, b) => a + b, 0) / prices.length,
 					})
 
-					this.isArmed = false
-
+					// [FIX] Persist disarmed state back to Redis
+					await this.setIsArmed(false)
 					await redisClient.multi().del(boxKey).setEx(cooldownKey, COOLDOWN_SECONDS, 'true').exec()
 					return
 				}
@@ -152,27 +184,27 @@ export class VcpDetector implements IDetector {
 						avgPrice: prices.reduce((a, b) => a + b, 0) / prices.length,
 					})
 
-					this.isArmed = false
+					// [FIX] Persist disarmed state
+					await this.setIsArmed(false)
 					await redisClient.multi().del(boxKey).setEx(cooldownKey, COOLDOWN_SECONDS, 'true').exec()
 					return
 				}
 
-				// If price breaks below box support, the setup has failed. Clear and reset.
 				if (liveTick.price < boxLow * FAILURE_PRICE_BUFFER) {
-					this.isArmed = false
+					// [FIX] Persist disarmed state
+					await this.setIsArmed(false)
 					console.log(
 						`\n❌ [VCP] ${this.symbol} — Pattern FAILED. Price broke below box. Clearing.`,
 					)
 					await redisClient.del(boxKey)
-					// Fall through to write new tick to fresh box
 				}
 			}
 
-			// ── DISARMED STATE: Scan for arm condition ───────────────────────
-			// Now requires ALL THREE: tight spread + time + volume contraction
-			if (!this.isArmed) {
+			// ── DISARMED STATE: Scan for arm condition ────────────────────────
+			if (!isArmed) {
 				if (spreadPercent < MAX_SPREAD_PCT && isOldEnough && isVolumeContracting) {
-					this.isArmed = true
+					// [FIX] Persist armed state to Redis
+					await this.setIsArmed(true)
 					console.log(`\n🔒 [VCP] ${this.symbol} — COILED & ARMED`)
 					console.log(
 						`   Spread: ${spreadPercent.toFixed(2)}% | Age: ${(consolidationAge / 60000).toFixed(1)}min`,
@@ -180,8 +212,9 @@ export class VcpDetector implements IDetector {
 					console.log(
 						`   Vol: ${boxAvgVol.toFixed(0)} avg = ${((boxAvgVol / baselineAvgVol) * 100).toFixed(0)}% of baseline ← Contracting ✅`,
 					)
-				} else if (spreadPercent >= MAX_SPREAD_PCT && this.isArmed) {
-					this.isArmed = false
+				} else if (spreadPercent >= MAX_SPREAD_PCT && isArmed) {
+					// [FIX] Persist disarmed state
+					await this.setIsArmed(false)
 					console.log(`\n🔓 [VCP] ${this.symbol} — Spread widened. Disarming.`)
 				}
 			}
