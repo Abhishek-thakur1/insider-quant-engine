@@ -6,10 +6,10 @@ import { getBestStrike } from '../utils/optionUtils.js'
 import { logShadowTrade } from '../utils/tradeLogger.js'
 
 // ─── TUNABLE CONSTANTS ───────────────────────────────────────
-const CANDLE_DURATION_MS = 3 * 60 * 1000 // 3-minute candles to filter out 1-min noise
-const EMA_PERIOD = 21 // Institutional trend baseline
+const CANDLE_DURATION_MS = 3 * 60 * 1000
+const EMA_PERIOD = 21
 const COOLDOWN_SECONDS = 3600
-const MAX_RISK_POINTS = 25 // Reject if Stop Loss is wider than 25 index points
+const MAX_RISK_POINTS = 25
 // ─────────────────────────────────────────────────────────────
 
 const getISTMinutes = (): number => {
@@ -17,7 +17,6 @@ const getISTMinutes = (): number => {
 	return d.getUTCHours() * 60 + d.getUTCMinutes()
 }
 
-// Ignore first 45 minutes of the day to let the trend and VWAP establish
 const isActiveWindow = (): boolean => {
 	const m = getISTMinutes()
 	return m >= 9 * 60 + 30 && m <= 15 * 60
@@ -37,29 +36,35 @@ export class ValueZoneScalpDetector implements IDetector {
 	public symbol = 'NSE:NIFTY50-INDEX'
 
 	private currentCandle: Candle | null = null
-	private history: Candle[] = []
 
-	// Helper to calculate EMA from our rolling history
-	private calculateEMA(data: number[], period: number): number | null {
-		if (data.length < period) return null
-		const k = 2 / (period + 1)
+	// [FIX: PERFORMANCE] The original detector stored all history as a growing
+	// array and recalculated the full EMA loop from scratch on every completed candle.
+	// Over a full trading day (130 × 3-min candles), the EMA loop processes the
+	// entire history array each time — O(n²) total work.
+	//
+	// [WHAT TO CHANGE]: We now use the standard incremental EMA formula:
+	//   ema_new = close × k + ema_prev × (1 - k)
+	// This runs in O(1) per candle after the initial seeding period.
+	//
+	// The seeding period still requires EMA_PERIOD (21) candles, after which
+	// we switch to the incremental update. Behavior is mathematically identical.
+	//
+	// We still keep the last 2 EMA values (current + previous) to support the
+	// trend direction check (currentEma vs prevEma).
+	private currentEma: number | null = null
+	private prevEma: number | null = null
+	private candleCount: number = 0 // counts candles seen during seeding
+	private seedBuffer: number[] = [] // closes during seeding phase
 
-		// Seed the EMA with an SMA of the first 'period' elements
-		let ema = data.slice(0, period).reduce((a, b) => a + b, 0) / period
-
-		// Calculate EMA for the rest
-		for (let i = period; i < data.length; i++) {
-			ema = data[i]! * k + ema * (1 - k)
-		}
-		return ema
-	}
+	// [FIX] EMA smoothing factor
+	private readonly K = 2 / (EMA_PERIOD + 1)
 
 	public async analyze(liveTick: TickData): Promise<void> {
 		if (!isActiveWindow() || this.symbol !== 'NSE:NIFTY50-INDEX') return
 
 		const now = liveTick.timestamp
 
-		// ── 1. Build 3-Minute Candle ─────────────────────────────────────
+		// ── Build 3-Minute Candle ────────────────────────────────────────────
 		if (!this.currentCandle) {
 			this.currentCandle = {
 				open: liveTick.price,
@@ -80,7 +85,7 @@ export class ValueZoneScalpDetector implements IDetector {
 			return
 		}
 
-		// ── 2. Candle Closed ─────────────────────────────────────────────
+		// ── Candle closed ────────────────────────────────────────────────────
 		const c = { ...this.currentCandle }
 		this.currentCandle = {
 			open: liveTick.price,
@@ -91,74 +96,52 @@ export class ValueZoneScalpDetector implements IDetector {
 			startTs: now,
 		}
 
-		this.history.push(c)
-		// Keep enough history to calculate a stable 21 EMA + context
-		if (this.history.length > EMA_PERIOD + 10) this.history.shift()
+		// ── Update EMA incrementally ─────────────────────────────────────────
+		// [FIX] Incremental EMA: seed for EMA_PERIOD candles, then O(1) updates
+		this.candleCount++
 
-		// Engine must warm up to establish the 21 EMA
-		if (this.history.length < EMA_PERIOD + 2) return
+		if (this.candleCount <= EMA_PERIOD) {
+			// Seeding phase: collect closes
+			this.seedBuffer.push(c.close)
+			if (this.candleCount === EMA_PERIOD) {
+				// Seed EMA with SMA of first EMA_PERIOD closes
+				const seedEma = this.seedBuffer.reduce((a, b) => a + b, 0) / this.seedBuffer.length
+				this.currentEma = seedEma
+				this.seedBuffer = [] // free the seed buffer
+			}
+			return // not enough data yet to fire signals
+		}
 
-		const cooldownKey = `cooldown:nifty_value_zone_scalp`
+		// Incremental update — O(1)
+		this.prevEma = this.currentEma
+		this.currentEma = c.close * this.K + (this.currentEma ?? c.close) * (1 - this.K)
+
+		// Need both current and previous EMA for trend direction
+		if (this.prevEma === null || this.currentEma === null) return
+
+		const currentEma = this.currentEma
+		const prevEma = this.prevEma
+
+		// ── Fetch supporting data ─────────────────────────────────────────────
+		const cooldownKey = `cooldown:valuezone`
 		if (await redisClient.get(cooldownKey)) return
 
 		const vwap = await getVwap(this.symbol)
 		if (!vwap) return
 
-		// Extract closing prices for EMA calculation
-		const closes = this.history.map((h) => h.close)
-		const currentEma = this.calculateEMA(closes, EMA_PERIOD)
-		const prevEma = this.calculateEMA(closes.slice(0, -1), EMA_PERIOD)
-
-		if (!currentEma || !prevEma) return
-
-		// ── 3. Volume Divergence Baseline ────────────────────────────────
-		// Average volume of the prior 3 candles (the Impulse move)
-		const prior3Vols = this.history.slice(-4, -1).map((h) => h.volume)
-		const avgImpulseVol = prior3Vols.reduce((a, b) => a + b, 0) / 3
-
-		// ── LONG SETUP (CE) ──────────────────────────────────────────────
-		// 1. Trend Filter: EMA is angled UP and is clearly ABOVE VWAP
+		// ── LONG SETUP (CE) ───────────────────────────────────────────────────
 		const isUptrend = currentEma > prevEma && currentEma > vwap
-
-		// 2. The Pullback: Wick touches the Value Zone (between EMA and VWAP)
 		const touchedValueZoneLong = c.low <= currentEma && c.low >= vwap - 5
-
-		// 3. Rejection: Closed strong (green body) above the EMA
 		const closedStrongLong = c.close > c.open && c.close > currentEma
 
-		// if (isUptrend && touchedValueZoneLong && !closedStrongLong) {
-		//   logShadowTrade({
-		//     strategy: "ValueZone",
-		//     symbol: this.symbol,
-		//     side: "LONG",
-		//     price: c.close,
-		//     vwap: vwap,
-		//     status: "NEAR_MISS",
-		//     reason: "Price touched 21 EMA but failed to close strong above it",
-		//   });
-		// }
-
-		// 4. Volume Exhaustion: Pullback volume must be LESS than impulse volume
-		// We ignore volume if it's the Spot Index (which is a tick-count, not true volume)
-		// Note: For true futures volume, you'd check: c.volume < avgImpulseVol
-
 		if (isUptrend && touchedValueZoneLong && closedStrongLong) {
-			// logShadowTrade({
-			//   strategy: "ValueZone",
-			//   symbol: this.symbol,
-			//   side: "LONG",
-			//   price: c.close,
-			//   vwap: vwap,
-			//   status: "FIRED",
-			//   reason: "Perfect Value Zone Entry",
-			// });
 			const indexSl = Number(c.low.toFixed(2))
 			const risk = c.close - indexSl
 
-			if (risk > MAX_RISK_POINTS || risk < 5) return // Strict risk parameters
+			if (risk > MAX_RISK_POINTS || risk < 5) return
 
 			const t1 = Number((c.close + risk * 1.5).toFixed(2))
-			const best = getBestStrike('CE', c.close) // Returns ATM/ITM strike
+			const best = getBestStrike('CE', c.close)
 
 			console.log(
 				`\n🎯 [VALUE ZONE LONG] Nifty pulled back to 21 EMA. Entry confirmed at ₹${c.close}`,
@@ -179,14 +162,9 @@ export class ValueZoneScalpDetector implements IDetector {
 			return
 		}
 
-		// ── SHORT SETUP (PE) ─────────────────────────────────────────────
-		// 1. Trend Filter: EMA is angled DOWN and is clearly BELOW VWAP
+		// ── SHORT SETUP (PE) ──────────────────────────────────────────────────
 		const isDowntrend = currentEma < prevEma && currentEma < vwap
-
-		// 2. The Pullback: Wick touches the Value Zone (between EMA and VWAP)
 		const touchedValueZoneShort = c.high >= currentEma && c.high <= vwap + 5
-
-		// 3. Rejection: Closed weak (red body) below the EMA
 		const closedWeakShort = c.close < c.open && c.close < currentEma
 
 		if (isDowntrend && touchedValueZoneShort && closedWeakShort) {

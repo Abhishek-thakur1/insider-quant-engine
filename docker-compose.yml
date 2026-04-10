@@ -7,6 +7,14 @@ services:
     ports:
       - '6379:6379'
 
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --save 60 1
+    volumes:
+      - redis_data:/data
+
   # ── Scheduler ─────────────────────────────────────────────────────────────
   # Always on. Owns the full daily lifecycle via cron + docker start/stop.
   quant_scheduler:
@@ -24,8 +32,6 @@ services:
       - redis_cache
 
   # ── Auth Bridge ───────────────────────────────────────────────────────────
-  # Created at compose up but kept stopped — scheduler calls `docker start quant_auth`.
-  # restart:no means Docker never auto-restarts it after quant_auth exits cleanly.
   quant_auth:
     build:
       context: .
@@ -44,8 +50,6 @@ services:
       - redis_cache
 
   # ── Quant Engine ──────────────────────────────────────────────────────────
-  # Created at compose up but kept stopped — scheduler calls `docker start quant_engine`.
-  # restart:no means Docker never auto-restarts it after scheduler calls `docker stop`.
   quant_engine:
     build:
       context: .
@@ -73,6 +77,7 @@ services:
 volumes:
   token_store:
   scheduler_logs:
+  redis_data:
 
 # services:
 #   redis_cache:
