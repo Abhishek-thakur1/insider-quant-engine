@@ -25,13 +25,18 @@ export const seedHistoricalVwap = async (): Promise<void> => {
 
 	const accessToken = fs.readFileSync(TOKEN_PATH, 'utf8').trim()
 	const watchlist: string[] = JSON.parse(fs.readFileSync(WATCHLIST_PATH, 'utf8'))
-	const activeUniverse = watchlist.slice(0, 50)
+
+	// [FIX: MISMATCH] Original seeder only seeded 50 symbols while the engine
+	// subscribes to 100. The other 50 symbols had no VWAP filter at open.
+	// Now matches the engine's activeUniverse exactly.
+	const activeUniverse = watchlist.slice(0, 100)
 
 	fyersApi.setAppId(ENV.FYERS_APP_ID)
 	fyersApi.setAccessToken(accessToken)
 
 	const todayStr = getTodayString()
 	let successCount = 0
+	let failCount = 0
 
 	console.log(`[Seeder] 📥 Downloading intraday data for ${activeUniverse.length} equities...`)
 
@@ -52,54 +57,44 @@ export const seedHistoricalVwap = async (): Promise<void> => {
 
 				// Fyers Candle Format: [epoch_time, open, high, low, close, volume]
 				for (const candle of response.candles) {
-					// [FIX: CORRECTNESS] The original code used close price alone as the price
-					// component: cumulativePV += closePrice * volume
-					//
-					// Standard VWAP uses "typical price" = (high + low + close) / 3
-					// This is what every charting platform (TradingView, Zerodha Kite,
-					// NSE charts) uses. Using close-only diverges from the market
-					// consensus VWAP and causes detectors to see "above VWAP" / "below VWAP"
-					// at different levels than institutional traders are watching.
-					//
-					// [WHAT TO CHANGE]: Replace the single closePrice variable with typicalPrice
 					const high = candle[2] as number
 					const low = candle[3] as number
 					const close = candle[4] as number
 					const volume = candle[5] as number
 
-					// [FIX] Use typical price = (H + L + C) / 3
+					// Standard VWAP: typical price = (H + L + C) / 3
 					const typicalPrice = (high + low + close) / 3
-
 					cumulativePV += typicalPrice * volume
 					cumulativeVol += volume
 				}
 
 				if (cumulativeVol > 0) {
-					const finalVwap = cumulativePV / cumulativeVol
 					const state: VwapState = {
 						cumulativePV,
 						cumulativeVol,
-						vwap: finalVwap,
+						vwap: cumulativePV / cumulativeVol,
 					}
-
-					const key = `vwap:${symbol}:${todayStr}`
-					await redisClient.set(key, JSON.stringify(state))
+					await redisClient.set(`vwap:${symbol}:${todayStr}`, JSON.stringify(state))
 					successCount++
 				}
 			}
 		} catch (error: any) {
-			console.error(`[Seeder] ⚠️ Failed to fetch history for ${symbol}`)
-			if (error.response && error.response.data) {
-				console.error(`[Fyers Rejection]:`, JSON.stringify(error.response.data))
+			failCount++
+			console.error(`[Seeder] ⚠️ Failed: ${symbol}`)
+			if (error.response?.data) {
+				console.error(`[Fyers]:`, JSON.stringify(error.response.data))
 			} else {
-				console.error(`[System Error]:`, error.message || error)
+				console.error(`[Error]:`, error.message || error)
 			}
 		}
 
+		// 100ms throttle — respect Fyers API rate limits
 		await new Promise((resolve) => setTimeout(resolve, 100))
 	}
 
 	console.log(
-		`[Seeder] ✅ VWAP Sync Complete. ${successCount}/${activeUniverse.length} equities seeded.\n`,
+		`[Seeder] ✅ Done. ${successCount}/${activeUniverse.length} seeded` +
+		(failCount > 0 ? ` | ⚠️ ${failCount} failed — VWAP filter disabled for those symbols` : '') +
+		'\n',
 	)
 }
