@@ -15,6 +15,7 @@ import { ValueZoneScalpDetector } from '../detectors/valueZoneScalpDetector.js'
 import { LiquiditySweepDetector } from '../detectors/liquiditySweepDetector.js'
 import { OrderFlowExhaustionDetector } from '../detectors/Orderflowexhaustiondetector.js'
 import { MultiTimeframeBreakoutDetector } from '../detectors/Multitimeframebreakoutdetector.js'
+import { ParabolicRvolSweepDetector } from '../detectors/parabolicRvolSweepDetector.js'
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -131,8 +132,9 @@ export const startLiveEngine = async () => {
 		activeUniverse.map(async (symbol) => {
 			strategyRouter.set(symbol, [
 				new MultiTimeframeBreakoutDetector(symbol),
-				new OrbDetector(symbol),
-				new VcpDetector(symbol),
+				// new OrbDetector(symbol),
+				// new VcpDetector(symbol),
+				new ParabolicRvolSweepDetector(symbol)
 			])
 
 			await Promise.all([
@@ -154,6 +156,8 @@ export const startLiveEngine = async () => {
 				redisClient.del(`cooldown:trap:${symbol}`),
 				redisClient.del(`cooldown:mtf_breakout:${symbol}`),
 				redisClient.del(`session_open:${symbol}`),
+				redisClient.del(`macro_baseline:${symbol}`),
+				redisClient.del(`cooldown:parabolic:${symbol}`)
 			])
 		}),
 	)
