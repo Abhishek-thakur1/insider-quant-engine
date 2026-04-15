@@ -90,6 +90,7 @@ const previousVolumeTracker = new Map<string, number>()
 const orderFlowExhaustionDetector = new OrderFlowExhaustionDetector()
 const valueZoneScalpDetector = new ValueZoneScalpDetector()
 const liquiditySweepDetector = new LiquiditySweepDetector()
+const niftyOrbDetector = new OrbDetector(NIFTY_SYMBOL)
 
 let lastSubscribedNiftySpot = 0
 let subscribedOptionSymbols: string[] = []
@@ -134,7 +135,8 @@ export const startLiveEngine = async () => {
 				new MultiTimeframeBreakoutDetector(symbol),
 				// new OrbDetector(symbol),
 				// new VcpDetector(symbol),
-				new ParabolicRvolSweepDetector(symbol)
+				new ParabolicRvolSweepDetector(symbol),
+				new VolumeSpikeDetector(symbol),
 			])
 
 			await Promise.all([
@@ -232,6 +234,7 @@ export const startLiveEngine = async () => {
 					await orderFlowExhaustionDetector.analyze(liveTick)
 					await valueZoneScalpDetector.analyze(liveTick)
 					await liquiditySweepDetector.analyze(liveTick)
+					await niftyOrbDetector.analyze(liveTick)
 
 					// Resubscribe option strikes when ATM shifts
 					if (

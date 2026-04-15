@@ -123,7 +123,7 @@ export class OrbDetector implements IDetector {
 				this.range15Persisted = true
 				console.log(
 					`[ORB] 📌 15min range locked & persisted for ${this.symbol}: ` +
-						`H:${this.range15.high} L:${this.range15.low}`,
+					`H:${this.range15.high} L:${this.range15.low}`,
 				)
 			}
 		}
@@ -143,7 +143,7 @@ export class OrbDetector implements IDetector {
 				this.range30Persisted = true
 				console.log(
 					`[ORB] 📌 30min range locked & persisted for ${this.symbol}: ` +
-						`H:${this.range30.high} L:${this.range30.low}`,
+					`H:${this.range30.high} L:${this.range30.low}`,
 				)
 			}
 		}
@@ -158,9 +158,9 @@ export class OrbDetector implements IDetector {
 
 		const vwap = await getVwap(this.symbol)
 		const marketBias = await getMarketBias()
+		const isIndex = this.symbol === 'NSE:NIFTY50-INDEX';
 		const blockValue = liveTick.price * liveTick.volume
-		const isBlockSized = blockValue >= MIN_BLOCK_VALUE
-
+		const isBlockSized = isIndex || (blockValue >= MIN_BLOCK_VALUE)
 		const ranges: Array<{ range: OrbRange; label: string }> = []
 		if (this.range15 && this.range15Locked && !this.range15.fired) {
 			ranges.push({ range: this.range15, label: '15min ORB' })
@@ -173,13 +173,12 @@ export class OrbDetector implements IDetector {
 			const rangePct = ((range.high - range.low) / range.low) * 100
 
 			if (rangePct < MIN_RANGE_PCT || rangePct > MAX_RANGE_PCT) continue
-
+			const isIndex = this.symbol === 'NSE:NIFTY50-INDEX';
 			const avgVol =
 				range.volumes.length > 0
 					? range.volumes.reduce((a, b) => a + b, 0) / range.volumes.length
 					: 0
-			const isVolumeConfirmed = avgVol > 0 && liveTick.volume > avgVol * VOL_MULTIPLIER
-
+			const isVolumeConfirmed = isIndex || (avgVol > 0 && liveTick.volume > avgVol * VOL_MULTIPLIER)
 			const rangeSize = range.high - range.low
 			const risk = rangeSize
 
