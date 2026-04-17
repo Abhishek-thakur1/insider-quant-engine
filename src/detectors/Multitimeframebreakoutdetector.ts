@@ -49,9 +49,15 @@ const getISTMinutes = (): number => {
     const d = new Date(Date.now() + 5.5 * 60 * 60 * 1000)
     return d.getUTCHours() * 60 + d.getUTCMinutes()
 }
+// const isActiveWindow = (): boolean => {
+//     const m = getISTMinutes()
+//     return m >= 9 * 60 + 45 && m <= 14 * 60 + 30
+// }
+
 const isActiveWindow = (): boolean => {
     const m = getISTMinutes()
-    return m >= 9 * 60 + 45 && m <= 14 * 60 + 30
+    // Active from market open (9:15 AM) to intraday square-off limit (3:15 PM)
+    return m >= 9 * 60 + 15 && m <= 15 * 60 + 15
 }
 
 const SESSION_OPEN_KEY = (symbol: string) => `session_open:${symbol}`

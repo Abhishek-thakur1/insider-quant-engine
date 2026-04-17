@@ -16,6 +16,7 @@ import { LiquiditySweepDetector } from '../detectors/liquiditySweepDetector.js'
 import { OrderFlowExhaustionDetector } from '../detectors/Orderflowexhaustiondetector.js'
 import { MultiTimeframeBreakoutDetector } from '../detectors/Multitimeframebreakoutdetector.js'
 import { ParabolicRvolSweepDetector } from '../detectors/parabolicRvolSweepDetector.js'
+import { VwapStdevReversionDetector } from '../detectors/vwapStdevReversionDetector.js'
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -91,6 +92,7 @@ const orderFlowExhaustionDetector = new OrderFlowExhaustionDetector()
 const valueZoneScalpDetector = new ValueZoneScalpDetector()
 const liquiditySweepDetector = new LiquiditySweepDetector()
 const niftyOrbDetector = new OrbDetector(NIFTY_SYMBOL)
+const niftyStdevReversion = new VwapStdevReversionDetector(NIFTY_SYMBOL)
 
 let lastSubscribedNiftySpot = 0
 let subscribedOptionSymbols: string[] = []
@@ -133,10 +135,11 @@ export const startLiveEngine = async () => {
 		activeUniverse.map(async (symbol) => {
 			strategyRouter.set(symbol, [
 				new MultiTimeframeBreakoutDetector(symbol),
-				// new OrbDetector(symbol),
-				// new VcpDetector(symbol),
+				new OrbDetector(symbol),
+				new VcpDetector(symbol),
 				new ParabolicRvolSweepDetector(symbol),
 				new VolumeSpikeDetector(symbol),
+				new VwapStdevReversionDetector(symbol)
 			])
 
 			await Promise.all([
@@ -159,7 +162,8 @@ export const startLiveEngine = async () => {
 				redisClient.del(`cooldown:mtf_breakout:${symbol}`),
 				redisClient.del(`session_open:${symbol}`),
 				redisClient.del(`macro_baseline:${symbol}`),
-				redisClient.del(`cooldown:parabolic:${symbol}`)
+				redisClient.del(`cooldown:parabolic:${symbol}`),
+				redisClient.del('cooldown:stdev_rev:${symbol}')
 			])
 		}),
 	)
@@ -235,6 +239,7 @@ export const startLiveEngine = async () => {
 					await valueZoneScalpDetector.analyze(liveTick)
 					await liquiditySweepDetector.analyze(liveTick)
 					await niftyOrbDetector.analyze(liveTick)
+					await niftyStdevReversion.analyze(liveTick)
 
 					// Resubscribe option strikes when ATM shifts
 					if (

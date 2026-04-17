@@ -63,11 +63,17 @@ const getISTMinutes = (): number => {
 }
 
 // Two high-probability windows only — avoid lunch chop and close scramble
+// const isActiveWindow = (): boolean => {
+//     const m = getISTMinutes()
+//     const morningWindow = m >= 9 * 60 + 30 && m <= 11 * 60 + 30
+//     const afternoonWindow = m >= 13 * 60 + 30 && m <= 15 * 60 + 0
+//     return morningWindow || afternoonWindow
+// }
+
+// Active for the entire session — cutoff at 3:15 PM to avoid MIS auto-square-off
 const isActiveWindow = (): boolean => {
     const m = getISTMinutes()
-    const morningWindow = m >= 9 * 60 + 30 && m <= 11 * 60 + 30
-    const afternoonWindow = m >= 13 * 60 + 30 && m <= 15 * 60 + 0
-    return morningWindow || afternoonWindow
+    return m >= 9 * 60 + 15 && m <= 15 * 60 + 15
 }
 
 interface Candle {
