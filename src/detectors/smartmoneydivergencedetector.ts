@@ -213,7 +213,7 @@ export class SmartMoneyDivergenceDetector implements IDetector {
 		if (isBearishDivergence && marketBias !== 'bullish') {
 			// Additional confirmation: latest candle should be at/above VWAP
 			// (distribution happens at highs, which should be above VWAP)
-			const latestCandle = candles[candles.length - 1]!
+			// const latestCandle = candles[candles.length - 1]!
 			if (latestCandle.close < vwap) return // not at a high enough level
 
 			// Block value check on the latest candle
@@ -227,7 +227,7 @@ export class SmartMoneyDivergenceDetector implements IDetector {
 			const t2 = Number((vwap - distToVwap * 0.5).toFixed(2)) // extension below
 
 			// Volume decline rate across the 3 candles
-			const firstVol = candles[0]!.volume
+			const firstVol = firstCandle.volume
 			const lastVol = latestCandle.volume
 			const volDeclinePct = (((firstVol - lastVol) / firstVol) * 100).toFixed(0)
 
@@ -280,7 +280,7 @@ export class SmartMoneyDivergenceDetector implements IDetector {
 		const isBullishDivergence = pushedLower && sellingDriedUp && noHiddenSpikes
 
 		if (isBullishDivergence && marketBias !== 'bearish') {
-			const latestCandle = candles[candles.length - 1]!
+			// const latestCandle = candles[candles.length - 1]!
 			if (latestCandle.close > vwap) return // not at a low enough level
 
 			const blockValue = latestCandle.close * latestCandle.volume
@@ -292,7 +292,7 @@ export class SmartMoneyDivergenceDetector implements IDetector {
 			const t1 = Number(vwap.toFixed(2)) // mean reversion to VWAP
 			const t2 = Number((vwap + distToVwap * 0.5).toFixed(2)) // extension above
 
-			const firstVol = candles[0]!.volume
+			const firstVol = firstCandle.volume
 			const lastVol = latestCandle.volume
 			const volDeclinePct = (((firstVol - lastVol) / firstVol) * 100).toFixed(0)
 
