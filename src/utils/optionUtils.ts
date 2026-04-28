@@ -235,3 +235,36 @@ export const hasATMShifted = (currentSpot: number, lastSubscribedSpot: number): 
 	// This prevents flapping if spot is oscillating right on a boundary line.
 	return Math.abs(currentATM - lastATM) > 2 * STRIKE_INTERVAL
 }
+
+// ── Retrieve Max OI Resistance (Call) and Support (Put) Walls ──────────────────
+
+export interface WallStrikes {
+	maxCallStrike: number | null
+	maxPutStrike: number | null
+	callWallOI: number
+	putWallOI: number
+}
+export const getWallStrikes = (): WallStrikes => {
+	let callWallOI = 0
+	let maxCallStrike: number | null = null
+
+	let putWallOI = 0
+	let maxPutStrike: number | null = null
+
+	// Single O(N) pass, zero memory allocation, no sorting overhead.
+	for (const tick of optionTickStore.values()) {
+		if (tick.optionType === 'CE') {
+			if (tick.oi > callWallOI) {
+				callWallOI = tick.oi
+				maxCallStrike = tick.strike
+			}
+		} else if (tick.optionType === 'PE') {
+			if (tick.oi > putWallOI) {
+				putWallOI = tick.oi
+				maxPutStrike = tick.strike
+			}
+		}
+	}
+
+	return { maxCallStrike, maxPutStrike, callWallOI, putWallOI }
+}

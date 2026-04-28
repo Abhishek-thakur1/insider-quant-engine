@@ -5,7 +5,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 
 const FYERS_NSE_CM_URL = 'https://public.fyers.in/sym_details/NSE_CM.csv'
-const OUTPUT_PATH = path.resolve(process.cwd(), 'watchlist.json')
+const OUTPUT_PATH = path.resolve(process.cwd(), 'fyersUniverse.json')
 
 export const buildUniverse = async (): Promise<void> => {
 	console.log(`[Universe Builder] 📥 Downloading latest symbols from Fyers...`)
