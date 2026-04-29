@@ -85,10 +85,10 @@ import { getVwap, getMarketBias } from '../utils/vwapUtils.js'
 
 // ─── TUNABLE CONSTANTS ───────────────────────────────────────
 const CANDLE_DURATION_MS = 60 * 1000 // 1-minute candles
-const LOOKBACK_CANDLES = 3 // 3 consecutive candles for divergence
-const MIN_VOL_DECLINE_PCT = 0.15 // each candle volume must drop > 15%
-const MIN_BLOCK_VALUE = 10_000_000 // ₹1Cr — institutional scale only
-const COOLDOWN_SECONDS = 1800 // 30 min between alerts
+const LOOKBACK_CANDLES = 4 // 4 consecutive candles for divergence
+const MIN_VOL_DECLINE_PCT = 0.3 // each candle volume must drop > 30%
+const MIN_BLOCK_VALUE = 50_000_000 // ₹5Cr — institutional scale only
+const COOLDOWN_SECONDS = 14400 // 4 Hours (One alert per session per stock)
 const MAX_CANDLES_HISTORY = 10 // rolling candle buffer
 
 // Opening 15 min excluded — volume is structurally high at open
@@ -210,14 +210,21 @@ export class SmartMoneyDivergenceDetector implements IDetector {
 
 		const isBearishDivergence = pushedHigher && volumeDriedUp && noHiddenSpikes
 
-		if (isBearishDivergence && marketBias !== 'bullish') {
+		const blockValue = latestCandle.close * latestCandle.volume
+		const isNiftyAlignedShort = marketBias === 'bearish' || marketBias === 'neutral'
+		const isCatalystDrivenShort =
+			marketBias === 'bullish' &&
+			latestCandle.close < vwap * 0.99 &&
+			blockValue > MIN_BLOCK_VALUE * 1.5
+
+		if (isBearishDivergence && (isNiftyAlignedShort || isCatalystDrivenShort)) {
 			// Additional confirmation: latest candle should be at/above VWAP
 			// (distribution happens at highs, which should be above VWAP)
 			// const latestCandle = candles[candles.length - 1]!
 			if (latestCandle.close < vwap) return // not at a high enough level
 
 			// Block value check on the latest candle
-			const blockValue = latestCandle.close * latestCandle.volume
+			// const blockValue = latestCandle.close * latestCandle.volume
 			if (blockValue < MIN_BLOCK_VALUE) return
 
 			const highestHigh = Math.max(...candles.map((c) => c.high))
@@ -278,12 +285,18 @@ export class SmartMoneyDivergenceDetector implements IDetector {
 			(firstCandle.volume - latestCandle.volume) / firstCandle.volume >= MIN_VOL_DECLINE_PCT
 
 		const isBullishDivergence = pushedLower && sellingDriedUp && noHiddenSpikes
+		// const blockValue = latestCandle.close * latestCandle.volume
+		const isNiftyAlignedLong = marketBias === 'bullish' || marketBias === 'neutral'
+		const isCatalystDrivenLong =
+			marketBias === 'bearish' &&
+			latestCandle.close > vwap * 1.01 &&
+			blockValue > MIN_BLOCK_VALUE * 1.5
 
-		if (isBullishDivergence && marketBias !== 'bearish') {
+		if (isBullishDivergence && (isNiftyAlignedLong || isCatalystDrivenLong)) {
 			// const latestCandle = candles[candles.length - 1]!
 			if (latestCandle.close > vwap) return // not at a low enough level
 
-			const blockValue = latestCandle.close * latestCandle.volume
+			// const blockValue = latestCandle.close * latestCandle.volume
 			if (blockValue < MIN_BLOCK_VALUE) return
 
 			const lowestLow = Math.min(...candles.map((c) => c.low))
