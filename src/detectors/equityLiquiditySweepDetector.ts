@@ -5,9 +5,9 @@ import { getVwap } from '../utils/vwapUtils.js'
 
 const CANDLE_DURATION_MS = 3 * 60 * 1000
 const RANGE_END_MINUTES = 10 * 60 + 0
-const PIERCE_BUFFER_PCT = 0.0015
-const VOL_MULTIPLIER = 1.5
-const COOLDOWN_SECONDS = 3600
+const PIERCE_BUFFER_PCT = 0.002
+const VOL_MULTIPLIER = 2.5
+const COOLDOWN_SECONDS = 7200
 
 const getISTMinutes = (): number => {
 	const d = new Date(Date.now() + 5.5 * 60 * 60 * 1000)

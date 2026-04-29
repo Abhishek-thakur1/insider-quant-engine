@@ -85,10 +85,10 @@ import { getVwap, getMarketBias } from '../utils/vwapUtils.js'
 
 // ─── TUNABLE CONSTANTS ───────────────────────────────────────
 const CANDLE_DURATION_MS = 60 * 1000 // 1-minute candles
-const LOOKBACK_CANDLES = 3 // 3 consecutive candles for divergence
-const MIN_VOL_DECLINE_PCT = 0.15 // each candle volume must drop > 15%
-const MIN_BLOCK_VALUE = 10_000_000 // ₹1Cr — institutional scale only
-const COOLDOWN_SECONDS = 1800 // 30 min between alerts
+const LOOKBACK_CANDLES = 4 // 4 consecutive candles for divergence
+const MIN_VOL_DECLINE_PCT = 0.3 // each candle volume must drop > 30%
+const MIN_BLOCK_VALUE = 50_000_000 // ₹5Cr — institutional scale only
+const COOLDOWN_SECONDS = 14400 // 4 Hours (One alert per session per stock)
 const MAX_CANDLES_HISTORY = 10 // rolling candle buffer
 
 // Opening 15 min excluded — volume is structurally high at open
