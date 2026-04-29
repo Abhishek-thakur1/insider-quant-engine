@@ -1,7 +1,7 @@
 import { sendTelegramAlert } from '../workers/telegramWorker.js'
 import type { IDetector, TickData } from '../core/types.js'
 import { redisClient } from '../config/redis.js'
-import { getVwap } from '../utils/vwapUtils.js'
+import { getVwap, getMarketBias } from '../utils/vwapUtils.js'
 
 const CANDLE_DURATION_MS = 3 * 60 * 1000
 const RANGE_END_MINUTES = 10 * 60 + 0
@@ -110,13 +110,23 @@ export class EquityLiquiditySweepDetector implements IDetector {
 
 		const baseline = this.history.slice(0, -1)
 		const avgVol = baseline.reduce((a, b) => a + b.volume, 0) / baseline.length
-
+		const marketBias = await getMarketBias()
 		const vwap = await getVwap(this.symbol)
 		if (!vwap) return
 
 		if (this.state === 'PIERCED_HIGH') {
 			if (c.close < this.orh) {
-				if (c.volume > avgVol * VOL_MULTIPLIER && c.close < c.open) {
+				const isNiftyAlignedShort = marketBias === 'bearish' || marketBias === 'neutral'
+				const isCatalystDrivenShort =
+					marketBias === 'bullish' &&
+					c.close < vwap * 0.99 && // Rejected below VWAP
+					c.volume > avgVol * VOL_MULTIPLIER * 1.5 // Requires 3.75x volume!
+
+				if (
+					c.volume > avgVol * VOL_MULTIPLIER &&
+					c.close < c.open &&
+					(isNiftyAlignedShort || isCatalystDrivenShort)
+				) {
 					await this.executeSignal('SHORT', c, this.orh, avgVol, vwap, cooldownKey)
 				}
 			} else if (c.close > this.orh * (1 + PIERCE_BUFFER_PCT * 2)) {
@@ -126,7 +136,17 @@ export class EquityLiquiditySweepDetector implements IDetector {
 
 		if (this.state === 'PIERCED_LOW') {
 			if (c.close > this.orl) {
-				if (c.volume > avgVol * VOL_MULTIPLIER && c.close > c.open) {
+				const isNiftyAlignedLong = marketBias === 'bullish' || marketBias === 'neutral'
+				const isCatalystDrivenLong =
+					marketBias === 'bearish' &&
+					c.close > vwap * 1.01 && // Recovered above VWAP
+					c.volume > avgVol * VOL_MULTIPLIER * 1.5 // Requires 3.75x volume!
+
+				if (
+					c.volume > avgVol * VOL_MULTIPLIER &&
+					c.close > c.open &&
+					(isNiftyAlignedLong || isCatalystDrivenLong)
+				) {
 					await this.executeSignal('LONG', c, this.orl, avgVol, vwap, cooldownKey)
 				}
 			} else if (c.close < this.orl * (1 - PIERCE_BUFFER_PCT * 2)) {

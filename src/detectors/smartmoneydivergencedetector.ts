@@ -210,14 +210,21 @@ export class SmartMoneyDivergenceDetector implements IDetector {
 
 		const isBearishDivergence = pushedHigher && volumeDriedUp && noHiddenSpikes
 
-		if (isBearishDivergence && marketBias !== 'bullish') {
+		const blockValue = latestCandle.close * latestCandle.volume
+		const isNiftyAlignedShort = marketBias === 'bearish' || marketBias === 'neutral'
+		const isCatalystDrivenShort =
+			marketBias === 'bullish' &&
+			latestCandle.close < vwap * 0.99 &&
+			blockValue > MIN_BLOCK_VALUE * 1.5
+
+		if (isBearishDivergence && (isNiftyAlignedShort || isCatalystDrivenShort)) {
 			// Additional confirmation: latest candle should be at/above VWAP
 			// (distribution happens at highs, which should be above VWAP)
-			const latestCandle = candles[candles.length - 1]!
+			// const latestCandle = candles[candles.length - 1]!
 			if (latestCandle.close < vwap) return // not at a high enough level
 
 			// Block value check on the latest candle
-			const blockValue = latestCandle.close * latestCandle.volume
+			// const blockValue = latestCandle.close * latestCandle.volume
 			if (blockValue < MIN_BLOCK_VALUE) return
 
 			const highestHigh = Math.max(...candles.map((c) => c.high))
@@ -278,12 +285,18 @@ export class SmartMoneyDivergenceDetector implements IDetector {
 			(firstCandle.volume - latestCandle.volume) / firstCandle.volume >= MIN_VOL_DECLINE_PCT
 
 		const isBullishDivergence = pushedLower && sellingDriedUp && noHiddenSpikes
+		// const blockValue = latestCandle.close * latestCandle.volume
+		const isNiftyAlignedLong = marketBias === 'bullish' || marketBias === 'neutral'
+		const isCatalystDrivenLong =
+			marketBias === 'bearish' &&
+			latestCandle.close > vwap * 1.01 &&
+			blockValue > MIN_BLOCK_VALUE * 1.5
 
-		if (isBullishDivergence && marketBias !== 'bearish') {
-			const latestCandle = candles[candles.length - 1]!
+		if (isBullishDivergence && (isNiftyAlignedLong || isCatalystDrivenLong)) {
+			// const latestCandle = candles[candles.length - 1]!
 			if (latestCandle.close > vwap) return // not at a low enough level
 
-			const blockValue = latestCandle.close * latestCandle.volume
+			// const blockValue = latestCandle.close * latestCandle.volume
 			if (blockValue < MIN_BLOCK_VALUE) return
 
 			const lowestLow = Math.min(...candles.map((c) => c.low))
