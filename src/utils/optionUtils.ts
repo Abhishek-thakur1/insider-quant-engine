@@ -268,3 +268,19 @@ export const getWallStrikes = (): WallStrikes => {
 
 	return { maxCallStrike, maxPutStrike, callWallOI, putWallOI }
 }
+
+export const pruneStaleStrikes = (activeSymbols: string[]): void => {
+	const activeSet = new Set(activeSymbols)
+	let prunedCount = 0
+
+	for (const symbol of optionTickStore.keys()) {
+		if (!activeSet.has(symbol)) {
+			optionTickStore.delete(symbol)
+			prunedCount++
+		}
+	}
+
+	if (prunedCount > 0) {
+		console.log(`[Options] 🧹 Pruned ${prunedCount} stale strikes from memory.`)
+	}
+}

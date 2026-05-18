@@ -42,7 +42,8 @@ export class VcpDetector implements IDetector {
 	// read on every single tick when we already know the state — we only
 	// re-read from Redis on the first tick after construction.
 	private _armedCache: boolean | null = null // null = "not yet read from Redis"
-
+	private boxHistory: TickData[] = []
+	private baselineHistory: TickData[] = []
 	constructor(symbol: string) {
 		this.symbol = symbol
 	}
@@ -83,21 +84,33 @@ export class VcpDetector implements IDetector {
 			return
 		}
 
-		const [rawBox, rawBaseline] = await Promise.all([
-			redisClient.lRange(boxKey, 0, -1),
-			redisClient.lRange(baselineKey, 0, -1),
-		])
+		// const [rawBox, rawBaseline] = await Promise.all([
+		// 	redisClient.lRange(boxKey, 0, -1),
+		// 	redisClient.lRange(baselineKey, 0, -1),
+		// ])
 
-		const boxHistory: TickData[] = rawBox.map((item) => JSON.parse(item) as TickData)
-		const baselineHistory: TickData[] = rawBaseline.map((item) => JSON.parse(item) as TickData)
+		// const boxHistory: TickData[] = rawBox.map((item) => JSON.parse(item) as TickData)
+		// const baselineHistory: TickData[] = rawBaseline.map((item) => JSON.parse(item) as TickData)
+		this.boxHistory.push(liveTick)
+		if (this.boxHistory.length > BOX_MEMORY_LENGTH) this.boxHistory.shift()
 
+		this.baselineHistory.push(liveTick)
+		if (this.baselineHistory.length > BASELINE_MEMORY_LENGTH) this.baselineHistory.shift()
+		redisClient
+			.multi()
+			.lPush(boxKey, JSON.stringify(liveTick))
+			.lTrim(boxKey, 0, BOX_MEMORY_LENGTH - 1)
+			.lPush(baselineKey, JSON.stringify(liveTick))
+			.lTrim(baselineKey, 0, BASELINE_MEMORY_LENGTH - 1)
+			.exec()
+			.catch((err) => console.error('Redis sync error:', err))
 		if (
-			boxHistory.length >= BOX_MEMORY_LENGTH &&
-			baselineHistory.length >= BASELINE_MEMORY_LENGTH
+			this.boxHistory.length >= BOX_MEMORY_LENGTH &&
+			this.baselineHistory.length >= BASELINE_MEMORY_LENGTH
 		) {
-			const prices = boxHistory.map((t) => t.price)
-			const boxVolumes = boxHistory.map((t) => t.volume)
-			const baselineVols = baselineHistory.map((t) => t.volume)
+			const prices = this.boxHistory.map((t) => t.price)
+			const boxVolumes = this.boxHistory.map((t) => t.volume)
+			const baselineVols = this.baselineHistory.map((t) => t.volume)
 
 			const boxHigh = Math.max(...prices)
 			const boxLow = Math.min(...prices)
@@ -105,7 +118,7 @@ export class VcpDetector implements IDetector {
 			const boxAvgVol = boxVolumes.reduce((a, b) => a + b, 0) / boxVolumes.length
 			const baselineAvgVol = baselineVols.reduce((a, b) => a + b, 0) / baselineVols.length
 
-			const oldestBoxTick = boxHistory[boxHistory.length - 1]
+			const oldestBoxTick = this.boxHistory[this.boxHistory.length - 1]
 			const consolidationAge = Date.now() - (oldestBoxTick?.timestamp ?? Date.now())
 			const isOldEnough = consolidationAge >= MIN_CONSOLIDATION_MS
 
