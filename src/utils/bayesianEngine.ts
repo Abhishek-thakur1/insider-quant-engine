@@ -304,14 +304,7 @@ export const computeBayesianPosterior = async (
 
 	posterior = bayesUpdate(posterior, likelihoods.timeRatio)
 
-	// Compute final combined likelihood for logging
-	likelihoods.combined =
-		likelihoods.biasRatio *
-		likelihoods.oiWallRatio *
-		likelihoods.volumeRatio *
-		likelihoods.vwapZoneRatio *
-		likelihoods.timeRatio
-
+	
 
 
 		// ── EVIDENCE 6: Days to Expiry (Theta / Gamma Factor) ───────────────────
