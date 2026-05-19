@@ -36,6 +36,8 @@ export interface AlertPayload {
 	// [NEW] Optional: pass detector name for precise regime classification.
 	// Existing detectors can add this gradually. If absent, trigger text is used.
 	detectorName?: string
+	sl: number
+    t1: number
 }
 
 export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {

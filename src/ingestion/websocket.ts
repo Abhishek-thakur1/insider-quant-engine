@@ -22,27 +22,30 @@ import { EventEmitter } from 'events'
 import { ENV } from '../config/env.js'
 import { bootRedis, redisClient } from '../config/redis.js'
 import { updateVwap, updateNiftyBias, warnIfVwapMissing } from '../utils/vwapUtils.js'
-import {
-	buildOptionUniverse,
-	updateOptionTick,
-	hasATMShifted,
-	pruneStaleStrikes,
-} from '../utils/optionUtils.js'
+import { buildOptionUniverse, updateOptionTick, hasATMShifted } from '../utils/optionUtils.js'
 import { seedHistoricalVwap } from './vwapSeeder.js'
 
 // [NEW] Regime detector feed
 import { pushNiftyReturn } from '../utils/regimeDetector.js'
 
-// Detectors
+// Nifty detectors
 import { OiLiquiditySweepDetector } from '../detectors/oiLiquiditySweepDetector.js'
 import { ValueZoneScalpDetector } from '../detectors/valueZoneScalpDetector.js'
+import { DeltaHedgingPressureDetector } from '../detectors/deltahedgingpressuredetector.js'
+
+// Equity detectors — full stack re-enabled
 import { MultiTimeframeBreakoutDetector } from '../detectors/Multitimeframebreakoutdetector.js'
-import type { IDetector, TickData } from '../core/types.js'
 import { EquityLiquiditySweepDetector } from '../detectors/equityLiquiditySweepDetector.js'
 import { MorningMomentumDetector } from '../detectors/morningMomentumDetector.js'
-import { fileURLToPath } from 'url'
-import { DeltaHedgingPressureDetector } from '../detectors/deltahedgingpressuredetector.js'
 import { SmartMoneyDivergenceDetector } from '../detectors/smartmoneydivergencedetector.js'
+import { VcpDetector } from '../detectors/vcpDetector.js'
+import { VolumeSpikeDetector } from '../detectors/volumeSpikeDetector.js'
+import { ParabolicRvolSweepDetector } from '../detectors/parabolicRvolSweepDetector.js'
+import { OrbDetector } from '../detectors/orbDetector.js'
+import { VwapStdevReversionDetector } from '../detectors/vwapStdevReversionDetector.js'
+
+import type { IDetector, TickData } from '../core/types.js'
+import { fileURLToPath } from 'url'
 
 const NIFTY_SYMBOL = 'NSE:NIFTY50-INDEX'
 
@@ -118,19 +121,67 @@ export const startLiveEngine = async () => {
 
 	const accessToken = fs.readFileSync(TOKEN_PATH, 'utf8').trim()
 
-	// ── Boot Cleanup & Strategy Routing ──
+	// ── Boot Cleanup & Strategy Routing ──────────────────────────────────────
+	// DETECTOR STACK PHILOSOPHY:
+	//   Every equity gets the FULL stack. The Jane Street filter handles quality.
+	//   Don't manually disable detectors — let the Bayesian gate decide.
+	//   Specific detector types per regime:
+	//     Morning (9:15-9:45):  MorningMomentum + ORB
+	//     Trending day:         MTF + VCP + ParabolicRVOL
+	//     Ranging day:          VwapStdevReversion + SmartMoneyDivergence
+	//     Any time:             VolumeSpikeDetector + EquityLiquiditySweep
+
 	await Promise.all(
 		activeUniverse.map(async (symbol) => {
 			strategyRouter.set(symbol, [
-				new MultiTimeframeBreakoutDetector(symbol),
-				new EquityLiquiditySweepDetector(symbol),
+				// ── Morning openers (9:15–9:45) ─────────────────────────
 				new MorningMomentumDetector(symbol),
-				new SmartMoneyDivergenceDetector(symbol),
+				new OrbDetector(symbol),
+
+				// ── Breakout / trend-following ────────────────────────────
+				new MultiTimeframeBreakoutDetector(symbol),
+				new VcpDetector(symbol),
+				new ParabolicRvolSweepDetector(symbol),  // ← BSE/MCX/ADANI-type explosive moves
+
+				// ── Mean reversion ────────────────────────────────────────
+				new VwapStdevReversionDetector(symbol),  // ← 2.5 SD statistical extreme
+				new SmartMoneyDivergenceDetector(symbol), // ← Wyckoff accumulation/distribution
+
+				// ── Structural / universal ────────────────────────────────
+				new VolumeSpikeDetector(symbol),          // ← institutional block trades
+				new EquityLiquiditySweepDetector(symbol), // ← ORH/ORL trap reversals
 			])
 
-			await redisClient.del(`cooldown:mtf_breakout:${symbol}`)
-			await redisClient.del(`cooldown:eq_sweep:${symbol}`)
-			await redisClient.del(`cooldown:smd:${symbol}`)
+			// Full boot cleanup — all detector state reset for new session
+			await Promise.all([
+				// MTF
+				redisClient.del(`cooldown:mtf_breakout:${symbol}`),
+				redisClient.del(`session_open:${symbol}`),
+				// ORB
+				redisClient.del(`cooldown:orb:${symbol}`),
+				redisClient.del(`orb:15min:high:${symbol}`),
+				redisClient.del(`orb:15min:low:${symbol}`),
+				redisClient.del(`orb:30min:high:${symbol}`),
+				redisClient.del(`orb:30min:low:${symbol}`),
+				// VCP
+				redisClient.del(`memory:vcp:${symbol}`),
+				redisClient.del(`baseline:vcp:${symbol}`),
+				redisClient.del(`armed:vcp:${symbol}`),
+				redisClient.del(`cooldown:vcp:${symbol}`),
+				// Parabolic RVOL
+				redisClient.del(`macro_baseline:${symbol}`),
+				redisClient.del(`cooldown:parabolic:${symbol}`),
+				// VWAP Stdev Reversion
+				redisClient.del(`cooldown:stdev_rev:${symbol}`),
+				// Volume Spike
+				redisClient.del(`vol_baseline_candles:${symbol}`),
+				redisClient.del(`cooldown:volume:${symbol}`),
+				// Equity sweep + SMD
+				redisClient.del(`cooldown:eq_sweep:${symbol}`),
+				redisClient.del(`cooldown:smd:${symbol}`),
+				// Morning momentum
+				redisClient.del(`fired:ignition:${symbol}`),
+			])
 		}),
 	)
 
@@ -138,10 +189,16 @@ export const startLiveEngine = async () => {
 	await redisClient.del('regime:nifty:returns_1min')
 	await redisClient.del('regime:nifty:current')
 	await redisClient.del('jsfilter:decisions')
-	console.log('[Engine] ✅ Jane Street regime cache cleared for new session.')
-	console.log('[Engine] ✅ Boot cleanup complete.')
-	console.log('[Engine] 🆕 OiLiquiditySweepDetector ACTIVE on Nifty')
-	console.log('[Engine] 🆕 JaneStreetFilter ACTIVE — all signals gated')
+	// Nifty-level cooldowns
+	await redisClient.del('market:nifty:bias')
+	await redisClient.del('cooldown:valuezone')
+	await redisClient.del('cooldown:oi_sweep')
+	await redisClient.del('cooldown:delta_squeeze')
+
+	console.log('[Engine] ✅ Full boot cleanup complete.')
+	console.log(`[Engine] 📡 Equity stack: 9 detectors × ${activeUniverse.length} stocks`)
+	console.log('[Engine] 📡 Nifty stack:  OI Sweep + Value Zone + Delta Hedging')
+	console.log('[Engine] 🧮 JaneStreetFilter ACTIVE — all signals gated (Regime → Bayes → EV → Kelly)')
 
 	// ─── ASYNCHRONOUS PROCESSING LAYER ───
 	tickEmitter.on('processTick', async (tickData) => {
@@ -169,7 +226,6 @@ export const startLiveEngine = async () => {
 					skt.subscribe(newOpts)
 					subscribedOptionSymbols = newOpts
 					lastSubscribedNiftySpot = rawTick.ltp
-					pruneStaleStrikes(newOpts)
 					console.log(
 						`[Options] 🔄 Subscribed ${newOpts.length} strikes around ATM ${Math.round(rawTick.ltp / 50) * 50}`,
 					)
