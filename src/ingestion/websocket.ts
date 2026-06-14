@@ -204,7 +204,8 @@ export const startLiveEngine = async () => {
 	// await redisClient.del('cooldown:valuezone')
 	// await redisClient.del('cooldown:oi_sweep')
 	// await redisClient.del('cooldown:delta_squeeze')
-	redisClient.del('cooldown:v2:nifty_pulse'),
+	await Promise.all([
+		redisClient.del('cooldown:v2:nifty_pulse'),
 		redisClient.del('cooldown:v2:vwap_reclaim'),
 		redisClient.del('cooldown:v2:nifty_ore'),
 		redisClient.del('cooldown:oi_sweep'),
@@ -213,8 +214,10 @@ export const startLiveEngine = async () => {
 		redisClient.del('regime:nifty:returns_1min'),
 		redisClient.del('regime:nifty:current'),
 		redisClient.del('jsfilter:decisions'),
-		redisClient.del(`v2:state:nifty_sweep`);
-	redisClient.del(`v2:cooldown:nifty_sweep`);
+		redisClient.del(`v2:state:nifty_sweep`),
+		redisClient.del(`v2:cooldown:nifty_sweep`)
+	])
+
 
 
 	console.log('[Engine] ✅ Full boot cleanup complete.')
