@@ -45,7 +45,7 @@ export interface LikelihoodBreakdown {
 	volumeRatio: number
 	vwapZoneRatio: number
 	timeRatio: number
-	dteRatio: number
+	dteRatio?: number
 	combined: number
 }
 
@@ -304,46 +304,46 @@ export const computeBayesianPosterior = async (
 
 	posterior = bayesUpdate(posterior, likelihoods.timeRatio)
 
-	
 
 
-		// ── EVIDENCE 6: Days to Expiry (Theta / Gamma Factor) ───────────────────
-    const dayOfWeek = new Date(Date.now() + 5.5 * 60 * 60 * 1000).getUTCDay() // 0=Sun, 4=Thu
-    const isOptionsAsset = payload.symbol.includes('CE') || payload.symbol.includes('PE')
-    
-    if (isOptionsAsset) {
-        if (dayOfWeek === 4) { 
-            // Thursday Expiry
-            if (isMeanReversion) {
-                likelihoods.dteRatio = 0.50 // Severe penalty for ranging on expiry
-                reasons.push(`⚠️ Expiry Day + Reversion = Severe Theta Risk (L=0.50)`)
-            } else {
-                likelihoods.dteRatio = 1.20 // Bonus for momentum on expiry (Gamma explosions)
-                reasons.push(`✅ Expiry Day + Momentum = Gamma Advantage (L=1.20)`)
-            }
-        } else if (dayOfWeek === 3) { 
-            // Wednesday (1 DTE)
-            likelihoods.dteRatio = isMeanReversion ? 0.85 : 1.0
-            reasons.push(isMeanReversion ? `⚠️ 1 DTE + Reversion = High Theta Risk (L=0.85)` : `○ 1 DTE + Momentum = Neutral`)
-        } else {
-            // Mon/Tue/Fri
-            likelihoods.dteRatio = 1.0
-            reasons.push(`○ High DTE (Day ${dayOfWeek}) — Theta decay manageable (L=1.0)`)
-        }
-    } else {
-        likelihoods.dteRatio = 1.0 // Non-options assets unaffected
-    }
 
-    posterior = bayesUpdate(posterior, likelihoods.dteRatio)
+	// ── EVIDENCE 6: Days to Expiry (Theta / Gamma Factor) ───────────────────
+	const dayOfWeek = new Date(Date.now() + 5.5 * 60 * 60 * 1000).getUTCDay() // 0=Sun, 4=Thu
+	const isOptionsAsset = payload.symbol.includes('CE') || payload.symbol.includes('PE')
 
-// 3. UPDATE the combined multiplier at the bottom
-    likelihoods.combined =
-        likelihoods.biasRatio *
-        likelihoods.oiWallRatio *
-        likelihoods.volumeRatio *
-        likelihoods.vwapZoneRatio *
-        likelihoods.timeRatio *
-        likelihoods.dteRatio
+	if (isOptionsAsset) {
+		if (dayOfWeek === 4) {
+			// Thursday Expiry
+			if (isMeanReversion) {
+				likelihoods.dteRatio = 0.50 // Severe penalty for ranging on expiry
+				reasons.push(`⚠️ Expiry Day + Reversion = Severe Theta Risk (L=0.50)`)
+			} else {
+				likelihoods.dteRatio = 1.20 // Bonus for momentum on expiry (Gamma explosions)
+				reasons.push(`✅ Expiry Day + Momentum = Gamma Advantage (L=1.20)`)
+			}
+		} else if (dayOfWeek === 3) {
+			// Wednesday (1 DTE)
+			likelihoods.dteRatio = isMeanReversion ? 0.85 : 1.0
+			reasons.push(isMeanReversion ? `⚠️ 1 DTE + Reversion = High Theta Risk (L=0.85)` : `○ 1 DTE + Momentum = Neutral`)
+		} else {
+			// Mon/Tue/Fri
+			likelihoods.dteRatio = 1.0
+			reasons.push(`○ High DTE (Day ${dayOfWeek}) — Theta decay manageable (L=1.0)`)
+		}
+	} else {
+		likelihoods.dteRatio = 1.0 // Non-options assets unaffected
+	}
+
+	posterior = bayesUpdate(posterior, likelihoods.dteRatio)
+
+	// 3. UPDATE the combined multiplier at the bottom
+	likelihoods.combined =
+		likelihoods.biasRatio *
+		likelihoods.oiWallRatio *
+		likelihoods.volumeRatio *
+		likelihoods.vwapZoneRatio *
+		likelihoods.timeRatio *
+		likelihoods.dteRatio
 
 	const pass = posterior >= POSTERIOR_FIRE_THRESHOLD
 	const confidence =

@@ -30,22 +30,19 @@ import { pushNiftyReturn } from '../utils/regimeDetector.js'
 
 // Nifty detectors
 import { OiLiquiditySweepDetector } from '../detectors/oiLiquiditySweepDetector.js'
-import { ValueZoneScalpDetector } from '../detectors/valueZoneScalpDetector.js'
 import { DeltaHedgingPressureDetector } from '../detectors/deltahedgingpressuredetector.js'
 
 // Equity detectors — full stack re-enabled
-import { MultiTimeframeBreakoutDetector } from '../detectors/Multitimeframebreakoutdetector.js'
-import { EquityLiquiditySweepDetector } from '../detectors/equityLiquiditySweepDetector.js'
-import { MorningMomentumDetector } from '../detectors/morningMomentumDetector.js'
-import { SmartMoneyDivergenceDetector } from '../detectors/smartmoneydivergencedetector.js'
-import { VcpDetector } from '../detectors/vcpDetector.js'
-import { VolumeSpikeDetector } from '../detectors/volumeSpikeDetector.js'
-import { ParabolicRvolSweepDetector } from '../detectors/parabolicRvolSweepDetector.js'
-import { OrbDetector } from '../detectors/orbDetector.js'
-import { VwapStdevReversionDetector } from '../detectors/vwapStdevReversionDetector.js'
 
+import { NiftyTrendPulseDetector } from '../detectors/v2/niftyTrendPulseDetector.js'
+import { NiftyVwapReclaimDetector } from '../detectors/v2/niftyVwapReclaimDetector.js'
+import { NiftyOpeningRangeExplosionDetector } from '../detectors/v2/niftyOpeningRangeExplosionDetector.js'
+import { StockMomentumBreakoutDetector } from '../detectors/v2/stockMomentumBreakoutDetector.js'
 import type { IDetector, TickData } from '../core/types.js'
 import { fileURLToPath } from 'url'
+import { NiftyLiquiditySweep } from '../detectors/v2/high_alpha/NiftyLiquiditySweep.js'
+import { VolatilityContraction } from '../detectors/v2/high_alpha/VolatilityContraction.js'
+import { GapAndGoMomentum } from '../detectors/v2/high_alpha/GapAndGoMomentum.js'
 
 const NIFTY_SYMBOL = 'NSE:NIFTY50-INDEX'
 
@@ -98,8 +95,11 @@ tickEmitter.setMaxListeners(200)
 
 // High-Conviction Nifty Singleton Detectors
 const oiSweepDetector = new OiLiquiditySweepDetector()
-const valueZoneScalpDetector = new ValueZoneScalpDetector()
+const niftyTrendPulse = new NiftyTrendPulseDetector()
+const niftyVwapReclaim = new NiftyVwapReclaimDetector()
+const niftyOpeningRangeExpl = new NiftyOpeningRangeExplosionDetector()
 const deltaHedgingDetector = new DeltaHedgingPressureDetector()
+const v2NiftySweepDetector = new NiftyLiquiditySweep();
 
 export const startLiveEngine = async () => {
 	console.log(`[Engine] 📡 Booting Institutional Quant Router with Jane Street Filter...`)
@@ -135,65 +135,87 @@ export const startLiveEngine = async () => {
 		activeUniverse.map(async (symbol) => {
 			strategyRouter.set(symbol, [
 				// ── Morning openers (9:15–9:45) ─────────────────────────
-				new MorningMomentumDetector(symbol),
-				new OrbDetector(symbol),
+				// new MorningMomentumDetector(symbol),
+				// new OrbDetector(symbol),
 
-				// ── Breakout / trend-following ────────────────────────────
-				new MultiTimeframeBreakoutDetector(symbol),
-				new VcpDetector(symbol),
-				new ParabolicRvolSweepDetector(symbol),  // ← BSE/MCX/ADANI-type explosive moves
+				// // ── Breakout / trend-following ────────────────────────────
+				// new MultiTimeframeBreakoutDetector(symbol),
+				// new VcpDetector(symbol),
+				// new ParabolicRvolSweepDetector(symbol),  // ← BSE/MCX/ADANI-type explosive moves
 
-				// ── Mean reversion ────────────────────────────────────────
-				new VwapStdevReversionDetector(symbol),  // ← 2.5 SD statistical extreme
-				new SmartMoneyDivergenceDetector(symbol), // ← Wyckoff accumulation/distribution
+				// // ── Mean reversion ────────────────────────────────────────
+				// new VwapStdevReversionDetector(symbol),  // ← 2.5 SD statistical extreme
+				// new SmartMoneyDivergenceDetector(symbol), // ← Wyckoff accumulation/distribution
 
-				// ── Structural / universal ────────────────────────────────
-				new VolumeSpikeDetector(symbol),          // ← institutional block trades
-				new EquityLiquiditySweepDetector(symbol), // ← ORH/ORL trap reversals
+				// // ── Structural / universal ────────────────────────────────
+				// new VolumeSpikeDetector(symbol),          // ← institutional block trades
+				// new EquityLiquiditySweepDetector(symbol), // ← ORH/ORL trap reversals
+
+				new StockMomentumBreakoutDetector(symbol),
+				new VolatilityContraction(symbol),
+				new GapAndGoMomentum(symbol)
 			])
 
 			// Full boot cleanup — all detector state reset for new session
 			await Promise.all([
 				// MTF
-				redisClient.del(`cooldown:mtf_breakout:${symbol}`),
-				redisClient.del(`session_open:${symbol}`),
-				// ORB
-				redisClient.del(`cooldown:orb:${symbol}`),
-				redisClient.del(`orb:15min:high:${symbol}`),
-				redisClient.del(`orb:15min:low:${symbol}`),
-				redisClient.del(`orb:30min:high:${symbol}`),
-				redisClient.del(`orb:30min:low:${symbol}`),
-				// VCP
-				redisClient.del(`memory:vcp:${symbol}`),
-				redisClient.del(`baseline:vcp:${symbol}`),
-				redisClient.del(`armed:vcp:${symbol}`),
-				redisClient.del(`cooldown:vcp:${symbol}`),
-				// Parabolic RVOL
-				redisClient.del(`macro_baseline:${symbol}`),
-				redisClient.del(`cooldown:parabolic:${symbol}`),
-				// VWAP Stdev Reversion
-				redisClient.del(`cooldown:stdev_rev:${symbol}`),
-				// Volume Spike
-				redisClient.del(`vol_baseline_candles:${symbol}`),
-				redisClient.del(`cooldown:volume:${symbol}`),
-				// Equity sweep + SMD
-				redisClient.del(`cooldown:eq_sweep:${symbol}`),
-				redisClient.del(`cooldown:smd:${symbol}`),
-				// Morning momentum
-				redisClient.del(`fired:ignition:${symbol}`),
+				// redisClient.del(`cooldown:mtf_breakout:${symbol}`),
+				// redisClient.del(`session_open:${symbol}`),
+				// // ORB
+				// redisClient.del(`cooldown:orb:${symbol}`),
+				// redisClient.del(`orb:15min:high:${symbol}`),
+				// redisClient.del(`orb:15min:low:${symbol}`),
+				// redisClient.del(`orb:30min:high:${symbol}`),
+				// redisClient.del(`orb:30min:low:${symbol}`),
+				// // VCP
+				// redisClient.del(`memory:vcp:${symbol}`),
+				// redisClient.del(`baseline:vcp:${symbol}`),
+				// redisClient.del(`armed:vcp:${symbol}`),
+				// redisClient.del(`cooldown:vcp:${symbol}`),
+				// // Parabolic RVOL
+				// redisClient.del(`macro_baseline:${symbol}`),
+				// redisClient.del(`cooldown:parabolic:${symbol}`),
+				// // VWAP Stdev Reversion
+				// redisClient.del(`cooldown:stdev_rev:${symbol}`),
+				// // Volume Spike
+				// redisClient.del(`vol_baseline_candles:${symbol}`),
+				// redisClient.del(`cooldown:volume:${symbol}`),
+				// // Equity sweep + SMD
+				// redisClient.del(`cooldown:eq_sweep:${symbol}`),
+				// redisClient.del(`cooldown:smd:${symbol}`),
+				// // Morning momentum
+				// redisClient.del(`fired:ignition:${symbol}`),
+
+				redisClient.del(`cooldown:v2:momentum:${symbol}`),
+				redisClient.del(`v2:session_open:${symbol}`),
+				redisClient.del(`v2:cooldown:vcp:${symbol}`),
+				redisClient.del(`v2:cooldown:gapgo:${symbol}`),
+				redisClient.del(`v2:vcp_history:${symbol}`)
 			])
 		}),
 	)
 
 	// [NEW] Clear regime data from previous session so today starts fresh
-	await redisClient.del('regime:nifty:returns_1min')
-	await redisClient.del('regime:nifty:current')
-	await redisClient.del('jsfilter:decisions')
-	// Nifty-level cooldowns
-	await redisClient.del('market:nifty:bias')
-	await redisClient.del('cooldown:valuezone')
-	await redisClient.del('cooldown:oi_sweep')
-	await redisClient.del('cooldown:delta_squeeze')
+	// await redisClient.del('regime:nifty:returns_1min')
+	// await redisClient.del('regime:nifty:current')
+	// await redisClient.del('jsfilter:decisions')
+	// // Nifty-level cooldowns
+	// await redisClient.del('market:nifty:bias')
+	// await redisClient.del('cooldown:valuezone')
+	// await redisClient.del('cooldown:oi_sweep')
+	// await redisClient.del('cooldown:delta_squeeze')
+	redisClient.del('cooldown:v2:nifty_pulse'),
+		redisClient.del('cooldown:v2:vwap_reclaim'),
+		redisClient.del('cooldown:v2:nifty_ore'),
+		redisClient.del('cooldown:oi_sweep'),
+		redisClient.del('cooldown:delta_squeeze'),
+		redisClient.del('market:nifty:bias'),
+		redisClient.del('regime:nifty:returns_1min'),
+		redisClient.del('regime:nifty:current'),
+		redisClient.del('jsfilter:decisions'),
+		redisClient.del(`v2:state:nifty_sweep`);
+	redisClient.del(`v2:cooldown:nifty_sweep`);
+
 
 	console.log('[Engine] ✅ Full boot cleanup complete.')
 	console.log(`[Engine] 📡 Equity stack: 9 detectors × ${activeUniverse.length} stocks`)
@@ -215,10 +237,12 @@ export const startLiveEngine = async () => {
 					console.error('[Regime] Candle update error:', e),
 				)
 
-				await oiSweepDetector.analyze(liveTick)
-				await valueZoneScalpDetector.analyze(liveTick)
+				await niftyOpeningRangeExpl.analyze(liveTick)  // first 45 min ORB
+				await niftyTrendPulse.analyze(liveTick)         // 2-bar 3-min confirmation
+				await niftyVwapReclaim.analyze(liveTick)        // VWAP structure shifts
+				await oiSweepDetector.analyze(liveTick)         // OI wall traps (kept)
 				await deltaHedgingDetector.analyze(liveTick)
-
+				await v2NiftySweepDetector.analyze(liveTick);
 				// Option Chain Dynamic Rolling
 				if (lastSubscribedNiftySpot === 0 || hasATMShifted(rawTick.ltp, lastSubscribedNiftySpot)) {
 					const newOpts = buildOptionUniverse(rawTick.ltp)
@@ -320,11 +344,11 @@ export const startLiveEngine = async () => {
 		console.log(`\n[Engine] 🛑 ${signal} received. Shutting down gracefully...`)
 		try {
 			skt.close()
-		} catch {}
+		} catch { }
 		await new Promise((resolve) => setTimeout(resolve, 3000))
 		try {
 			await redisClient.quit()
-		} catch {}
+		} catch { }
 		process.exit(0)
 	}
 
