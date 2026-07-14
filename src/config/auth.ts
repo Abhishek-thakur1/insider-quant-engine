@@ -22,13 +22,13 @@ const bot = new TelegramBot(ENV.TELEGRAM_BOT_TOKEN, { polling: true })
 console.log('\n[Auth Bridge] 🛡️  Telegram Auth Bridge Started.')
 console.log(`[Auth Bridge] 📱 Send '/arm' to your Telegram bot to initiate login.\n`)
 
-// ───THE ALARM CLOCK (Auto-Ping at 8:45 AM) ────────────────
+// ───THE ALARM CLOCK (Auto-Ping at 7:45 AM) ────────────────
 const sendIgnitionPing = async () => {
 	const authUrl = fyersApi.generateAuthCode()
 
 	await bot.sendMessage(
 		ENV.TELEGRAM_ADMIN_ID,
-		`⏰ *Pre-Market Alert: 8:45 AM*\n\nThe market opens in 30 minutes. Tap the link below to authenticate via Fyers and arm the execution engine for the day.`,
+		`⏰ *Pre-Market Alert: 7:45 AM*\n\nThe market opens in 30 minutes. Tap the link below to authenticate via Fyers and arm the execution engine for the day.`,
 		{
 			parse_mode: 'Markdown',
 			reply_markup: {
@@ -36,10 +36,10 @@ const sendIgnitionPing = async () => {
 			},
 		},
 	)
-	console.log('[Auth Bridge] 📤 8:45 AM Auto-Ping sent to Telegram.')
+	console.log('[Auth Bridge] 📤 7:45 AM Auto-Ping sent to Telegram.')
 }
 
-// cron.schedule("45 8 * * 1-5", () => {
+// cron.schedule("45 7 * * 1-5", () => {
 //     sendIgnitionPing();
 // }, {
 //     timezone: "Asia/Kolkata"

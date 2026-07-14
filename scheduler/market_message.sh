@@ -54,8 +54,13 @@ case "$ACTION" in
       "💡 *Trading Day Begins* — Volume tells the truth. Price tells stories." \
       "🧠 *Stay Disciplined* — No FOMO. No revenge trades. Let the system work." \
       "⏳ *Patience is the Edge* — The best setups reveal themselves. Do not force it." \
-      "🌊 *Ride the Institutional Wave* — When the big money moves, we move with it."
-    IDX=$(rand_pick 10)
+      "🌊 *Ride the Institutional Wave* — When the big money moves, we move with it." \
+      "🔥 *The Cage is Open* — Chaos is pure opportunity. Spot the volume shocks, attack the breakouts." \
+      "🦈 *Shark Hours* — The institutional tape is moving fast. Hunt the alpha, ignore the retail chatrooms." \
+      "⚡ *Volatility Unleashed* — Coils are breaking, high-beta trends are forming. Absolute execution starts now." \
+      "💥 *Order Book Live* — Order flow is lighting up. Keep the stops tight and your execution aggressive." \
+      "🦅 *Apex Execution* — Let the herd chase the top at 9:15. We strike exactly at our structural triggers."
+    IDX=$(rand_pick 15)
     eval "MSG=\${$((IDX + 1))}"
     send_message "$MSG"
     log "📤 [open] $MSG"
@@ -67,13 +72,18 @@ case "$ACTION" in
       "🛑 *3:30 Approaching* — No new entries. Protect what you earned today." \
       "📊 *Day Done* — Review your trades tonight. The market opens again tomorrow." \
       "💰 *Closing Bell* — Discipline today compounds into wealth tomorrow." \
-      "🧘 *Market Closing* — Detach from the P&L. Evaluate the process, not the outcome." \
+      "🧘 *Market Closing* — Detach from the PnL. Evaluate the process, not the outcome." \
       "🌙 *Session Ending* — The engine powers down. See you at the open tomorrow." \
       "✅ *Trading Day Complete* — If you followed the rules, it was a good day regardless of P&L." \
       "📉📈 *Day Wrap* — Markets close. Lessons stay. Come back stronger tomorrow." \
       "🔒 *Positions Closed* — Capital preserved is capital ready to fight another day." \
-      "🏁 *Final Bell* — The best traders know when to stop. Today is done."
-    IDX=$(rand_pick 10)
+      "🏁 *Final Bell* — The best traders know when to stop. Today is done." \
+      "🏆 *Vault Locked* — The dust settles. Protect your capital, secure the gains, step off the field." \
+      "💰 *Alpha Extracted* — The screen stops blinking. Count the wins, log the slips, disconnect completely." \
+      "🔋 *Core Engine Shutdown* — 3:30 PM. We rode the institutional wave. Power down and clear your head." \
+      "⚔️ *Battlefield Frozen* — The tape is silent. Capital preserved is a weapon ready for tomorrow's open." \
+      "💎 *Execution Perfected* — Green screen or hit stops—if you stuck to the rules, you won. Rest up."
+    IDX=$(rand_pick 15)
     eval "MSG=\${$((IDX + 1))}"
     send_message "$MSG"
     log "📤 [close] $MSG"

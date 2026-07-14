@@ -3,7 +3,7 @@
 # Quant Engine Daily Lifecycle Controller
 #
 # Called by cron at specific times. Receives one argument:
-#   start_auth    → 8:45 AM  — boot quant_auth so it can send the Telegram ping
+#   start_auth    → 7:45 AM  — boot quant_auth so it can send the Telegram ping
 #   start_engine  → 9:15 AM  — boot quant_engine (token must exist by now)
 #   stop_engine   → 3:30 PM  — graceful shutdown of quant_engine
 #
@@ -20,7 +20,7 @@ log() {
 
 case "$ACTION" in
 
-  # ── 8:45 AM ───────────────────────────────────────────────────────────────
+  # ── 7:45 AM ───────────────────────────────────────────────────────────────
   # Start auth bridge. It will:
   #   1. Send the Telegram login link
   #   2. Catch the /callback from Fyers

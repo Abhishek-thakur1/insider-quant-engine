@@ -1,5 +1,5 @@
-# ── Auth bridge — 8:45 AM Mon–Fri
-45 8 * * 1-5 /usr/local/bin/lifecycle.sh start_auth >> /var/log/scheduler.log 2>&1
+# ── Auth bridge — 7:45 AM Mon–Fri
+45 7 * * 1-5 /usr/local/bin/lifecycle.sh start_auth >> /var/log/scheduler.log 2>&1
 
 # ── Market open message — 9:07 AM Mon–Fri
 07 9 * * 1-5 /usr/local/bin/market_message.sh open >> /var/log/scheduler.log 2>&1

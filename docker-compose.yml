@@ -88,7 +88,7 @@ volumes:
 #       - "6379:6379"
 
 #   # — Auth Bridge
-#   # Runs 24/7. Sends Telegram ping at 8:45 AM IST.
+#   # Runs 24/7. Sends Telegram ping at 7:45 AM IST.
 #   # Catches the Fyers /callback, writes token to shared volume, then exits.
 #   # restart:always means Docker brings it back up ready for next day.
 #   auth_bridge:
