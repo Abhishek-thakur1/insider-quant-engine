@@ -24,6 +24,7 @@ import { bootRedis, redisClient } from '../config/redis.js'
 import { updateVwap, updateNiftyBias, warnIfVwapMissing } from '../utils/vwapUtils.js'
 import { buildOptionUniverse, updateOptionTick, hasATMShifted } from '../utils/optionUtils.js'
 import { seedHistoricalVwap } from './vwapSeeder.js'
+import { feedTick } from '../utils/candleAggregator.js'
 
 // [NEW] Regime detector feed
 import { pushNiftyReturn } from '../utils/regimeDetector.js'
@@ -99,7 +100,7 @@ const niftyTrendPulse = new NiftyTrendPulseDetector()
 const niftyVwapReclaim = new NiftyVwapReclaimDetector()
 const niftyOpeningRangeExpl = new NiftyOpeningRangeExplosionDetector()
 const deltaHedgingDetector = new DeltaHedgingPressureDetector()
-const v2NiftySweepDetector = new NiftyLiquiditySweep();
+const v2NiftySweepDetector = new NiftyLiquiditySweep()
 
 export const startLiveEngine = async () => {
 	console.log(`[Engine] 📡 Booting Institutional Quant Router with Jane Street Filter...`)
@@ -153,7 +154,7 @@ export const startLiveEngine = async () => {
 
 				new StockMomentumBreakoutDetector(symbol),
 				new VolatilityContraction(symbol),
-				new GapAndGoMomentum(symbol)
+				new GapAndGoMomentum(symbol),
 			])
 
 			// Full boot cleanup — all detector state reset for new session
@@ -190,7 +191,7 @@ export const startLiveEngine = async () => {
 				redisClient.del(`v2:session_open:${symbol}`),
 				redisClient.del(`v2:cooldown:vcp:${symbol}`),
 				redisClient.del(`v2:cooldown:gapgo:${symbol}`),
-				redisClient.del(`v2:vcp_history:${symbol}`)
+				redisClient.del(`v2:vcp_history:${symbol}`),
 			])
 		}),
 	)
@@ -215,15 +216,15 @@ export const startLiveEngine = async () => {
 		redisClient.del('regime:nifty:current'),
 		redisClient.del('jsfilter:decisions'),
 		redisClient.del(`v2:state:nifty_sweep`),
-		redisClient.del(`v2:cooldown:nifty_sweep`)
+		redisClient.del(`v2:cooldown:nifty_sweep`),
 	])
-
-
 
 	console.log('[Engine] ✅ Full boot cleanup complete.')
 	console.log(`[Engine] 📡 Equity stack: 9 detectors × ${activeUniverse.length} stocks`)
 	console.log('[Engine] 📡 Nifty stack:  OI Sweep + Value Zone + Delta Hedging')
-	console.log('[Engine] 🧮 JaneStreetFilter ACTIVE — all signals gated (Regime → Bayes → EV → Kelly)')
+	console.log(
+		'[Engine] 🧮 JaneStreetFilter ACTIVE — all signals gated (Regime → Bayes → EV → Kelly)',
+	)
 
 	// ─── ASYNCHRONOUS PROCESSING LAYER ───
 	tickEmitter.on('processTick', async (tickData) => {
@@ -240,12 +241,14 @@ export const startLiveEngine = async () => {
 					console.error('[Regime] Candle update error:', e),
 				)
 
-				await niftyOpeningRangeExpl.analyze(liveTick)  // first 45 min ORB
-				await niftyTrendPulse.analyze(liveTick)         // 2-bar 3-min confirmation
-				await niftyVwapReclaim.analyze(liveTick)        // VWAP structure shifts
-				await oiSweepDetector.analyze(liveTick)         // OI wall traps (kept)
+				feedTick(NIFTY_SYMBOL, rawTick.ltp, liveTick.volume)
+
+				await niftyOpeningRangeExpl.analyze(liveTick) // first 45 min ORB
+				await niftyTrendPulse.analyze(liveTick) // 2-bar 3-min confirmation
+				await niftyVwapReclaim.analyze(liveTick) // VWAP structure shifts
+				await oiSweepDetector.analyze(liveTick) // OI wall traps (kept)
 				await deltaHedgingDetector.analyze(liveTick)
-				await v2NiftySweepDetector.analyze(liveTick);
+				await v2NiftySweepDetector.analyze(liveTick)
 				// Option Chain Dynamic Rolling
 				if (lastSubscribedNiftySpot === 0 || hasATMShifted(rawTick.ltp, lastSubscribedNiftySpot)) {
 					const newOpts = buildOptionUniverse(rawTick.ltp)
@@ -282,6 +285,7 @@ export const startLiveEngine = async () => {
 
 			// 3. Route Equities
 			await updateVwap(rawTick.symbol, liveTick.price, liveTick.volume)
+			feedTick(rawTick.symbol, liveTick.price, liveTick.volume)
 			const strategies = strategyRouter.get(rawTick.symbol)
 			if (strategies) {
 				await Promise.all(strategies.map((s) => s.analyze(liveTick)))
@@ -347,11 +351,11 @@ export const startLiveEngine = async () => {
 		console.log(`\n[Engine] 🛑 ${signal} received. Shutting down gracefully...`)
 		try {
 			skt.close()
-		} catch { }
+		} catch {}
 		await new Promise((resolve) => setTimeout(resolve, 3000))
 		try {
 			await redisClient.quit()
-		} catch { }
+		} catch {}
 		process.exit(0)
 	}
 
