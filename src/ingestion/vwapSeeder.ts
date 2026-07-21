@@ -57,7 +57,15 @@ const fetchAndSeedSymbol = async (symbol: string, todayStr: string): Promise<voi
 	}
 }
 
-// ─── Token-Bucket Rate Limiter ───────────────────────────────────────────────
+// ─── Simple token-bucket rate limiter ────────────────────────────────────────
+// Refills `maxPerSecond` tokens every second. Callers queue up if no tokens
+// are available and get drained in FIFO order as tokens refill.
+// IMPORTANT: the interval is intentionally left refed (default) so it keeps
+// the event loop alive between bursts, while items sit in the queue waiting
+// for their turn — an unrefed timer can let Node exit mid-drain in a
+// standalone/cron-triggered run where nothing else is holding the loop open.
+// Callers MUST invoke the returned close() once done to avoid leaking the
+// interval handle across repeated invocations (e.g. scheduled runs).
 const createRateLimiter = (maxPerSecond: number) => {
 	const queue: (() => void)[] = []
 	let tokens = maxPerSecond
@@ -71,10 +79,7 @@ const createRateLimiter = (maxPerSecond: number) => {
 		}
 	}, 1000)
 
-	// Unref timer so Node process can exit cleanly when queue is empty
-	timer.unref()
-
-	return <T>(fn: () => Promise<T>): Promise<T> => {
+	const limit = <T>(fn: () => Promise<T>): Promise<T> => {
 		return new Promise((resolve, reject) => {
 			const run = () => {
 				fn().then(resolve).catch(reject)
@@ -87,6 +92,10 @@ const createRateLimiter = (maxPerSecond: number) => {
 			}
 		})
 	}
+
+	const close = () => clearInterval(timer)
+
+	return { limit, close }
 }
 
 // ─── MAIN: The Rate-Limited VWAP Seeder ──────────────────────────────────────
@@ -114,10 +123,12 @@ export const seedHistoricalVwap = async (): Promise<void> => {
 	console.log(`[Seeder] 📥 Downloading intraday data for ${activeUniverse.length} equities...`)
 
 	// ── RATE LIMIT CONFIGURATION ──
+	// Tune MAX_REQ_PER_SEC to Fyers' documented limit for the history/candles
+	// endpoint specifically (it is usually stricter than the general API limit).
 	const MAX_REQ_PER_SEC = 5
 	const MAX_RETRIES = 2
 
-	const rateLimited = createRateLimiter(MAX_REQ_PER_SEC)
+	const { limit: rateLimited, close: closeRateLimiter } = createRateLimiter(MAX_REQ_PER_SEC)
 
 	const runWithRetry = async (symbol: string, attempt = 0): Promise<void> => {
 		try {
@@ -150,7 +161,13 @@ export const seedHistoricalVwap = async (): Promise<void> => {
 		}
 	}
 
-	await Promise.all(activeUniverse.map((symbol) => runWithRetry(symbol)))
+	try {
+		await Promise.all(activeUniverse.map((symbol) => runWithRetry(symbol)))
+	} finally {
+		// Always clear the interval, even if something throws unexpectedly,
+		// so the handle never outlives this run.
+		closeRateLimiter()
+	}
 
 	console.log(
 		`[Seeder] ✅ Done. ${successCount}/${activeUniverse.length} seeded` +

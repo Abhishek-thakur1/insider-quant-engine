@@ -1,32 +1,20 @@
-// ============================================================
-// telegramWorker.ts — Telegram Alert Dispatcher
-//
-// CONFIRMATION ENGINE INTEGRATION:
-// runJaneStreetFilter() is injected HERE as an interceptor, same
-// pattern your own earlier comments in this file already described.
-// No detector files need any changes — they keep calling
-// sendTelegramAlert(payload) exactly as before.
-//
-// Flow:
-//   Detector fires sendTelegramAlert(payload) →
-//   confirmation engine scores it 0-100 across 6 components →
-//   score >= threshold (or SHADOW_MODE=true): alert fires, score
-//     breakdown appended to the message →
-//   score < threshold: alert blocked, decision logged to Redis,
-//     nothing sent to Telegram
-//
-// SHADOW MODE: set SHADOW_MODE=true in .env to log scores for every
-// signal WITHOUT blocking anything — every alert still fires, with
-// the score attached, so you can compare scores against real outcomes
-// before trusting the cutoff to block signals.
-// ============================================================
-
 import { Telegraf } from 'telegraf'
 import { ENV } from '../config/env.js'
 import { runJaneStreetFilter } from '../detectors/janeStreetFilter.js'
 
 const bot = new Telegraf(ENV.TELEGRAM_BOT_TOKEN)
 const SHADOW_MODE = process.env.SHADOW_MODE === 'true'
+
+// Gates that represent a structural/mathematical disqualification of the
+// signal (wrong regime, negative EV, failed Bayesian confidence, Kelly sizing
+// says don't take it) — these must NEVER dispatch, even in shadow mode.
+// Shadow mode is only meant to relax the aggregate SCORE threshold so we can
+// calibrate where that cutoff should sit; it is not a bypass for gates that
+// mean the trade is mathematically unsound.
+//
+// IMPORTANT: confirm these strings exactly match the values janeStreetFilter.ts
+// assigns to `decision.rejectedAt` before relying on this list.
+const HARD_GATES = new Set(['REGIME', 'BAYESIAN', 'EV', 'KELLY'])
 
 export interface AlertPayload {
 	symbol: string
@@ -50,17 +38,24 @@ export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
 	try {
 		decision = await runJaneStreetFilter(data, data.detectorName)
 
-		if (!decision.passed && !SHADOW_MODE) {
+		const isHardGateRejection = !!decision.rejectedAt && HARD_GATES.has(decision.rejectedAt)
+
+		// Block if: outright failed and not in shadow mode, OR failed on a hard
+		// gate regardless of shadow mode. Shadow mode only lets pure "score came
+		// in under the aggregate threshold" rejections through for calibration.
+		if (!decision.passed && (isHardGateRejection || !SHADOW_MODE)) {
 			// Signal blocked. Decision already logged to Redis.
 			console.log(
-				`🚫 [${data.side}] ${data.symbol} blocked — score ${decision.score}/100 (${decision.rejectedAt ?? 'below threshold'})`,
+				`🚫 [${data.side}] ${data.symbol} blocked — score ${decision.score}/100 (${decision.rejectedAt ?? 'below threshold'})${
+					isHardGateRejection && SHADOW_MODE ? ' [hard gate — shadow mode does not override]' : ''
+				}`,
 			)
 			return
 		}
 
 		if (!decision.passed && SHADOW_MODE) {
 			console.log(
-				`👁️ [SHADOW] [${data.side}] ${data.symbol} would have been BLOCKED — score ${decision.score}/100 — firing anyway (shadow mode)`,
+				`👁️ [SHADOW] [${data.side}] ${data.symbol} would have been BLOCKED — score ${decision.score}/100 — firing anyway (shadow mode, threshold-only rejection)`,
 			)
 		}
 	} catch (filterErr) {

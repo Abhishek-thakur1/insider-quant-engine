@@ -1,20 +1,3 @@
-// ============================================================
-// websocket.ts — Live Market Data Ingestion + Routing
-//
-// CHANGES FROM ORIGINAL (Jane Street Filter integration):
-//
-//   1. Added `pushNiftyReturn` import from regimeDetector.ts
-//   2. Added NiftyRegimeCandle tracker (class-level, in-memory)
-//      — Builds 1-min candles on Nifty spot ticks
-//      — On each candle close: computes return % and pushes to Redis
-//      — This feeds the Shannon entropy regime detector
-//   3. routeNiftyTick() now calls the candle tracker before
-//      existing detector routing — one extra line per tick
-//
-// Everything else is IDENTICAL to your working original.
-// No detector changes. No config changes. No Docker changes.
-// ============================================================
-
 import fyers, { fyersDataSocket } from 'fyers-api-v3'
 import fs from 'fs'
 import path from 'path'
@@ -123,35 +106,9 @@ export const startLiveEngine = async () => {
 	const accessToken = fs.readFileSync(TOKEN_PATH, 'utf8').trim()
 
 	// ── Boot Cleanup & Strategy Routing ──────────────────────────────────────
-	// DETECTOR STACK PHILOSOPHY:
-	//   Every equity gets the FULL stack. The Jane Street filter handles quality.
-	//   Don't manually disable detectors — let the Bayesian gate decide.
-	//   Specific detector types per regime:
-	//     Morning (9:15-9:45):  MorningMomentum + ORB
-	//     Trending day:         MTF + VCP + ParabolicRVOL
-	//     Ranging day:          VwapStdevReversion + SmartMoneyDivergence
-	//     Any time:             VolumeSpikeDetector + EquityLiquiditySweep
-
 	await Promise.all(
 		activeUniverse.map(async (symbol) => {
 			strategyRouter.set(symbol, [
-				// ── Morning openers (9:15–9:45) ─────────────────────────
-				// new MorningMomentumDetector(symbol),
-				// new OrbDetector(symbol),
-
-				// // ── Breakout / trend-following ────────────────────────────
-				// new MultiTimeframeBreakoutDetector(symbol),
-				// new VcpDetector(symbol),
-				// new ParabolicRvolSweepDetector(symbol),  // ← BSE/MCX/ADANI-type explosive moves
-
-				// // ── Mean reversion ────────────────────────────────────────
-				// new VwapStdevReversionDetector(symbol),  // ← 2.5 SD statistical extreme
-				// new SmartMoneyDivergenceDetector(symbol), // ← Wyckoff accumulation/distribution
-
-				// // ── Structural / universal ────────────────────────────────
-				// new VolumeSpikeDetector(symbol),          // ← institutional block trades
-				// new EquityLiquiditySweepDetector(symbol), // ← ORH/ORL trap reversals
-
 				new StockMomentumBreakoutDetector(symbol),
 				new VolatilityContraction(symbol),
 				new GapAndGoMomentum(symbol),
@@ -159,34 +116,6 @@ export const startLiveEngine = async () => {
 
 			// Full boot cleanup — all detector state reset for new session
 			await Promise.all([
-				// MTF
-				// redisClient.del(`cooldown:mtf_breakout:${symbol}`),
-				// redisClient.del(`session_open:${symbol}`),
-				// // ORB
-				// redisClient.del(`cooldown:orb:${symbol}`),
-				// redisClient.del(`orb:15min:high:${symbol}`),
-				// redisClient.del(`orb:15min:low:${symbol}`),
-				// redisClient.del(`orb:30min:high:${symbol}`),
-				// redisClient.del(`orb:30min:low:${symbol}`),
-				// // VCP
-				// redisClient.del(`memory:vcp:${symbol}`),
-				// redisClient.del(`baseline:vcp:${symbol}`),
-				// redisClient.del(`armed:vcp:${symbol}`),
-				// redisClient.del(`cooldown:vcp:${symbol}`),
-				// // Parabolic RVOL
-				// redisClient.del(`macro_baseline:${symbol}`),
-				// redisClient.del(`cooldown:parabolic:${symbol}`),
-				// // VWAP Stdev Reversion
-				// redisClient.del(`cooldown:stdev_rev:${symbol}`),
-				// // Volume Spike
-				// redisClient.del(`vol_baseline_candles:${symbol}`),
-				// redisClient.del(`cooldown:volume:${symbol}`),
-				// // Equity sweep + SMD
-				// redisClient.del(`cooldown:eq_sweep:${symbol}`),
-				// redisClient.del(`cooldown:smd:${symbol}`),
-				// // Morning momentum
-				// redisClient.del(`fired:ignition:${symbol}`),
-
 				redisClient.del(`cooldown:v2:momentum:${symbol}`),
 				redisClient.del(`v2:session_open:${symbol}`),
 				redisClient.del(`v2:cooldown:vcp:${symbol}`),
@@ -196,15 +125,7 @@ export const startLiveEngine = async () => {
 		}),
 	)
 
-	// [NEW] Clear regime data from previous session so today starts fresh
-	// await redisClient.del('regime:nifty:returns_1min')
-	// await redisClient.del('regime:nifty:current')
-	// await redisClient.del('jsfilter:decisions')
-	// // Nifty-level cooldowns
-	// await redisClient.del('market:nifty:bias')
-	// await redisClient.del('cooldown:valuezone')
-	// await redisClient.del('cooldown:oi_sweep')
-	// await redisClient.del('cooldown:delta_squeeze')
+	// Clear regime data from previous session so today starts fresh
 	await Promise.all([
 		redisClient.del('cooldown:v2:nifty_pulse'),
 		redisClient.del('cooldown:v2:vwap_reclaim'),
@@ -236,19 +157,20 @@ export const startLiveEngine = async () => {
 				const niftyVwap = await updateVwap(NIFTY_SYMBOL, rawTick.ltp, 1)
 				await updateNiftyBias(rawTick.ltp, niftyVwap)
 
-				// [NEW] Feed Nifty price into regime candle builder (non-blocking)
+				// Feed Nifty price into regime candle builder (non-blocking)
 				updateRegimeCandle(rawTick.ltp).catch((e) =>
 					console.error('[Regime] Candle update error:', e),
 				)
 
 				feedTick(NIFTY_SYMBOL, rawTick.ltp, liveTick.volume)
 
-				await niftyOpeningRangeExpl.analyze(liveTick) // first 45 min ORB
-				await niftyTrendPulse.analyze(liveTick) // 2-bar 3-min confirmation
-				await niftyVwapReclaim.analyze(liveTick) // VWAP structure shifts
-				await oiSweepDetector.analyze(liveTick) // OI wall traps (kept)
+				await niftyOpeningRangeExpl.analyze(liveTick)
+				await niftyTrendPulse.analyze(liveTick)
+				await niftyVwapReclaim.analyze(liveTick)
+				await oiSweepDetector.analyze(liveTick)
 				await deltaHedgingDetector.analyze(liveTick)
 				await v2NiftySweepDetector.analyze(liveTick)
+
 				// Option Chain Dynamic Rolling
 				if (lastSubscribedNiftySpot === 0 || hasATMShifted(rawTick.ltp, lastSubscribedNiftySpot)) {
 					const newOpts = buildOptionUniverse(rawTick.ltp)
@@ -323,21 +245,24 @@ export const startLiveEngine = async () => {
 			if (!tick?.symbol || !tick?.ltp) continue
 
 			const cumulativeVol = tick.vol_traded_today || 0
-			const previousVol = previousVolumeTracker.get(tick.symbol) || cumulativeVol
+			// Use ?? so we don't accidentally fallback to cumulativeVol if it was recorded as 0
+			const previousVol = previousVolumeTracker.get(tick.symbol) ?? cumulativeVol
 			const actualTickVol = Math.max(0, cumulativeVol - previousVol)
 
-			if (
-				tick.symbol !== NIFTY_SYMBOL &&
-				!tick.symbol.includes('CE') &&
-				!tick.symbol.includes('PE')
-			) {
-				previousVolumeTracker.set(tick.symbol, cumulativeVol)
-				if (actualTickVol <= 0) continue
+			// FIX: ALWAYS track the volume regardless of asset class so the *next* tick diff is correct
+			previousVolumeTracker.set(tick.symbol, cumulativeVol)
+
+			const isIndexOrOption =
+				tick.symbol === NIFTY_SYMBOL || tick.symbol.includes('CE') || tick.symbol.includes('PE')
+
+			// FIX: Only discard zero-volume ticks for equities (preventing false bid/ask ticks from firing logic)
+			if (!isIndexOrOption && actualTickVol <= 0) {
+				continue
 			}
 
 			const liveTick: TickData = {
 				price: tick.ltp,
-				volume: actualTickVol || 1,
+				volume: actualTickVol || 1, // Fallback to 1 ensures zero-volume index ticks don't break VWAP division
 				timestamp: Date.now(),
 			}
 
