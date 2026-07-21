@@ -28,7 +28,7 @@ const sendIgnitionPing = async () => {
 
 	await bot.sendMessage(
 		ENV.TELEGRAM_ADMIN_ID,
-		`⏰ *Pre-Market Alert: 7:45 AM*\n\nThe market opens in 30 minutes. Tap the link below to authenticate via Fyers and arm the execution engine for the day.`,
+		`⏰ *Pre-Market Alert: 7:45 AM*\n\nThe market opens in 90 minutes. Tap the link below to authenticate via Fyers and arm the execution engine for the day.`,
 		{
 			parse_mode: 'Markdown',
 			reply_markup: {
