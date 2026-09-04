@@ -260,6 +260,8 @@ export class DeltaHedgingPressureDetector implements IDetector {
 			trigger: `⚡ Gamma Squeeze ${state.optionType} | MM forced hedge detected | Vel ${latestVelocity.toFixed(2)}× | OI +${(oiGrowthRate * 100).toFixed(1)}% | Index ₹${this.currentIndexPrice} | SL ₹${indexSl} | T1 ₹${t1} | T2 ₹${t2} | ⏱ Exit 10min`,
 			vwap: vwap,
 			avgPrice: this.currentIndexPrice,
+			detectorName: this.name,
+			regimeClass: 'UNIVERSAL',
 		})
 
 		// 4. Set the cooldown so it doesn't fire on every tick

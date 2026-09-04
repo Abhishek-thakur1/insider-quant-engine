@@ -180,6 +180,8 @@ export class NiftyTrendPulseDetector implements IDetector {
 				trigger: `📈 Nifty Trend Pulse CE | Strike ${best.strike} | Premium ~₹${best.ltp > 0 ? best.ltp.toFixed(0) : '?'} | Spot ₹${current.close} | VWAP +${vwapDistPct.toFixed(2)}% | 2-bar HH ✅ | ${volNote} | SL ₹${indexSl} | T1 ₹${t1} | T2 ₹${t2} | ⏱ Exit next 3-min candle close`,
 				vwap,
 				avgPrice: (current.open + current.close) / 2,
+				detectorName: this.name,
+				regimeClass: 'MOMENTUM',
 			})
 
 			await redisClient.setEx(cooldownKey, COOLDOWN_SECONDS, 'true')
@@ -213,6 +215,8 @@ export class NiftyTrendPulseDetector implements IDetector {
 				trigger: `📉 Nifty Trend Pulse PE | Strike ${best.strike} | Premium ~₹${best.ltp > 0 ? best.ltp.toFixed(0) : '?'} | Spot ₹${current.close} | VWAP ${vwapDistPct.toFixed(2)}% | 2-bar LL ✅ | ${volNote} | SL ₹${indexSl} | T1 ₹${t1} | T2 ₹${t2} | ⏱ Exit next 3-min candle close`,
 				vwap,
 				avgPrice: (current.open + current.close) / 2,
+				detectorName: this.name,
+				regimeClass: 'MOMENTUM',
 			})
 
 			await redisClient.setEx(cooldownKey, COOLDOWN_SECONDS, 'true')

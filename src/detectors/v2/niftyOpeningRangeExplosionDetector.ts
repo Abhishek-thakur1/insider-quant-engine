@@ -42,7 +42,8 @@ const BUFFER_PTS = 5 // Nifty must break 5pts past range (avoid false breaks)
 const COOLDOWN_SECS = 2700 // 45 min — one signal per explosive move
 
 const RANGE_START = 9 * 60 + 15 // 9:15 AM
-const RANGE_END = 9 * 60 + 18 // First 3-min candle ends ~9:18
+// NOTE: the opening range is bounded by candle COUNT (RANGE_BUILD_CANDLES),
+// not by a wall-clock end time — an unused RANGE_END constant was removed.
 const ACTIVE_END = 10 * 60 + 15 // ORB only valid in first hour
 // ─────────────────────────────────────────────────────────────
 
@@ -177,6 +178,8 @@ export class NiftyOpeningRangeExplosionDetector implements IDetector {
 				trigger: `💥 Nifty ORB Explosion LONG | OR: ₹${this.orLow.toFixed(0)}-₹${this.orHigh.toFixed(0)} (${rangeSize.toFixed(0)}pts) | Break +${(closed.close - this.orHigh).toFixed(0)}pts | VWAP ₹${vwap.toFixed(2)} ✅ | Strike ${best.strike} CE | SL ₹${sl} | T1 ₹${t1} | T2 ₹${t2} | ⏱ High probability first-hour momentum`,
 				vwap,
 				avgPrice: (closed.open + closed.close) / 2,
+				detectorName: this.name,
+				regimeClass: 'MOMENTUM',
 			})
 
 			await redisClient.setEx(cooldownKey, COOLDOWN_SECS, 'true')
@@ -211,6 +214,8 @@ export class NiftyOpeningRangeExplosionDetector implements IDetector {
 				trigger: `💥 Nifty ORB Explosion SHORT | OR: ₹${this.orLow.toFixed(0)}-₹${this.orHigh.toFixed(0)} (${rangeSize.toFixed(0)}pts) | Break -${(this.orLow - closed.close).toFixed(0)}pts | VWAP ₹${vwap.toFixed(2)} ✅ | Strike ${best.strike} PE | SL ₹${sl} | T1 ₹${t1} | T2 ₹${t2} | ⏱ High probability first-hour breakdown`,
 				vwap,
 				avgPrice: (closed.open + closed.close) / 2,
+				detectorName: this.name,
+				regimeClass: 'MOMENTUM',
 			})
 
 			await redisClient.setEx(cooldownKey, COOLDOWN_SECS, 'true')

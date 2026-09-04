@@ -347,6 +347,8 @@ export class StockMomentumBreakoutDetector implements IDetector {
 			trigger: `${setupNote} | Entry ₹${entry.toFixed(2)} | SL ₹${sl} | T1 ₹${t1} | T2 ₹${t2} | VWAP ₹${vwapRef.toFixed(2)} (${vwapDist > 0 ? '+' : ''}${vwapDist.toFixed(2)}%) | Day: ${dayChangePct > 0 ? '+' : ''}${dayChangePct.toFixed(2)}%`,
 			vwap: vwapRef,
 			avgPrice: (candle.open + candle.close) / 2,
+			detectorName: this.name,
+			regimeClass: 'MOMENTUM',
 		})
 
 		await redisClient.setEx(cooldownKey, COOLDOWN_SECONDS, 'true')

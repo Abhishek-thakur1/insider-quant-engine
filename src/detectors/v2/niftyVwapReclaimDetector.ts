@@ -166,6 +166,8 @@ export class NiftyVwapReclaimDetector implements IDetector {
 				trigger: `🔼 VWAP Reclaim LONG | ${MIN_CANDLES_BELOW_BEFORE_RECLAIM}+ candles below → now ABOVE | Spot ₹${closed.close} | VWAP ₹${vwap.toFixed(2)} | Strike ${best.strike} CE | SL ₹${sl} (below VWAP) | T1 ₹${t1} | T2 ₹${t2} | High R:R institutional re-entry`,
 				vwap,
 				avgPrice: (closed.open + closed.close) / 2,
+				detectorName: this.name,
+				regimeClass: 'UNIVERSAL',
 			})
 
 			await redisClient.setEx(cooldownKey, COOLDOWN_SECONDS, 'true')
@@ -204,6 +206,8 @@ export class NiftyVwapReclaimDetector implements IDetector {
 				trigger: `🔽 VWAP Break SHORT | ${MIN_CANDLES_BELOW_BEFORE_RECLAIM}+ candles above → now BELOW | Spot ₹${closed.close} | VWAP ₹${vwap.toFixed(2)} | Strike ${best.strike} PE | SL ₹${sl} (above VWAP) | T1 ₹${t1} | T2 ₹${t2} | Institutional distribution confirmed`,
 				vwap,
 				avgPrice: (closed.open + closed.close) / 2,
+				detectorName: this.name,
+				regimeClass: 'UNIVERSAL',
 			})
 
 			await redisClient.setEx(cooldownKey, COOLDOWN_SECONDS, 'true')

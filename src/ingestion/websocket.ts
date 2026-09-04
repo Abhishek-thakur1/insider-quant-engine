@@ -1,10 +1,10 @@
-import fyers, { fyersDataSocket } from 'fyers-api-v3'
+import { fyersDataSocket } from 'fyers-api-v3'
 import fs from 'fs'
 import path from 'path'
 import { EventEmitter } from 'events'
 import { ENV } from '../config/env.js'
 import { bootRedis, redisClient } from '../config/redis.js'
-import { updateVwap, updateNiftyBias, warnIfVwapMissing } from '../utils/vwapUtils.js'
+import { updateVwap, getVwap, updateNiftyBias, warnIfVwapMissing } from '../utils/vwapUtils.js'
 import { buildOptionUniverse, updateOptionTick, hasATMShifted } from '../utils/optionUtils.js'
 import { seedHistoricalVwap } from './vwapSeeder.js'
 import { feedTick } from '../utils/candleAggregator.js'
@@ -29,41 +29,66 @@ import { GapAndGoMomentum } from '../detectors/v2/high_alpha/GapAndGoMomentum.js
 
 const NIFTY_SYMBOL = 'NSE:NIFTY50-INDEX'
 
-// ── [NEW] Nifty 1-min candle tracker for regime detection ────────────────────
-// Builds 1-minute candles from Nifty spot ticks.
-// On each candle close: computes return % → pushes to Shannon entropy engine.
-// This is the ONLY data source the regime detector uses.
-interface RegimeCandle {
+// ── Nifty 1-minute state tracker ─────────────────────────────────────────────
+// Builds 1-minute O/H/L/C candles from Nifty spot ticks. On each candle close:
+//   1. computes the return % and pushes it to the Shannon entropy engine
+//   2. advances the Nifty session reference price (see below)
+//
+// [FIX — root cause #1] The Nifty VWAP used to be updated on EVERY tick with a
+// hardcoded weight of 1: `updateVwap(NIFTY, ltp, 1)`. With a constant weight,
+// cumulativePV/cumulativeVol collapses to an unweighted arithmetic mean of tick
+// PRICES, biased by tick arrival rate rather than by volume or by time. Combined
+// with the index never being seeded, the reference every Nifty detector filters
+// on was a mean of ticks since process boot.
+//
+// NSE indices have no traded volume, so a true VWAP is not computable from index
+// data. What IS well-defined is an equal-weight-per-minute mean of the candle
+// typical price (H+L+C)/3 — a session TWAP. We now advance it once per closed
+// minute, which matches exactly how vwapSeeder seeds the index, so the seeded
+// history and the live session are on the same weighting.
+//
+// The value is cached in memory so the per-tick bias check costs no Redis read.
+interface MinuteCandle {
 	open: number
+	high: number
+	low: number
 	close: number
 	startTs: number
 }
 
-const REGIME_CANDLE_MS = 60 * 1000 // 1-minute candles
-let _regimeCandle: RegimeCandle | null = null
+const MINUTE_MS = 60 * 1000
+let _niftyMinute: MinuteCandle | null = null
+let lastNiftyVwap = 0
 
-const updateRegimeCandle = async (price: number): Promise<void> => {
+const updateNiftyMinuteState = async (price: number): Promise<void> => {
 	const now = Date.now()
 
-	if (!_regimeCandle) {
-		_regimeCandle = { open: price, close: price, startTs: now }
+	if (!_niftyMinute) {
+		_niftyMinute = { open: price, high: price, low: price, close: price, startTs: now }
 		return
 	}
 
-	if (now - _regimeCandle.startTs < REGIME_CANDLE_MS) {
-		// Still building this candle
-		_regimeCandle.close = price
+	if (now - _niftyMinute.startTs < MINUTE_MS) {
+		_niftyMinute.high = Math.max(_niftyMinute.high, price)
+		_niftyMinute.low = Math.min(_niftyMinute.low, price)
+		_niftyMinute.close = price
 		return
 	}
 
-	// Candle closed — compute return and push to regime engine
-	const returnPct = ((_regimeCandle.close - _regimeCandle.open) / _regimeCandle.open) * 100
+	// Candle closed.
+	const c = _niftyMinute
+	_niftyMinute = { open: price, high: price, low: price, close: price, startTs: now }
+
+	// 1. Regime engine
+	const returnPct = ((c.close - c.open) / c.open) * 100
 	await pushNiftyReturn(returnPct)
 
-	// Start new candle
-	_regimeCandle = { open: price, close: price, startTs: now }
+	// 2. Session reference price — weight 1 for this minute, typical price from H/L/C.
+	//    updateVwap's optional high/low params yield typicalPrice = (h + l + c) / 3.
+	lastNiftyVwap = await updateVwap(NIFTY_SYMBOL, c.close, 1, c.high, c.low)
 }
-// ── END regime candle tracker ─────────────────────────────────────────────────
+
+// ── END Nifty minute state tracker ───────────────────────────────────────────
 
 // Engine State
 const strategyRouter = new Map<string, IDetector[]>()
@@ -136,6 +161,17 @@ export const startLiveEngine = async () => {
 		redisClient.del('jsfilter:decisions'),
 	])
 
+	// Prime the in-memory Nifty reference from the seeded value so bias checks
+	// work from the very first tick rather than waiting a full minute.
+	lastNiftyVwap = (await getVwap(NIFTY_SYMBOL)) ?? 0
+	if (lastNiftyVwap > 0) {
+		console.log(`[Engine] 🎯 Nifty session reference seeded at ₹${lastNiftyVwap.toFixed(2)}`)
+	} else {
+		console.warn(
+			'[Engine] ⚠️  Nifty session reference NOT seeded — bias/VWAP filters stay off until the first 1-min candle closes.',
+		)
+	}
+
 	console.log('[Engine] ✅ Full boot cleanup complete.')
 	console.log(`[Engine] 📡 Equity stack: 9 detectors × ${activeUniverse.length} stocks`)
 	console.log('[Engine] 📡 Nifty stack:  OI Sweep + Value Zone + Delta Hedging')
@@ -150,13 +186,16 @@ export const startLiveEngine = async () => {
 
 			// 1. Route Nifty Spot
 			if (rawTick.symbol === NIFTY_SYMBOL) {
-				const niftyVwap = await updateVwap(NIFTY_SYMBOL, rawTick.ltp, 1)
-				await updateNiftyBias(rawTick.ltp, niftyVwap)
-
-				// Feed Nifty price into regime candle builder (non-blocking)
-				updateRegimeCandle(rawTick.ltp).catch((e) =>
-					console.error('[Regime] Candle update error:', e),
+				// Advances the regime engine and the session reference price on each
+				// closed 1-min candle (non-blocking).
+				updateNiftyMinuteState(rawTick.ltp).catch((e) =>
+					console.error('[Nifty] Minute state update error:', e),
 				)
+
+				// Bias is still evaluated per tick, but against the cached minute-anchored
+				// reference instead of a tick mean. Skipped until the reference exists so a
+				// seeder failure can never silently pin the bias to a bogus level.
+				if (lastNiftyVwap > 0) await updateNiftyBias(rawTick.ltp, lastNiftyVwap)
 
 				feedTick(NIFTY_SYMBOL, rawTick.ltp, liveTick.volume)
 

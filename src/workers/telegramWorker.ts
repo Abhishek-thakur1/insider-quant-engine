@@ -1,6 +1,7 @@
 import { Telegraf } from 'telegraf'
 import { ENV } from '../config/env.js'
 import { runJaneStreetFilter } from '../detectors/janeStreetFilter.js'
+import type { DetectorType } from '../utils/regimeDetector.js'
 
 const bot = new Telegraf(ENV.TELEGRAM_BOT_TOKEN)
 const SHADOW_MODE = process.env.SHADOW_MODE === 'true'
@@ -29,6 +30,11 @@ export interface AlertPayload {
 	// Existing detectors don't need to add this — trigger text is used
 	// as a classification fallback when absent.
 	detectorName?: string
+	// [FIX — root cause #2] Explicit regime class. Every ACTIVE detector sets
+	// this. It takes precedence over detectorName and over trigger-text keyword
+	// matching, so a detector's edge source is declared rather than inferred
+	// from its alert copy. Archived/legacy detectors may omit it and fall back.
+	regimeClass?: DetectorType
 }
 
 export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {

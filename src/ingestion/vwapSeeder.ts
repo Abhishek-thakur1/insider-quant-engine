@@ -9,13 +9,27 @@ const fyersApi = new fyers.fyersModel({ path: './', enableLogging: false })
 
 const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt')
 const WATCHLIST_PATH = path.resolve(process.cwd(), 'watchlist.json')
+const NIFTY_SYMBOL = 'NSE:NIFTY50-INDEX'
 
 const getTodayString = (): string => {
 	const istDate = new Date(Date.now() + 5.5 * 60 * 60 * 1000)
 	return istDate.toISOString().split('T')[0]!
 }
 
-const fetchAndSeedSymbol = async (symbol: string, todayStr: string): Promise<void> => {
+// NSE indices have no traded volume: Fyers returns volume 0 on NIFTY50-INDEX
+// candles, and the live tick feed reports vol_traded_today = 0 (which is why
+// ingestion falls back to volume:1). A genuinely volume-weighted VWAP is
+// therefore impossible from index data alone.
+//
+// `equalWeight` seeds those symbols as an equal-weight-per-minute mean of the
+// candle typical price — a session TWAP. It is a well-defined session reference
+// price, NOT a VWAP; see AGENTS.md 6.1 for the higher-fidelity alternative
+// (borrowing volume from the Nifty futures contract).
+const fetchAndSeedSymbol = async (
+	symbol: string,
+	todayStr: string,
+	equalWeight = false,
+): Promise<void> => {
 	const response = await fyersApi.getHistory({
 		symbol: symbol,
 		resolution: '1',
@@ -38,8 +52,10 @@ const fetchAndSeedSymbol = async (symbol: string, todayStr: string): Promise<voi
 
 			// Standard VWAP: typical price = (H + L + C) / 3
 			const typicalPrice = (high + low + close) / 3
-			cumulativePV += typicalPrice * volume
-			cumulativeVol += volume
+			// Index: one unit of weight per minute. Equity: real traded volume.
+			const weight = equalWeight ? 1 : volume
+			cumulativePV += typicalPrice * weight
+			cumulativeVol += weight
 		}
 
 		if (cumulativeVol > 0) {
@@ -120,7 +136,9 @@ export const seedHistoricalVwap = async (): Promise<void> => {
 	let successCount = 0
 	let failCount = 0
 
-	console.log(`[Seeder] 📥 Downloading intraday data for ${activeUniverse.length} equities...`)
+	console.log(
+		`[Seeder] 📥 Downloading intraday data for ${activeUniverse.length} equities + Nifty index...`,
+	)
 
 	// ── RATE LIMIT CONFIGURATION ──
 	// Tune MAX_REQ_PER_SEC to Fyers' documented limit for the history/candles
@@ -130,9 +148,9 @@ export const seedHistoricalVwap = async (): Promise<void> => {
 
 	const { limit: rateLimited, close: closeRateLimiter } = createRateLimiter(MAX_REQ_PER_SEC)
 
-	const runWithRetry = async (symbol: string, attempt = 0): Promise<void> => {
+	const runWithRetry = async (symbol: string, equalWeight = false, attempt = 0): Promise<void> => {
 		try {
-			await rateLimited(() => fetchAndSeedSymbol(symbol, todayStr))
+			await rateLimited(() => fetchAndSeedSymbol(symbol, todayStr, equalWeight))
 			successCount++
 		} catch (error: any) {
 			const isRateLimit =
@@ -148,7 +166,7 @@ export const seedHistoricalVwap = async (): Promise<void> => {
 					}/${MAX_RETRIES})`,
 				)
 				await new Promise((resolve) => setTimeout(resolve, backoffMs))
-				return runWithRetry(symbol, attempt + 1)
+				return runWithRetry(symbol, equalWeight, attempt + 1)
 			}
 
 			failCount++
@@ -162,7 +180,14 @@ export const seedHistoricalVwap = async (): Promise<void> => {
 	}
 
 	try {
-		await Promise.all(activeUniverse.map((symbol) => runWithRetry(symbol)))
+		await Promise.all([
+			...activeUniverse.map((symbol) => runWithRetry(symbol)),
+			// [FIX] The Nifty index was never seeded — it is not in watchlist.json — so
+			// every Nifty detector's VWAP reference used to start from zero at engine
+			// boot and reset on any mid-session restart. Seed it as an index (equal
+			// weight per minute) so the reference is session-anchored from 09:15.
+			runWithRetry(NIFTY_SYMBOL, true),
+		])
 	} finally {
 		// Always clear the interval, even if something throws unexpectedly,
 		// so the handle never outlives this run.
@@ -170,7 +195,7 @@ export const seedHistoricalVwap = async (): Promise<void> => {
 	}
 
 	console.log(
-		`[Seeder] ✅ Done. ${successCount}/${activeUniverse.length} seeded` +
+		`[Seeder] ✅ Done. ${successCount}/${activeUniverse.length + 1} seeded` +
 			(failCount > 0 ? ` | ⚠️ ${failCount} failed — VWAP filter disabled for those symbols` : '') +
 			'\n',
 	)

@@ -31,10 +31,10 @@ import { redisClient } from '../config/redis.js'
 
 const REGIME_RETURNS_KEY = 'regime:nifty:returns_1min'
 const REGIME_CACHE_KEY = 'regime:nifty:current'
-const RETURNS_WINDOW = 20          // 20 one-minute returns = 20 mins of context
-const TRENDING_H_THRESHOLD = 1.60  // Below this = trending
-const RANGING_H_THRESHOLD = 2.00   // Above this = ranging
-const CACHE_TTL_SECONDS = 60       // Re-compute at most once per minute
+const RETURNS_WINDOW = 20 // 20 one-minute returns = 20 mins of context
+const TRENDING_H_THRESHOLD = 1.6 // Below this = trending
+const RANGING_H_THRESHOLD = 2.0 // Above this = ranging
+const CACHE_TTL_SECONDS = 60 // Re-compute at most once per minute
 const inMemoryReturns: number[] = []
 
 export type MarketRegime = 'trending' | 'transition' | 'ranging'
@@ -43,40 +43,48 @@ export interface RegimeState {
 	regime: MarketRegime
 	entropy: number
 	dataPoints: number
-	trendingPct: number   // % of time price was directional (|return| > 0.1%)
-	volatility: number    // stddev of returns (annualised proxy)
+	trendingPct: number // % of time price was directional (|return| > 0.1%)
+	volatility: number // stddev of returns (annualised proxy)
 }
 
 // Called from websocket.ts every time a 1-min Nifty candle closes
 // returnPct = (close - open) / open * 100
 export const pushNiftyReturn = async (returnPct: number): Promise<void> => {
-    // A. Update native memory (O(1) operation)
-    inMemoryReturns.push(returnPct)
-    if (inMemoryReturns.length > RETURNS_WINDOW) {
-        inMemoryReturns.shift()
-    }
+	// A. Update native memory (O(1) operation)
+	inMemoryReturns.push(returnPct)
+	if (inMemoryReturns.length > RETURNS_WINDOW) {
+		inMemoryReturns.shift()
+	}
 
-    // B. Push to Redis asynchronously (Fire and Forget)
-    redisClient.multi()
-        .lPush(REGIME_RETURNS_KEY, String(returnPct.toFixed(4)))
-        .lTrim(REGIME_RETURNS_KEY, 0, RETURNS_WINDOW - 1)
-        .exec().catch(err => console.error("Regime sync error:", err))
+	// B. Push to Redis asynchronously (Fire and Forget)
+	redisClient
+		.multi()
+		.lPush(REGIME_RETURNS_KEY, String(returnPct.toFixed(4)))
+		.lTrim(REGIME_RETURNS_KEY, 0, RETURNS_WINDOW - 1)
+		.exec()
+		.catch((err) => console.error('Regime sync error:', err))
 
-    // C. [FIX] Calculate regime in-memory and explicitly set the cache (No .del() thrashing)
-    if (inMemoryReturns.length >= 8) {
-        const entropy = computeShannonEntropy(inMemoryReturns)
-        const trendingPct = computeTrendingPct(inMemoryReturns)
-        const volatility = computeVolatility(inMemoryReturns)
+	// C. [FIX] Calculate regime in-memory and explicitly set the cache (No .del() thrashing)
+	if (inMemoryReturns.length >= 8) {
+		const entropy = computeShannonEntropy(inMemoryReturns)
+		const trendingPct = computeTrendingPct(inMemoryReturns)
+		const volatility = computeVolatility(inMemoryReturns)
 
-        let regime: MarketRegime = 'transition'
-        if (entropy < TRENDING_H_THRESHOLD) regime = 'trending'
-        else if (entropy > RANGING_H_THRESHOLD) regime = 'ranging'
+		let regime: MarketRegime = 'transition'
+		if (entropy < TRENDING_H_THRESHOLD) regime = 'trending'
+		else if (entropy > RANGING_H_THRESHOLD) regime = 'ranging'
 
-        const state: RegimeState = { regime, entropy, dataPoints: inMemoryReturns.length, trendingPct, volatility }
-        
-        // Overwrite cache directly
-        await redisClient.setEx(REGIME_CACHE_KEY, CACHE_TTL_SECONDS, JSON.stringify(state))
-    }
+		const state: RegimeState = {
+			regime,
+			entropy,
+			dataPoints: inMemoryReturns.length,
+			trendingPct,
+			volatility,
+		}
+
+		// Overwrite cache directly
+		await redisClient.setEx(REGIME_CACHE_KEY, CACHE_TTL_SECONDS, JSON.stringify(state))
+	}
 }
 
 // Shannon entropy over discretized return bins
@@ -131,20 +139,20 @@ const computeVolatility = (values: number[]): number => {
 export const getMarketRegime = async (): Promise<RegimeState> => {
 	// Check cache first — regime changes slowly, no need to recompute every tick
 	const cached = await redisClient.get(REGIME_CACHE_KEY)
-    if (cached) {
-        return JSON.parse(cached) as RegimeState
-    }
+	if (cached) {
+		return JSON.parse(cached) as RegimeState
+	}
 
-    // [FIX] Use in-memory buffer instead of hitting Redis lRange on cache miss
-    if (inMemoryReturns.length < 8) {
-        return {
-            regime: 'transition',
-            entropy: 1.8,
-            dataPoints: inMemoryReturns.length,
-            trendingPct: 0,
-            volatility: 0,
-        }
-    }
+	// [FIX] Use in-memory buffer instead of hitting Redis lRange on cache miss
+	if (inMemoryReturns.length < 8) {
+		return {
+			regime: 'transition',
+			entropy: 1.8,
+			dataPoints: inMemoryReturns.length,
+			trendingPct: 0,
+			volatility: 0,
+		}
+	}
 
 	const returns = inMemoryReturns
 	const entropy = computeShannonEntropy(returns)
@@ -181,6 +189,16 @@ export const getMarketRegime = async (): Promise<RegimeState> => {
 //   UNIVERSAL:  game theory / structural (works in all regimes)
 
 const MOMENTUM_DETECTOR_PATTERNS = [
+	// [FIX — root cause #2] None of the v2 detector names matched any pattern
+	// below, so classifyDetector() returned its UNIVERSAL default for the entire
+	// live stack — silently disabling regime suppression for every momentum
+	// strategy. These entries are the safety net; the primary path is now the
+	// explicit `regimeClass` tag on AlertPayload.
+	'Stock Momentum Breakout',
+	'Nifty Opening Range Explosion',
+	'Nifty Trend Pulse',
+	'Gap_And_Go',
+	'Volatility_Contraction',
 	'Multi-TF',
 	'MTF Breakout',
 	'Morning Momentum',
@@ -214,7 +232,7 @@ const UNIVERSAL_DETECTOR_PATTERNS = [
 	'Equity Structural Liquidity',
 ]
 
-type DetectorType = 'MOMENTUM' | 'REVERSION' | 'UNIVERSAL'
+export type DetectorType = 'MOMENTUM' | 'REVERSION' | 'UNIVERSAL'
 
 const classifyDetector = (detectorName: string): DetectorType => {
 	if (UNIVERSAL_DETECTOR_PATTERNS.some((p) => detectorName.includes(p))) return 'UNIVERSAL'
@@ -243,7 +261,7 @@ const classifyFromTrigger = (trigger: string): DetectorType => {
 		t.includes('vcp') ||
 		t.includes('parabolic') ||
 		t.includes('orb') ||
-		t.includes('sweep') && !t.includes('liquidity sniper')
+		(t.includes('sweep') && !t.includes('liquidity sniper'))
 	) {
 		return 'MOMENTUM'
 	}
@@ -255,6 +273,9 @@ export interface RegimeCheckResult {
 	reason: string
 	sizeMult: number // 1.0 = full size, 0.5 = half size, 0.0 = no trade
 	detectorType: DetectorType
+	// How detectorType was decided. Anything other than 'explicit' means the
+	// detector did not tag itself and we fell back to string matching.
+	classificationSource: 'explicit' | 'name' | 'trigger' | 'default'
 }
 
 export const checkRegimeCompatibility = (
@@ -262,12 +283,24 @@ export const checkRegimeCompatibility = (
 	entropy: number,
 	detectorName?: string,
 	trigger?: string,
+	// [FIX — root cause #2] Explicit tag, highest precedence. Detectors declare
+	// their own edge source instead of it being inferred from emoji-laden alert
+	// copy. Trigger-text matching remains only as a legacy fallback.
+	explicitType?: DetectorType,
 ): RegimeCheckResult => {
-	const detectorType = detectorName
-		? classifyDetector(detectorName)
-		: trigger
-			? classifyFromTrigger(trigger)
-			: 'UNIVERSAL'
+	let classificationSource: RegimeCheckResult['classificationSource'] = 'default'
+	let detectorType: DetectorType = 'UNIVERSAL'
+
+	if (explicitType) {
+		detectorType = explicitType
+		classificationSource = 'explicit'
+	} else if (detectorName) {
+		detectorType = classifyDetector(detectorName)
+		classificationSource = 'name'
+	} else if (trigger) {
+		detectorType = classifyFromTrigger(trigger)
+		classificationSource = 'trigger'
+	}
 
 	// Universal detectors always allowed
 	if (detectorType === 'UNIVERSAL') {
@@ -276,6 +309,7 @@ export const checkRegimeCompatibility = (
 			reason: `Universal detector — regime-agnostic (H=${entropy.toFixed(2)})`,
 			sizeMult: 1.0,
 			detectorType,
+			classificationSource,
 		}
 	}
 
@@ -286,6 +320,7 @@ export const checkRegimeCompatibility = (
 			reason: `Transition regime (H=${entropy.toFixed(2)}) — trade at 50% size`,
 			sizeMult: 0.5,
 			detectorType,
+			classificationSource,
 		}
 	}
 
@@ -297,6 +332,7 @@ export const checkRegimeCompatibility = (
 				reason: `Trending regime (H=${entropy.toFixed(2)}) + MOMENTUM detector = ideal`,
 				sizeMult: 1.0,
 				detectorType,
+				classificationSource,
 			}
 		} else {
 			return {
@@ -304,6 +340,7 @@ export const checkRegimeCompatibility = (
 				reason: `Trending regime (H=${entropy.toFixed(2)}) — REVERSION detector suppressed (wrong regime)`,
 				sizeMult: 0.0,
 				detectorType,
+				classificationSource,
 			}
 		}
 	}
@@ -316,6 +353,7 @@ export const checkRegimeCompatibility = (
 				reason: `Ranging regime (H=${entropy.toFixed(2)}) + REVERSION detector = ideal`,
 				sizeMult: 1.0,
 				detectorType,
+				classificationSource,
 			}
 		} else {
 			return {
@@ -323,13 +361,19 @@ export const checkRegimeCompatibility = (
 				reason: `Ranging regime (H=${entropy.toFixed(2)}) — MOMENTUM detector suppressed (will reverse immediately)`,
 				sizeMult: 0.0,
 				detectorType,
+				classificationSource,
 			}
 		}
 	}
 
-	return { allowed: true, reason: 'Unknown regime — passing through', sizeMult: 1.0, detectorType }
+	return {
+		allowed: true,
+		reason: 'Unknown regime — passing through',
+		sizeMult: 1.0,
+		detectorType,
+		classificationSource,
+	}
 }
-
 
 // // ============================================================
 // // regimeDetector.ts — Shannon Entropy Market Regime Engine

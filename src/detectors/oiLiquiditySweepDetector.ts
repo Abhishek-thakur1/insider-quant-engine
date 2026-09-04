@@ -150,6 +150,8 @@ export class OiLiquiditySweepDetector implements IDetector {
 			trigger: `🪤 ${side === 'LONG' ? 'Bear Trap' : 'Bull Trap'} at ${wallStrike} OI Wall | Spot ${candle.close} | SL ₹${stopLoss} | T1 ₹${t1} | ${bestStrike.reason}`,
 			vwap: vwap,
 			avgPrice: candle.close,
+			detectorName: this.name,
+			regimeClass: 'UNIVERSAL',
 		})
 
 		await redisClient.setEx(cooldownKey, COOLDOWN_SECONDS, 'true')

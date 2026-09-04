@@ -178,8 +178,9 @@ export const runJaneStreetFilter = async (
 	const regimeCheck = checkRegimeCompatibility(
 		regimeState.regime,
 		regimeState.entropy,
-		detectorName,
+		detectorName ?? payload.detectorName,
 		payload.trigger,
+		payload.regimeClass,
 	)
 
 	if (!regimeCheck.allowed) {
@@ -207,7 +208,10 @@ export const runJaneStreetFilter = async (
 		component: 'REGIME',
 		points: WEIGHT_REGIME * regimeCheck.sizeMult,
 		maxPoints: WEIGHT_REGIME,
-		reason: regimeCheck.reason,
+		// classificationSource makes silent misclassification visible in the
+		// jsfilter:decisions log — anything but 'explicit' means the detector
+		// did not tag itself and we guessed from its name or trigger text.
+		reason: `${regimeCheck.reason} [${regimeCheck.detectorType}/${regimeCheck.classificationSource}]`,
 	})
 
 	// ── NEW: Market Structure ────────────────────────────────────────────────

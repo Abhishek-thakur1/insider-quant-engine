@@ -15,8 +15,6 @@
 //      - Not too deep OTM (ltp > 0 — has tradeable value)
 // ============================================================
 
-import type { fyersDataSocket } from 'fyers-api-v3'
-
 const STRIKE_INTERVAL = 50
 const STRIKES_EACH_SIDE = 7 // 7 CE + 7 PE = 14 strikes per side
 
