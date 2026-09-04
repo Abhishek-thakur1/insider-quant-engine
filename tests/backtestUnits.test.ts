@@ -441,6 +441,36 @@ test('metrics: sample-size flag is enforced in the metrics layer, not left to th
 	assert.equal(many.sufficientSample, true)
 })
 
+test('metrics: win concentration exposes a tail-driven expectancy', () => {
+	// One 20R winner and nine -1R losers: positive expectancy, entirely from one
+	// trade. Trade count alone would not reveal that; topWinShare must.
+	const trades = [tradeAt(20, 1), ...Array.from({ length: 9 }, (_, i) => tradeAt(-1, i + 2))]
+	const m = computeMetrics(byId('vcp'), 10, {}, trades)
+
+	assert.equal(m.ungated.topWinShare, 1, 'the single winner supplied 100% of the gains')
+	assert.equal(m.ungated.top3WinShare, 1)
+	assert.ok(m.ungated.expectancyR! > 0, 'expectancy is positive despite a 10% win rate')
+	assert.ok(
+		m.ungated.tailDependenceWarning,
+		'a 100% single-trade share must be flagged, not reported silently',
+	)
+	assert.match(m.ungated.tailDependenceWarning!, /single trade/)
+})
+
+test('metrics: an evenly-spread book is NOT flagged as tail-dependent', () => {
+	const even = Array.from({ length: 20 }, (_, i) => tradeAt(i % 2 === 0 ? 1 : -0.5, i))
+	const m = computeMetrics(byId('vcp'), 20, {}, even)
+	assert.equal(m.ungated.topWinShare, 0.1, '10 equal winners → 10% each')
+	assert.equal(m.ungated.tailDependenceWarning, null)
+})
+
+test('metrics: win concentration is null when nothing won', () => {
+	const m = computeMetrics(byId('vcp'), 3, {}, [tradeAt(-1, 1), tradeAt(-1, 2)])
+	assert.equal(m.ungated.topWinShare, null)
+	assert.equal(m.ungated.top3WinShare, null)
+	assert.equal(m.ungated.tailDependenceWarning, null)
+})
+
 test('metrics: an insufficient-sample detector can never outrank a sufficient one', () => {
 	const lucky = computeMetrics(byId('vcp'), 3, {}, [tradeAt(9, 1), tradeAt(9, 2)])
 	const solid = computeMetrics(

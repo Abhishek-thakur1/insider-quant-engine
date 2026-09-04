@@ -182,9 +182,26 @@ All in `config.ts`, all printed in the report.
 | Default exit | 0.5% stop, 1.5R target | Only for detectors that embed no `SL ₹x \| T1 ₹y`. Labelled `harness-default` per detector in the report. |
 | Forced square-off | 15:15 IST | MIS intraday positions are closed by the broker. |
 | Circuit lock | zero-range bar with volume | Inferred, not data — see below. A stop inside such a bar is **not filled**; the exit defers to the next tradable bar. |
-| Sample threshold | **30 gated trades** | At a plausible 45–55% win rate the 95% CI on 30 trades is already ≈±18pp. Below that the number stops carrying information. Anything under is reported but flagged, and can never outrank a sufficient-sample detector. |
+| Sample threshold | **30 gated trades** | Enough to earn a headline number, not enough to estimate a tail mean — see the note below. Anything under is reported but flagged, and can never outrank a sufficient-sample detector. |
+| Win concentration | flagged above **50%** | Share of gross winnings from the single best trade. Exposes a tail-driven expectancy that trade count alone hides. |
 
 ---
+
+### Why 30 trades is a floor, not a sufficiency test
+
+The 30-trade threshold was originally justified for a 45–55% win rate, where the 95% CI on a
+win-rate estimate is roughly ±18pp at n=30. That reasoning does not transfer to the strategy
+profile this engine is aimed at: `docs/qullamaggie-spec-v2.md` cites a **25–30% win rate carried
+by winners running 10–20x initial risk**.
+
+At a 27% win rate, 30 trades is about **eight winners**. Expectancy is then the mean of a handful
+of tail observations, and 30 trades only establishes that a detector fired often enough to look
+at. Raising the threshold without data would be guesswork, so instead every detector reports
+**win concentration** — the share of gross winnings from its best trade and its best three — and
+the report flags any detector where one trade supplied more than half the gains.
+
+A high concentration is **not** a defect for a momentum strategy; it is the expected shape. It
+does mean the expectancy is directional rather than a rate, however many trades there were.
 
 ## Known fidelity gaps
 

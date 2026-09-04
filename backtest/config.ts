@@ -82,15 +82,30 @@ export const SIM = {
 // ── Metrics discipline ─────────────────────────────────────────────────────
 export const METRICS = {
 	/**
-	 * PROPOSED (per the goal doc's request to confirm a threshold): 30 gated
-	 * trades. Rationale — at a plausible 45-55% win rate, the 95% CI on a
-	 * 30-trade sample is roughly ±18pp, which is already too wide to rank on;
-	 * below 30 it exceeds ±20pp and the number stops carrying information.
-	 * 20 would admit more detectors but at a CI wide enough to be misleading.
-	 * Anything under this is reported and flagged INSUFFICIENT SAMPLE, never
-	 * given a headline win rate.
+	 * 30 gated trades to earn a headline number. Anything under is reported and
+	 * flagged INSUFFICIENT SAMPLE.
+	 *
+	 * CAVEAT — READ THIS BEFORE TRUSTING AN EXPECTANCY. The original rationale
+	 * for 30 assumed a 45-55% win rate, where the 95% CI on a win-rate estimate
+	 * is about ±18pp at n=30. That reasoning does not transfer to the momentum
+	 * profile the Qullamaggie spec targets: 25-30% win rate with winners running
+	 * 10-20x initial risk (docs/qullamaggie-spec-v2.md, "Performance framing").
+	 *
+	 * At a 27% win rate, 30 trades is roughly EIGHT winners. Expectancy is then
+	 * a mean dominated by a handful of tail observations, and 30 trades is only
+	 * enough to say "this fired often enough to look at" — not enough to
+	 * estimate its edge. Raising the threshold on no data would be guesswork, so
+	 * instead every detector reports WIN CONCENTRATION (see sim/metrics.ts): if
+	 * one trade supplied most of the gains, the expectancy is unreliable however
+	 * many trades there were.
 	 */
 	minGatedTradesForConfidence: 30,
+
+	/**
+	 * Above this share of gross winnings coming from a single trade, the
+	 * expectancy is flagged as tail-dependent in the report.
+	 */
+	maxTopWinShare: 0.5,
 } as const
 
 // ── Filter configuration used during replay ────────────────────────────────

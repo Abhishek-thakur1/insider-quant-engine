@@ -157,7 +157,7 @@
     40 sessions · 2026-05-04 → 2026-06-26
     · 5 symbols · 75,000 bars
     · 3,00,000 synthetic ticks
-    · generated 2026-09-04T09:50:47.949Z
+    · generated 2026-09-04T11:48:40.390Z
   </p>
 
   <div class="tiles">
@@ -165,7 +165,7 @@
     <div class="tile"><div class="tile-l">Sufficient sample</div><div class="tile-v">0</div><div class="tile-s">of 24 measured</div></div>
     <div class="tile"><div class="tile-l">Raw signals</div><div class="tile-v">953</div><div class="tile-s">ungated detector fires</div></div>
     <div class="tile"><div class="tile-l">Gated trades</div><div class="tile-v">0</div><div class="tile-s">0.0% of signals passed</div></div>
-    <div class="tile"><div class="tile-l">Replay time</div><div class="tile-v">14s</div></div>
+    <div class="tile"><div class="tile-l">Replay time</div><div class="tile-v">12s</div></div>
   </div>
 
   <section class="block">
@@ -538,6 +538,12 @@
 </section>
   <section class="block">
   <h2>Simulation assumptions</h2>
+  <p><strong>On reading expectancy:</strong> these are momentum strategies, and the source spec
+     they derive from expects a 25-30% win rate carried by winners running 10-20x initial risk.
+     A low win rate is therefore not a defect, and expectancy in R — not win rate — is the metric
+     to rank on. The flip side is that expectancy becomes a tail mean: each card reports what
+     share of its gains came from its single best trade, and flags the figure when one trade
+     supplied most of them. Trade count alone does not reveal that.</p>
   <p>Every number in this report is conditional on these. They are printed here rather
      than buried in code so a reader can judge the results against them.</p>
   <dl class="facts wide">
@@ -619,10 +625,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>—</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     
   </dl>
 
   <p class="note note-warn">INSUFFICIENT SAMPLE both gated (0) and ungated (0), below the 30-trade threshold. Neither figure supports a conclusion.</p>
+  
   
 </section><section class="card low-sample" id="d-nifty_opening_range_explosion">
   <header class="card-h">
@@ -695,10 +703,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>—</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     
   </dl>
 
   <p class="note note-warn">INSUFFICIENT SAMPLE both gated (0) and ungated (0), below the 30-trade threshold. Neither figure supports a conclusion.</p>
+  
   <ul class="caveats"><li>Routes to an option strike via getBestStrike(). Fyers getHistory provides no historical option chain, so strike selection falls back to ATM with premium 0 and the Bayesian OI-wall evidence is always neutral. Index-level entry/exit levels are still simulated faithfully.</li></ul>
 </section><section class="card low-sample" id="d-nifty_trend_pulse">
   <header class="card-h">
@@ -771,10 +781,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>—</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     
   </dl>
 
   <p class="note note-warn">INSUFFICIENT SAMPLE both gated (0) and ungated (0), below the 30-trade threshold. Neither figure supports a conclusion.</p>
+  
   <ul class="caveats"><li>Routes to an option strike via getBestStrike(). Fyers getHistory provides no historical option chain, so strike selection falls back to ATM with premium 0 and the Bayesian OI-wall evidence is always neutral. Index-level entry/exit levels are still simulated faithfully.</li></ul>
 </section><section class="card low-sample" id="d-nifty_vwap_reclaim">
   <header class="card-h">
@@ -865,10 +877,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>target 40</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     <div><dt>Gate rejections</dt><dd>EV 40</dd></div>
   </dl>
 
   <p class="note note-warn">INSUFFICIENT GATED SAMPLE: only 0 of 40 signals passed the filter, below the 30-trade threshold. The UNGATED block has 40 trades and is the more informative number here — read it as the detector's raw edge, and the gap between the two as how much the filter is suppressing.</p>
+  
   <ul class="caveats"><li>Routes to an option strike via getBestStrike(). Fyers getHistory provides no historical option chain, so strike selection falls back to ATM with premium 0 and the Bayesian OI-wall evidence is always neutral. Index-level entry/exit levels are still simulated faithfully.</li></ul>
 </section><section class="card low-sample" id="d-volatility_contraction">
   <header class="card-h">
@@ -941,10 +955,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>—</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     
   </dl>
 
   <p class="note note-warn">INSUFFICIENT SAMPLE both gated (0) and ungated (0), below the 30-trade threshold. Neither figure supports a conclusion.</p>
+  
   <ul class="caveats"><li>Gated by isDailyTrendAligned(), which reads HTF_TREND:{symbol}. Nothing writes that key, so the daily-trend filter fails open in backtest exactly as it does live (AGENTS.md §6.3).</li></ul>
 </section><section class="card low-sample" id="d-gap_and_go">
   <header class="card-h">
@@ -1035,10 +1051,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>stop 90</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     <div><dt>Gate rejections</dt><dd>below-threshold 90</dd></div>
   </dl>
 
   <p class="note note-warn">INSUFFICIENT GATED SAMPLE: only 0 of 90 signals passed the filter, below the 30-trade threshold. The UNGATED block has 90 trades and is the more informative number here — read it as the detector's raw edge, and the gap between the two as how much the filter is suppressing.</p>
+  
   
 </section><section class="card low-sample" id="d-orb">
   <header class="card-h">
@@ -1111,10 +1129,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>—</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     
   </dl>
 
   <p class="note note-warn">INSUFFICIENT SAMPLE both gated (0) and ungated (0), below the 30-trade threshold. Neither figure supports a conclusion.</p>
+  
   <ul class="caveats"><li>Also the sole writer of orb:15min:* / orb:30min:*. The harness always instantiates it so the two detectors that READ those keys (LiquiditySweepDetector, NiftyLiquiditySweep) can be backtested at all.</li></ul>
 </section><section class="card low-sample" id="d-multi_timeframe_breakout">
   <header class="card-h">
@@ -1187,10 +1207,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>—</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     
   </dl>
 
   <p class="note note-warn">INSUFFICIENT SAMPLE both gated (0) and ungated (0), below the 30-trade threshold. Neither figure supports a conclusion.</p>
+  
   
 </section><section class="card low-sample" id="d-liquidity_sweep_sniper">
   <header class="card-h">
@@ -1263,10 +1285,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>—</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     
   </dl>
 
   <p class="note note-warn">INSUFFICIENT SAMPLE both gated (0) and ungated (0), below the 30-trade threshold. Neither figure supports a conclusion.</p>
+  
   <ul class="caveats"><li>Depends on orb:15min:* being present, so it only produces signals because the harness also runs OrbDetector.</li><li>Routes to an option strike via getBestStrike(). Fyers getHistory provides no historical option chain, so strike selection falls back to ATM with premium 0 and the Bayesian OI-wall evidence is always neutral. Index-level entry/exit levels are still simulated faithfully.</li></ul>
 </section><section class="card low-sample" id="d-order_flow_exhaustion">
   <header class="card-h">
@@ -1339,10 +1363,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>—</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     
   </dl>
 
   <p class="note note-warn">INSUFFICIENT SAMPLE both gated (0) and ungated (0), below the 30-trade threshold. Neither figure supports a conclusion.</p>
+  
   <ul class="caveats"><li>Routes to an option strike via getBestStrike(). Fyers getHistory provides no historical option chain, so strike selection falls back to ATM with premium 0 and the Bayesian OI-wall evidence is always neutral. Index-level entry/exit levels are still simulated faithfully.</li></ul>
 </section><section class="card low-sample" id="d-smart_money_divergence">
   <header class="card-h">
@@ -1437,10 +1463,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>stop 24 · forced-square-off 49 · target 20</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>4% / 13%</dd></div>
     <div><dt>Gate rejections</dt><dd>EV 53 · REGIME 37 · below-threshold 3</dd></div>
   </dl>
 
   <p class="note note-warn">INSUFFICIENT GATED SAMPLE: only 0 of 93 signals passed the filter, below the 30-trade threshold. The UNGATED block has 93 trades and is the more informative number here — read it as the detector's raw edge, and the gap between the two as how much the filter is suppressing.</p>
+  
   <ul class="caveats"><li>The only detector that builds CLOCK-ALIGNED candles, so its bars line up with the source data exactly — its numbers are the most directly comparable to live of the whole set.</li></ul>
 </section><section class="card low-sample" id="d-vwap_stdev_reversion">
   <header class="card-h">
@@ -1513,10 +1541,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>—</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     
   </dl>
 
   <p class="note note-warn">INSUFFICIENT SAMPLE both gated (0) and ungated (0), below the 30-trade threshold. Neither figure supports a conclusion.</p>
+  
   
 </section><section class="card low-sample" id="d-vwap_pullback">
   <header class="card-h">
@@ -1609,10 +1639,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>stop 160 · target 200</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>1% / 3%</dd></div>
     <div><dt>Gate rejections</dt><dd>REGIME 320 · below-threshold 40</dd></div>
   </dl>
 
   <p class="note note-warn">INSUFFICIENT GATED SAMPLE: only 0 of 360 signals passed the filter, below the 30-trade threshold. The UNGATED block has 360 trades and is the more informative number here — read it as the detector's raw edge, and the gap between the two as how much the filter is suppressing.</p>
+  
   <ul class="caveats"><li>Routes to an option strike via getBestStrike(). Fyers getHistory provides no historical option chain, so strike selection falls back to ATM with premium 0 and the Bayesian OI-wall evidence is always neutral. Index-level entry/exit levels are still simulated faithfully.</li></ul>
 </section><section class="card low-sample" id="d-vwap_crossover">
   <header class="card-h">
@@ -1704,10 +1736,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>stop 80</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     <div><dt>Gate rejections</dt><dd>below-threshold 40 · REGIME 40</dd></div>
   </dl>
 
   <p class="note note-warn">INSUFFICIENT GATED SAMPLE: only 0 of 80 signals passed the filter, below the 30-trade threshold. The UNGATED block has 80 trades and is the more informative number here — read it as the detector's raw edge, and the gap between the two as how much the filter is suppressing.</p>
+  
   <ul class="caveats"><li>Routes to an option strike via getBestStrike(). Fyers getHistory provides no historical option chain, so strike selection falls back to ATM with premium 0 and the Bayesian OI-wall evidence is always neutral. Index-level entry/exit levels are still simulated faithfully.</li></ul>
 </section><section class="card low-sample" id="d-value_zone_scalp">
   <header class="card-h">
@@ -1800,10 +1834,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>target 160</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>1% / 3%</dd></div>
     <div><dt>Gate rejections</dt><dd>REGIME 160</dd></div>
   </dl>
 
   <p class="note note-warn">INSUFFICIENT GATED SAMPLE: only 0 of 160 signals passed the filter, below the 30-trade threshold. The UNGATED block has 160 trades and is the more informative number here — read it as the detector's raw edge, and the gap between the two as how much the filter is suppressing.</p>
+  
   <ul class="caveats"><li>Needs 21 three-minute candles to seed its EMA — roughly 63 minutes — so it cannot arm before ~10:20 IST in any simulated session.</li><li>Routes to an option strike via getBestStrike(). Fyers getHistory provides no historical option chain, so strike selection falls back to ATM with premium 0 and the Bayesian OI-wall evidence is always neutral. Index-level entry/exit levels are still simulated faithfully.</li></ul>
 </section><section class="card low-sample" id="d-liquidity_trap">
   <header class="card-h">
@@ -1876,10 +1912,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>—</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     
   </dl>
 
   <p class="note note-warn">INSUFFICIENT SAMPLE both gated (0) and ungated (0), below the 30-trade threshold. Neither figure supports a conclusion.</p>
+  
   
 </section><section class="card low-sample" id="d-nifty_options_scalper">
   <header class="card-h">
@@ -1970,10 +2008,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>forced-square-off 40</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     <div><dt>Gate rejections</dt><dd>below-threshold 40</dd></div>
   </dl>
 
   <p class="note note-warn">INSUFFICIENT GATED SAMPLE: only 0 of 40 signals passed the filter, below the 30-trade threshold. The UNGATED block has 40 trades and is the more informative number here — read it as the detector's raw edge, and the gap between the two as how much the filter is suppressing.</p>
+  
   <ul class="caveats"><li>Routes to an option strike via getBestStrike(). Fyers getHistory provides no historical option chain, so strike selection falls back to ATM with premium 0 and the Bayesian OI-wall evidence is always neutral. Index-level entry/exit levels are still simulated faithfully.</li></ul>
 </section><section class="card low-sample" id="d-morning_momentum">
   <header class="card-h">
@@ -2064,10 +2104,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>stop 90</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     <div><dt>Gate rejections</dt><dd>below-threshold 60 · EV 30</dd></div>
   </dl>
 
   <p class="note note-warn">INSUFFICIENT GATED SAMPLE: only 0 of 90 signals passed the filter, below the 30-trade threshold. The UNGATED block has 90 trades and is the more informative number here — read it as the detector's raw edge, and the gap between the two as how much the filter is suppressing.</p>
+  
   
 </section><section class="card low-sample" id="d-candle_breakout">
   <header class="card-h">
@@ -2140,10 +2182,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>—</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     
   </dl>
 
   <p class="note note-warn">INSUFFICIENT SAMPLE both gated (0) and ungated (0), below the 30-trade threshold. Neither figure supports a conclusion.</p>
+  
   
 </section><section class="card low-sample" id="d-vcp">
   <header class="card-h">
@@ -2216,10 +2260,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>—</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     
   </dl>
 
   <p class="note note-warn">INSUFFICIENT SAMPLE both gated (0) and ungated (0), below the 30-trade threshold. Neither figure supports a conclusion.</p>
+  
   <ul class="caveats"><li>Tick-count based: its windows are measured in ticks, not minutes. Replay synthesises 4 ticks per 1-min bar, so a 20-tick window spans ~5 simulated minutes versus possibly seconds live. Behaviour is NOT comparable to live.</li></ul>
 </section><section class="card low-sample" id="d-parabolic_rvol_sweep">
   <header class="card-h">
@@ -2292,10 +2338,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>—</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     
   </dl>
 
   <p class="note note-warn">INSUFFICIENT SAMPLE both gated (0) and ungated (0), below the 30-trade threshold. Neither figure supports a conclusion.</p>
+  
   
 </section><section class="card low-sample" id="d-volume_spike">
   <header class="card-h">
@@ -2368,10 +2416,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>—</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     
   </dl>
 
   <p class="note note-warn">INSUFFICIENT SAMPLE both gated (0) and ungated (0), below the 30-trade threshold. Neither figure supports a conclusion.</p>
+  
   
 </section><section class="card low-sample" id="d-equity_liquidity_sweep">
   <header class="card-h">
@@ -2444,10 +2494,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>—</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     
   </dl>
 
   <p class="note note-warn">INSUFFICIENT SAMPLE both gated (0) and ungated (0), below the 30-trade threshold. Neither figure supports a conclusion.</p>
+  
   
 </section><section class="card low-sample" id="d-nifty_liquidity_sweep_v2">
   <header class="card-h">
@@ -2520,10 +2572,12 @@
   <dl class="facts">
     <div><dt>Exits (ungated)</dt><dd>—</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>0</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>— / —</dd></div>
     
   </dl>
 
   <p class="note note-warn">INSUFFICIENT SAMPLE both gated (0) and ungated (0), below the 30-trade threshold. Neither figure supports a conclusion.</p>
+  
   <ul class="caveats"><li>Archived as dead code because it reads orb:30min:high:* and nothing in the live engine writes it. In backtest the harness runs OrbDetector too, so this detector CAN fire here. Its results therefore answer a question the live engine could not: was it worth wiring up?</li><li>Routes to an option strike via getBestStrike(). Fyers getHistory provides no historical option chain, so strike selection falls back to ATM with premium 0 and the Bayesian OI-wall evidence is always neutral. Index-level entry/exit levels are still simulated faithfully.</li></ul>
 </section>
 </div>

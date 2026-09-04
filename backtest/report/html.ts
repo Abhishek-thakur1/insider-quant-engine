@@ -46,6 +46,9 @@ interface PerfBlock {
 	equityCurve: Array<{ ts: number; cumR: number }>
 	rDistribution: number[]
 	sufficientSample: boolean
+	topWinShare: number | null
+	top3WinShare: number | null
+	tailDependenceWarning: string | null
 }
 
 interface MetricRow {
@@ -313,10 +316,16 @@ const detectorCard = (m: MetricRow, caveats: string[]): string => {
 				.join(' · ') || '—'
 		}</dd></div>
     <div><dt>Deferred by circuit lock</dt><dd>${m.ungated.tradesDeferredByLock}</dd></div>
+    <div><dt>Top trade / top 3 share of gains</dt><dd>${pct(m.ungated.topWinShare)} / ${pct(m.ungated.top3WinShare)}</dd></div>
     ${rejEntries.length ? `<div><dt>Gate rejections</dt><dd>${rejEntries.map(([k, v]) => `${esc(k)} ${v}`).join(' · ')}</dd></div>` : ''}
   </dl>
 
   <p class="note ${m.sufficientSample ? '' : 'note-warn'}">${esc(m.sampleNote)}</p>
+  ${
+		m.ungated.tailDependenceWarning
+			? `<p class="note note-warn">${esc(m.ungated.tailDependenceWarning)}</p>`
+			: ''
+	}
   ${caveats.length ? `<ul class="caveats">${caveats.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}
 </section>`
 }
@@ -444,6 +453,12 @@ const assumptionsBlock = (a: Record<string, unknown>): string => {
 			: String(v)
 	return `<section class="block">
   <h2>Simulation assumptions</h2>
+  <p><strong>On reading expectancy:</strong> these are momentum strategies, and the source spec
+     they derive from expects a 25-30% win rate carried by winners running 10-20x initial risk.
+     A low win rate is therefore not a defect, and expectancy in R — not win rate — is the metric
+     to rank on. The flip side is that expectancy becomes a tail mean: each card reports what
+     share of its gains came from its single best trade, and flags the figure when one trade
+     supplied most of them. Trade count alone does not reveal that.</p>
   <p>Every number in this report is conditional on these. They are printed here rather
      than buried in code so a reader can judge the results against them.</p>
   <dl class="facts wide">

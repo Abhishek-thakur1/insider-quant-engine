@@ -43,6 +43,19 @@ export interface PerfBlock {
 	equityCurve: Array<{ ts: number; cumR: number }>
 	rDistribution: number[]
 	sufficientSample: boolean
+
+	/**
+	 * Share of gross winnings contributed by the single best trade, and by the
+	 * best three. A momentum strategy is EXPECTED to be tail-driven — the source
+	 * spec cites a 25-30% win rate carried by 10-20x winners — so a high share
+	 * is not a defect. It does mean the expectancy is an estimate of a tail mean
+	 * and is unreliable at small n, which trade count alone does not reveal.
+	 * null when there were no winning trades.
+	 */
+	topWinShare: number | null
+	top3WinShare: number | null
+	/** Set when topWinShare exceeds config.METRICS.maxTopWinShare. */
+	tailDependenceWarning: string | null
 }
 
 export interface DetectorMetrics {
@@ -111,6 +124,12 @@ const perf = (trades: SimulatedTrade[]): PerfBlock => {
 	const grossLoss = Math.abs(losses.reduce((a, b) => a + b, 0))
 	const n = ordered.length
 
+	// How much of the upside came from how few trades.
+	const winsDesc = wins.slice().sort((a, b) => b - a)
+	const topWinShare = grossWin > 0 ? winsDesc[0]! / grossWin : null
+	const top3WinShare =
+		grossWin > 0 ? winsDesc.slice(0, 3).reduce((a, b) => a + b, 0) / grossWin : null
+
 	return {
 		trades: n,
 		winRate: n > 0 ? wins.length / n : null,
@@ -136,6 +155,12 @@ const perf = (trades: SimulatedTrade[]): PerfBlock => {
 		equityCurve,
 		rDistribution: rs.map((r) => Number(r.toFixed(4))),
 		sufficientSample: n >= METRICS.minGatedTradesForConfidence,
+		topWinShare,
+		top3WinShare,
+		tailDependenceWarning:
+			topWinShare !== null && topWinShare > METRICS.maxTopWinShare
+				? `${(topWinShare * 100).toFixed(0)}% of all winnings came from a single trade. Expected for a momentum strategy, but it means the expectancy above is an estimate of a tail mean — treat it as directional, not as a rate, until the sample is far larger.`
+				: null,
 	}
 }
 

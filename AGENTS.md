@@ -1288,9 +1288,11 @@ Do not decide these unilaterally:
 
 1. **`src/detectors/liquiditySweepDetector.ts`** — dormant and structural, so it fell outside the
    approved Tier A set (mean-reversion and superseded only). Left in place pending a call.
-2. **Sequencing** — the Qullamaggie momentum suite (a separate goal doc) versus running the
-   backtest first. The backtest is what makes any threshold in that suite calibratable rather
-   than guessed, which argues for doing it first, but the user has not confirmed the order.
+2. **Sequencing** — the Qullamaggie momentum suite (`docs/qullamaggie-spec-v2.md`) versus running
+   the backtest first. The backtest is what makes any threshold in that suite calibratable rather
+   than guessed, which argues for doing it first, but the user has not confirmed the order. The
+   suite is specified and unbuilt; several of its inputs (market cap, daily candles, benchmark
+   indices, order-book depth, circuit bands, account equity) have no source in the repo at all.
 3. **The 15 archived detectors** are archived, not deleted, specifically so the backtest can
    still import them. Deleting them needs explicit approval and would end that option.
 
@@ -1303,6 +1305,7 @@ Do not decide these unilaterally:
 | `README.md` | Human-facing project overview and how to run it. |
 | `backtest/README.md` | The harness: isolation guarantees, virtual clock, assumptions, fidelity gaps. |
 | `src/detectors/deprecated/README.md` | Why each of the 15 archived detectors was archived, and how to revive one. |
+| `docs/qullamaggie-spec-v2.md` | The source-verified spec for a momentum suite that is **not built**. Carries the repo's status, what the revision corrects versus the earlier version, and the data blockers a builder hits immediately. |
 
 If you change behaviour, update `AGENTS.md` in the same commit. A stale brief is worse than no
 brief, because the next agent will trust it.
