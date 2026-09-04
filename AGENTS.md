@@ -27,6 +27,7 @@
 | Big caveat #1 | Of 26 detector classes, **8 are live**. 15 are archived under `src/detectors/deprecated/`, and 3 more are dormant but still in `src/detectors/`. See §4. |
 | Big caveat #2 | Most files carry a large **commented-out previous version** at the bottom. Always confirm you are editing live code, not the archive block. |
 | Backtest | `backtest/` replays historical bars through the real detectors. Read `backtest/README.md` before touching it — it depends on a virtual clock and an in-memory Redis, and it deliberately reproduces a live routing bug. |
+| 🔴 Known live bug | Five watchlist equities (RELIANCE, ULTRACEMCO, CEATLTD, BAJFINANCE, KAJARIACER) never reach any detector — see §6.11. Unfixed by instruction, not by oversight. |
 
 ---
 
@@ -88,7 +89,8 @@ instead. So *starting the container = sending the ping.*
 1. Assert `/app/token/access_token.txt` and `./watchlist.json` exist, else `process.exit(1)`.
 2. `bootRedis()`.
 3. `seedHistoricalVwap()` — see §3.2.
-4. `activeUniverse = watchlist.slice(0, 100)` (`watchlist.json` currently holds 89 symbols).
+4. `activeUniverse = watchlist.slice(0, 100)` (`watchlist.json` currently holds 90 symbols, so all
+   of them are taken).
 5. `warnIfVwapMissing(activeUniverse)` — sequential Redis `GET` per symbol; logs a missing list.
 6. Per symbol: register 3 equity detectors in `strategyRouter: Map<string, IDetector[]>`, and
    `DEL` 5 per-symbol keys (cooldowns, session open, VCP history).
@@ -653,7 +655,10 @@ Because `velocity` uses **absolute** premium and index moves, it is a magnitude 
 verify the premium moved in the *same direction* as the index — a collapsing premium on a rising
 index still produces a positive velocity. Worth fixing if you touch this file.
 
-### 4.3 ACTIVE — the per-equity stack (3 instances × 89 symbols = 267 detector objects)
+### 4.3 ACTIVE — the per-equity stack (3 instances × 90 symbols = 270 detector objects)
+
+⚠️ 270 objects are constructed, but only **85 symbols ever reach them**: five are swallowed by the
+option-routing bug in §6.11 before `strategyRouter` is consulted.
 
 | Class | File | Setups |
 |---|---|---|
@@ -918,6 +923,10 @@ Two templates, chosen by `symbol.includes('CE') || symbol.includes('PE')`.
 Verify before "fixing" — several are deliberate trade-offs, and the git log shows some of these were
 oscillated on. Roughly ordered by impact.
 
+> **Start with §6.11.** It is the only entry that is actively costing coverage right now: five
+> liquid equities are silently dropped by the live engine and never reach a detector. Everything
+> else here is a calibration or fidelity concern; that one is lost data.
+
 ### 6.1 ⚠️ PARTLY RESOLVED — Nifty VWAP was not volume-weighted and was never seeded
 
 - Route A calls `updateVwap(NIFTY, ltp, 1)` — a literal volume of `1` per tick. With constant
@@ -974,7 +983,7 @@ never tick, which silently disables every option-routed detector with no error a
 ### 6.6 Redis GET/SET on the tick hot path
 
 Per Nifty tick: `updateVwap` (GET+SET) and `updateNiftyBias` (GET+SET). Per equity tick: `updateVwap`
-(GET+SET) plus a per-detector cooldown GET. Across 89 symbols this is thousands of round-trips per
+(GET+SET) plus a per-detector cooldown GET. Across 90 symbols this is thousands of round-trips per
 second in an active market. `regimeDetector` already moved to an in-memory buffer with Redis as a
 mirror — that is the pattern to follow. Also, `warnIfVwapMissing` does 100 sequential GETs at boot
 (use `MGET`).
@@ -1020,34 +1029,6 @@ in `ranging` and half-sized in `transition`; `OiLiquiditySweep` moved REVERSION 
 stops being suppressed in `trending`. Expect fewer equity/Nifty momentum alerts in chop and more OI
 sweep alerts in trends.
 
-### 6.11 🔴 LIVE BUG — five equities are silently dropped by option routing
-
-`websocket.ts:223` classifies a tick as an option with a bare substring test:
-
-```ts
-if (rawTick.symbol.includes('CE') || rawTick.symbol.includes('PE'))
-```
-
-Five watchlist symbols contain those letters inside the **company name**, so they are routed into
-the option branch:
-
-```
-NSE:RELIANCE-EQ   NSE:ULTRACEMCO-EQ   NSE:CEATLTD-EQ   NSE:BAJFINANCE-EQ   NSE:KAJARIACER-EQ
-```
-
-For those five, in production: `updateVwap` is never called, `feedTick` is never called,
-`strategyRouter` is never consulted — **all three equity detectors never run** — and
-`isIndexOrOption` at line 290 is also true, so their zero-volume ticks are not filtered and tick
-volume falls back to 1. Three of the five are among the most liquid names in the watchlist.
-
-The same substring test appears in `janeStreetFilter` (structure symbol resolution),
-`bayesianEngine` (volume bypass and the DTE evidence) and `telegramWorker` (message template),
-so even if routing were fixed those would still misclassify.
-
-The correct test needs a strike: `/\d{3,}\s*(CE|PE)$/`. Both the faithful and the correct
-version live in `backtest/core/symbolClass.ts`, with a test pinning the five affected symbols.
-**Not yet fixed** — found during backtest work, whose guardrails forbid modifying `websocket.ts`.
-
 ### 6.10 Smaller items
 
 - `SLIPPAGE_PTS = 2.0` flat across all asset classes — §5.3.
@@ -1083,6 +1064,33 @@ version live in `backtest/core/symbolClass.ts`, with a test pinning the five aff
 - `.gitignore` covers `.env`, `logs/`, `access_token.txt`. The token is written in **plaintext** to a
   Docker volume, and `env.ts` holds secrets in a plain exported object.
 
+### 6.11 🔴 LIVE BUG — five equities are silently dropped by option routing
+
+`websocket.ts:223` classifies a tick as an option with a bare substring test:
+
+```ts
+if (rawTick.symbol.includes('CE') || rawTick.symbol.includes('PE'))
+```
+
+Five watchlist symbols contain those letters inside the **company name**, so they are routed into
+the option branch:
+
+```
+NSE:RELIANCE-EQ   NSE:ULTRACEMCO-EQ   NSE:CEATLTD-EQ   NSE:BAJFINANCE-EQ   NSE:KAJARIACER-EQ
+```
+
+For those five, in production: `updateVwap` is never called, `feedTick` is never called,
+`strategyRouter` is never consulted — **all three equity detectors never run** — and
+`isIndexOrOption` at line 290 is also true, so their zero-volume ticks are not filtered and tick
+volume falls back to 1. Three of the five are among the most liquid names in the watchlist.
+
+The same substring test appears in `janeStreetFilter` (structure symbol resolution),
+`bayesianEngine` (volume bypass and the DTE evidence) and `telegramWorker` (message template),
+so even if routing were fixed those would still misclassify.
+
+The correct test needs a strike: `/\d{3,}\s*(CE|PE)$/`. Both the faithful and the correct
+version live in `backtest/core/symbolClass.ts`, with a test pinning the five affected symbols.
+**Not yet fixed** — found during backtest work, whose guardrails forbid modifying `websocket.ts`.
 ---
 
 ## 7. Redis key reference
@@ -1215,3 +1223,86 @@ seed + minute weighting (§6.1), the explicit regime class (§6.9), candle confi
    (§6.6).
 10. **Delete or archive the 17 dormant detectors** and the commented archive blocks, so the live
     surface area is unambiguous.
+
+---
+
+## 11. State of the `v2` branch — read this to catch up
+
+`main` is the deployed engine and has **not** been touched. Everything below is on `v2`.
+
+### 11.1 What changed, in order
+
+| Commit | What landed |
+|---|---|
+| `0f1f8b3` | This file — the initial full codebase brief. |
+| `7843312` | **Pruning.** 15 detectors moved (`git mv`, history intact) to `src/detectors/deprecated/`. Live count 9 → 8. |
+| `0e9fec5` | Style-only: normalized the `v2/` detector tree to `.prettierrc`. Kept separate so the next commit was reviewable. |
+| `315cda9` | **Three root-cause fixes** (below), plus working lint/typecheck/test scripts. |
+| `cc391a1` | **Backtest harness** under `backtest/`. |
+| `54c4886` | Recorded the live CE/PE routing bug (§6.11). |
+
+### 11.2 The three root-cause fixes in `315cda9`
+
+Each was a real defect, confirmed by reading the code rather than inferred:
+
+1. **Nifty VWAP** — was updated per tick with a hardcoded weight of `1`, which collapses
+   algebraically to an unweighted mean of tick *prices*; and the index was never seeded, so the
+   reference started at zero every boot. Now seeded and advanced once per closed minute at the
+   candle typical price. Still a TWAP, not a VWAP — indices report no volume (§6.1).
+2. **Regime classification** — no detector passed `detectorName`, so the REGIME **hard gate** was
+   decided by keyword-matching emoji-laden alert copy. Two consequences: the entire momentum
+   stack silently classified `UNIVERSAL` (so regime suppression never applied to it), and
+   `OiLiquiditySweep` classified `REVERSION` because its trigger contains "Trap". Fixed with an
+   explicit `regimeClass` tag that outranks both fallbacks (§3.8, §6.9).
+3. **Tick vs candle confirmation** — audited all 8 active detectors. Five already confirmed on
+   candle close. `DeltaHedgingPressure` is tick-level by design. Two were genuinely broken and
+   are fixed: `VolatilityContraction` compared one tick's volume to a 5-minute average (~300×
+   scale mismatch) and computed its pivot from a window that included the breakout candle;
+   `GapAndGo` tested a ₹50L block against a single print.
+
+**Behaviour change to expect from #2:** four detectors moved `UNIVERSAL → MOMENTUM`, so they are
+now suppressed in `ranging` and half-sized in `transition`. `OiLiquiditySweep` moved
+`REVERSION → UNIVERSAL`, so it stops being suppressed in `trending`. Fewer momentum alerts in
+chop, more OI-sweep alerts in trends.
+
+### 11.3 What is verified, and what is not
+
+**Verified:** `npm run typecheck` → 0 errors. `npm test` → 53/53. `npm run lint` runs (9 errors
+remain, all pre-existing: 2 in the dead `src/index.ts` stub, 7 in `deprecated/`). The backtest
+replays 40 synthetic sessions / 75,000 bars / 300,000 ticks / 953 signals in ~14s with real
+detectors firing through the real gating chain.
+
+**Not verified:** nothing has been run against live market data or a real Redis. This development
+machine has no `.env`, no Fyers token, no Redis and no Docker. In particular the Nifty VWAP fix
+and the regime re-classification are **correct by reading, not by observation** — confirm both on
+a live session.
+
+**No performance data exists for any detector.** Not one number in this repo is measured. Every
+`L=` likelihood ratio in §3.9, every point weight in §5.1 and every "win rate" in a code comment
+is an assumption. `backtest/output/sample-report.html` is generated from a sine wave and is
+banner-marked as such. Do not present any of it as a result.
+
+### 11.4 Open questions awaiting the user
+
+Do not decide these unilaterally:
+
+1. **`src/detectors/liquiditySweepDetector.ts`** — dormant and structural, so it fell outside the
+   approved Tier A set (mean-reversion and superseded only). Left in place pending a call.
+2. **Sequencing** — the Qullamaggie momentum suite (a separate goal doc) versus running the
+   backtest first. The backtest is what makes any threshold in that suite calibratable rather
+   than guessed, which argues for doing it first, but the user has not confirmed the order.
+3. **The 15 archived detectors** are archived, not deleted, specifically so the backtest can
+   still import them. Deleting them needs explicit approval and would end that option.
+
+### 11.5 Documentation map
+
+| File | Purpose |
+|---|---|
+| `AGENTS.md` | **This file. Single source of truth.** Architecture, every formula, the gating maths, defects, conventions. |
+| `CLAUDE.md`, `GEMINI.md` | Thin pointers here, plus the non-negotiables. Deliberately short — do not duplicate content into them. |
+| `README.md` | Human-facing project overview and how to run it. |
+| `backtest/README.md` | The harness: isolation guarantees, virtual clock, assumptions, fidelity gaps. |
+| `src/detectors/deprecated/README.md` | Why each of the 15 archived detectors was archived, and how to revive one. |
+
+If you change behaviour, update `AGENTS.md` in the same commit. A stale brief is worse than no
+brief, because the next agent will trust it.

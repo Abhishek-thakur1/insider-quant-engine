@@ -18,7 +18,7 @@ data could be fetched. Everything is verified against generated bars instead:
 | | |
 |---|---|
 | `npm test` | 53 cases pass — 45 unit + 8 end-to-end replay |
-| `npx tsx backtest/demo.ts` | 40 synthetic sessions, 75,000 bars, 300,000 ticks, 953 raw signals, 14s |
+| `BACKTEST_MODE=true npx tsx backtest/demo.ts` | 40 synthetic sessions, 75,000 bars, 300,000 ticks, 953 raw signals, 14s |
 | Real detectors firing | confirmed — Gap & Go, VWAP Defense, VWAP Crossover, Value Zone, Nifty Options Scalper, Smart Money Divergence, Morning Momentum, ORB, Equity Trap all produced signals |
 | Real gating chain | confirmed — every signal carries a score, posterior, EV and regime from `runJaneStreetFilter` |
 | `tsc --noEmit` | 0 errors |
@@ -60,6 +60,15 @@ BACKTEST_MODE=true npx tsx backtest/run.ts run
 # smoke test first
 BACKTEST_MODE=true npx tsx backtest/run.ts run --days 5
 ```
+
+No credentials at all? The synthetic path needs none and exercises the whole pipeline:
+
+```bash
+BACKTEST_MODE=true npx tsx backtest/demo.ts
+```
+
+`BACKTEST_MODE=true` is asserted on every entry point. Without it the telegramWorker seam is
+inert and detector signals would be **dispatched to Telegram** rather than collected.
 
 Output: `backtest/output/results.json` and `backtest/output/backtest-report.html`.
 
