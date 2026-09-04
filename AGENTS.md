@@ -22,9 +22,9 @@
 | Broker / data | Fyers API v3 (`fyers-api-v3`) — REST for historical candles, WebSocket for ticks |
 | State store | Redis (`redis` npm client, **not** ioredis, despite ioredis being in `package.json`) |
 | Output channel | Telegram — two IDs: `TELEGRAM_ADMIN_ID` (private control) and `TELEGRAM_CHANNEL_ID` (public alerts) |
-| Tests | **None.** `npm test` intentionally fails. |
-| Lint / format | `npm run check` = prettier + eslint. Tabs, no semicolons, single quotes, 100 cols (`.prettierrc`). |
-| Big caveat #1 | 17 of the 26 detector classes on disk are **dormant** — not wired into the live engine. See §4. |
+| Tests | `npm test` → 14 cases (node:test via tsx) covering the REGIME hard gate. Was previously a deliberate failure stub. |
+| Lint / format | `npm run check` = prettier + eslint + tests. `npm run typecheck` = `tsc --noEmit --types node` (0 errors). Tabs, no semicolons, single quotes, 100 cols (`.prettierrc`). |
+| Big caveat #1 | Of 26 detector classes, **8 are live**. 15 are archived under `src/detectors/deprecated/`, and 3 more are dormant but still in `src/detectors/`. See §4. |
 | Big caveat #2 | Most files carry a large **commented-out previous version** at the bottom. Always confirm you are editing live code, not the archive block. |
 
 ---
@@ -91,10 +91,11 @@ instead. So *starting the container = sending the ping.*
 5. `warnIfVwapMissing(activeUniverse)` — sequential Redis `GET` per symbol; logs a missing list.
 6. Per symbol: register 3 equity detectors in `strategyRouter: Map<string, IDetector[]>`, and
    `DEL` 5 per-symbol keys (cooldowns, session open, VCP history).
-7. `DEL` 11 global keys (Nifty cooldowns, bias, regime returns + cache, jsfilter log, sweep state).
+7. `DEL` 9 global keys (Nifty cooldowns, bias, regime returns + cache, jsfilter log).
 8. Register **one** `tickEmitter.on('processTick', …)` async handler.
 9. ``fyersDataSocket.getInstance("${appId}:${token}", './logs', false)``, `autoreconnect(5)`, `connect()`.
-10. On `connect`: `skt.subscribe([...activeUniverse, NIFTY_SYMBOL, ...subscribedOptionSymbols])`.
+10. Prime `lastNiftyVwap` from the seeded index value (warns loudly if the seed is missing).
+11. On `connect`: `skt.subscribe([...activeUniverse, NIFTY_SYMBOL, ...subscribedOptionSymbols])`.
 
 Graceful shutdown on SIGTERM/SIGINT: set `isShuttingDown`, `skt.close()`, wait 3 s, `redis.quit()`,
 `process.exit(0)`.
@@ -132,9 +133,11 @@ Things that matter here:
 **Route A — Nifty spot (`NSE:NIFTY50-INDEX`)**
 
 ```
-niftyVwap = await updateVwap(NIFTY, ltp, 1)     // volume literal 1
-await updateNiftyBias(ltp, niftyVwap)           // Redis GET + SET per tick
-updateRegimeCandle(ltp)                         // fire-and-forget, .catch logged
+updateNiftyMinuteState(ltp)                     // fire-and-forget, .catch logged
+                                                //   builds a 1-min O/H/L/C candle; on close it
+                                                //   pushes the return to the regime engine AND
+                                                //   advances the session reference price
+if (lastNiftyVwap > 0) await updateNiftyBias(ltp, lastNiftyVwap)   // cached, no Redis read
 feedTick(NIFTY, ltp, liveTick.volume)           // shared 1-min candle buffer
 await niftyOpeningRangeExpl.analyze(liveTick)
 await niftyTrendPulse.analyze(liveTick)
@@ -191,6 +194,8 @@ sendTelegramAlert(data)
   vwap: number
   avgPrice: number
   detectorName?: string  // optional; enables exact regime classification
+  regimeClass?: DetectorType  // 'MOMENTUM' | 'REVERSION' | 'UNIVERSAL' — set by every
+                              // ACTIVE detector; outranks name and trigger matching
 }
 ```
 
@@ -280,7 +285,11 @@ if (cumulativeVol > 0)
 - Retry: `MAX_RETRIES = 2`. Rate limiting is detected via HTTP 429 **or** `/rate.?limit/i` matching
   the error message or the serialised `response.data`. Backoff `1000 * 2^(attempt+1)` → 2 s, 4 s.
 
-**Only `watchlist.slice(0,100)` is seeded. `NSE:NIFTY50-INDEX` is NOT seeded.** See §6.1.
+`watchlist.slice(0,100)` is seeded with real traded volume. **`NSE:NIFTY50-INDEX` is also seeded**,
+via the `equalWeight` mode: NSE indices report no volume (Fyers returns 0), so a volume-weighted
+VWAP is not computable for them. The index instead accumulates one unit of weight per minute at the
+candle typical price — a session TWAP, not a VWAP. The live path uses the identical weighting so the
+seed and the session are consistent. See §6.1 for the higher-fidelity alternative.
 
 ### 3.3 Nifty market bias (`updateNiftyBias`) — hysteresis band
 
@@ -433,11 +442,21 @@ trendingPct = count(|returns| > 0.1) / n × 100
 volatility  = population stddev = sqrt( Σ(v − μ)² / n )
 ```
 
-**Detector routing.** `classifyDetector(name)` checks in this precedence order: UNIVERSAL patterns
-→ REVERSION patterns → MOMENTUM patterns → default **UNIVERSAL** (conservative: allow through).
-With no name, `classifyFromTrigger(trigger)` lowercases and keyword-matches
-(`exhaustion|defense|reversion|trap|wyckoff|ofe|value zone` → REVERSION;
-`breakout|momentum|vcp|parabolic|orb|sweep` → MOMENTUM; else UNIVERSAL).
+**Detector routing — precedence, strongest first:**
+
+1. **`explicitType`** — the `regimeClass` tag on `AlertPayload`. Every active detector sets it. This
+   is the only non-guessing path; prefer it always.
+2. **`classifyDetector(name)`** — UNIVERSAL patterns → REVERSION patterns → MOMENTUM patterns →
+   default UNIVERSAL. A safety net; the live detector names are now listed in the pattern arrays.
+3. **`classifyFromTrigger(trigger)`** — lowercased keyword match
+   (`exhaustion|defense|reversion|trap|wyckoff|ofe|value zone` → REVERSION;
+   `breakout|momentum|vcp|parabolic|orb|sweep` → MOMENTUM; else UNIVERSAL). Legacy fallback only.
+4. Default **UNIVERSAL**.
+
+`RegimeCheckResult.classificationSource` reports which path was taken
+(`'explicit' | 'name' | 'trigger' | 'default'`) and is appended to the REGIME breakdown reason, so
+anything other than `explicit` is visible in `jsfilter:decisions`. Guessing from trigger text was
+the cause of two real misclassifications — see §6.9.
 
 `checkRegimeCompatibility(regime, entropy, name?, trigger?)`:
 
@@ -591,7 +610,7 @@ reason string.
 This is the single most important thing to get right before editing. Only what `websocket.ts`
 imports **and instantiates** actually runs.
 
-### 4.1 ACTIVE — Nifty singletons (one instance each, fed on every Nifty spot tick)
+### 4.1 ACTIVE — 5 Nifty singletons (one instance each, fed on every Nifty spot tick)
 
 | Class | File | Candle | Core logic |
 |---|---|---|---|
@@ -600,7 +619,6 @@ imports **and instantiates** actually runs.
 | `NiftyVwapReclaimDetector` | `v2/niftyVwapReclaimDetector.ts` | 3-min | Tracks a per-candle `above`/`below` VWAP relation history. LONG when the previous 2 closes were `below` and the current closes `above`, body ≥ 0.12%, and `vwapDist ≤ 0.60%` (not already extended). SL = VWAP ∓ 8 pts; rejects risk ≤ 0 or > 50. Window 09:20–14:45. Cooldown 1500 s. |
 | `OiLiquiditySweepDetector` | `oiLiquiditySweepDetector.ts` | 3-min | State machine `WAITING → PIERCED_RESISTANCE / PIERCED_SUPPORT`. Arms **intrabar** when spot ≥ maxCallStrike+15 (or ≤ maxPutStrike−15). On candle close: SHORT if close < the pierced call wall; invalidates if close > wall+30. Mirrored for support/LONG. Rejects risk > 40. T1 = 2R. Window 09:45–15:00. Cooldown 3600 s. |
 | `DeltaHedgingPressureDetector` | `deltahedgingpressuredetector.ts` | per-tick epochs | Gamma-squeeze proxy — full maths in §4.2. Window 09:30–14:30. Cooldown 900 s. |
-| `NiftyLiquiditySweep` | `v2/high_alpha/NiftyLiquiditySweep.ts` | tick + Redis FSM | `WAITING → SWEPT_HIGH → TRAP_FORMED` around the **30-min ORH**. ⚠️ **Cannot currently fire — see §6.2.** |
 
 ### 4.2 `DeltaHedgingPressureDetector` — the maths, in full
 
@@ -692,37 +710,69 @@ first tick after; active 09:30–10:15; requires `0.5% ≤ rangeSpread ≤ 2.5%`
 `BaseDetector` (`v2/high_alpha/baseDetector.ts`) provides only `isDailyTrendAligned()` and
 `triggerAlert()` (a thin `sendTelegramAlert` wrapper) plus the abstract `analyze()`.
 
-### 4.4 DORMANT — present on disk, imported nowhere in the live path
+### 4.4 ARCHIVED — moved to `src/detectors/deprecated/` (15)
 
-- `candleBreakoutDetector` — 5 × 1-min box, ≤ 0.8% spread, 7× volume, ₹1 Cr block, body ≥ 0.3%.
-- `equityLiquiditySweepDetector` — 3-min; 0.2% pierce of the 10:00 range; 2.5× volume; 7200 s cooldown.
+See `src/detectors/deprecated/README.md` for the per-file rationale and revival steps. All 15 are
+`UNTRACKED` — none was removed on measured performance, because no performance data has ever
+existed in this repo.
+
+**Tier A (14).** The 7 mean-reversion detectors: `Orderflowexhaustiondetector`,
+`smartmoneydivergencedetector`, `vwapStdevReversionDetector`, `vwapPullbackDetector`,
+`vwapCrossoverDetector`, `valueZoneScalpDetector`, `liquidityTrapDetector`. Plus 7 superseded:
+`niftyOptionsDetector`, `morningMomentumDetector`, `candleBreakoutDetector`, `vcpDetector`,
+`parabolicRvolSweepDetector`, `volumeSpikeDetector`, `equityLiquiditySweepDetector`.
+
+**Tier C (1).** `NiftyLiquiditySweep` — mean-reversion *and* dead code (it read `orb:30min:high:*`,
+written only by the dormant `orbDetector`). Removed from `v2/high_alpha/index.ts` and from the
+engine's imports, instantiation, `analyze()` chain, and boot cleanup.
+
+### 4.5 STILL DORMANT in `src/detectors/` — deliberately not archived (3)
+
+- `orbDetector` — dormant, but the **sole writer** of `orb:15min:*` / `orb:30min:*`. Archiving it
+  would cement a dead dependency. Dual 15/30-min ranges; the index bypasses volume/block filters.
+- `Multitimeframebreakoutdetector` — momentum-biased, a revival candidate rather than a retirement.
+  5-min + 15-min, 4 confluences: 3 higher lows, range < 0.4% held ≥ 10 min, 5× volume **and** ₹75 L
+  block, plus a session-return relative-strength proxy.
+- `liquiditySweepDetector` — "Institutional Liquidity Sniper"; structural, so outside the approved
+  Tier A set (mean-reversion and superseded only). Left in place pending a decision. Also reads
+  `orb:15min:*`.
+
+Do not assume a dormant detector works.
+
+#### Mechanics of the archived + dormant detectors (reference)
+
+Kept so a revival decision does not require reading 17 files. Entries marked ⤵ live in
+`src/detectors/deprecated/`; the three unmarked ones are still in `src/detectors/`.
+
+- ⤵ `candleBreakoutDetector` — 5 × 1-min box, ≤ 0.8% spread, 7× volume, ₹1 Cr block, body ≥ 0.3%.
+- ⤵ `equityLiquiditySweepDetector` — 3-min; 0.2% pierce of the 10:00 range; 2.5× volume; 7200 s cooldown.
 - `liquiditySweepDetector` — "Institutional Liquidity Sniper"; reads `orb:15min:*`.
-- `liquidityTrapDetector` — 1-min; wick ≥ 40% of the candle range; 2.5× volume.
-- `morningMomentumDetector` — 09:20 range → break by 09:45; 2.5× volume; 0.05% buffer.
+- ⤵ `liquidityTrapDetector` — 1-min; wick ≥ 40% of the candle range; 2.5× volume.
+- ⤵ `morningMomentumDetector` — 09:20 range → break by 09:45; 2.5× volume; 0.05% buffer.
 - `Multitimeframebreakoutdetector` — 5-min + 15-min; 4 confluences: 3 higher lows, range < 0.4% held
   ≥ 10 min, 5× volume **and** ₹75 L block, plus a session-return relative-strength proxy.
-- `niftyOptionsDetector` — 5-min, 3 confirms, 0.15% VWAP distance. The v2 Nifty detectors explicitly
+- ⤵ `niftyOptionsDetector` — 5-min, 3 confirms, 0.15% VWAP distance. The v2 Nifty detectors explicitly
   replace it (its header documents why it produced zero alerts).
 - `orbDetector` — dual 15/30-min ranges; **the only writer of the `orb:15min:*` / `orb:30min:*` Redis
   keys**; the index bypasses the volume and block filters; volume arrays capped at 500/1000 samples.
-- `Orderflowexhaustiondetector` — 3-min; new N-candle extreme + body < 75% of the prior body +
+- ⤵ `Orderflowexhaustiondetector` — 3-min; new N-candle extreme + body < 75% of the prior body +
   `|VWAP dev| ≥ 0.25%` + 1.8× climax volume; targets 50% and 100% VWAP reversion; risk band 8–30 pts.
-- `parabolicRvolSweepDetector` — 1-min, 60-candle baseline, **15×** RVOL, ₹2 Cr, day spread < 3.5%,
+- ⤵ `parabolicRvolSweepDetector` — 1-min, 60-candle baseline, **15×** RVOL, ₹2 Cr, day spread < 3.5%,
   7200 s cooldown.
-- `smartmoneydivergencedetector` — Wyckoff; 4 **clock-aligned** 1-min candles; HH (or LL) with ≥ 30%
+- ⤵ `smartmoneydivergencedetector` — Wyckoff; 4 **clock-aligned** 1-min candles; HH (or LL) with ≥ 30%
   volume decline and `last < avg`; ₹5 Cr block; 4 h cooldown; T1 = VWAP, T2 = VWAP ± 0.5 × distance;
   includes a "catalyst-driven" counter-bias escape hatch.
-- `valueZoneScalpDetector` — 3-min; incremental 21-EMA with `k = 2/(21+1)`, SMA-seeded over the first
+- ⤵ `valueZoneScalpDetector` — 3-min; incremental 21-EMA with `k = 2/(21+1)`, SMA-seeded over the first
   21 candles (O(1) per candle, replacing an O(n²) full recompute); pullback into the EMA/VWAP zone.
   The only user of `tradeLogger`.
-- `vcpDetector` — tick-based 20-tick box vs 100-tick baseline; `armed:vcp:{sym}` persisted in Redis so
+- ⤵ `vcpDetector` — tick-based 20-tick box vs 100-tick baseline; `armed:vcp:{sym}` persisted in Redis so
   the armed state survives a crash; 5× volume; ₹50 L block.
-- `volumeSpikeDetector` — 15 × 1-min baseline, **12×** spike, ₹2 Cr block.
-- `vwapCrossoverDetector` — 1-min; requires a decisive ≥ 8-point body VWAP cross.
-- `vwapPullbackDetector` — 1-min "VWAP Defense"; 0.12% tolerance band; `low ∈ [vwap − 3×tol, vwap + tol]`;
+- ⤵ `volumeSpikeDetector` — 15 × 1-min baseline, **12×** spike, ₹2 Cr block.
+- ⤵ `vwapCrossoverDetector` — 1-min; requires a decisive ≥ 8-point body VWAP cross.
+- ⤵ `vwapPullbackDetector` — 1-min "VWAP Defense"; 0.12% tolerance band; `low ∈ [vwap − 3×tol, vwap + tol]`;
   real body ≥ 5 pts; risk ≤ 30 pts. Note `volConfirmedLong`/`volConfirmedShort` are computed and
   **never used in the firing condition**.
-- `vwapStdevReversionDetector` — 1-min; 60-candle rolling window; **O(1)** running variance
+- ⤵ `vwapStdevReversionDetector` — 1-min; 60-candle rolling window; **O(1)** running variance
   `max(0, Σx²/n − μ²)`; ±2.5σ bands around VWAP; 2× climax volume; ₹1 Cr; the index bypasses the
   volume/block checks.
 
@@ -757,7 +807,8 @@ weak gate killed an otherwise strong setup. Now only two things are hard rejects
 
 ### 5.2 Gate 1 (hard) — REGIME
 
-`getMarketRegime()`, then `checkRegimeCompatibility(regime, entropy, detectorName, payload.trigger)`.
+`getMarketRegime()`, then
+`checkRegimeCompatibility(regime, entropy, detectorName ?? payload.detectorName, payload.trigger, payload.regimeClass)`.
 Not allowed → immediate return with `rejectedAt: 'REGIME'`, `score: 0`.
 Allowed → `REGIME points = 12 × sizeMult` (so 12 or 6).
 
@@ -866,7 +917,7 @@ Two templates, chosen by `symbol.includes('CE') || symbol.includes('PE')`.
 Verify before "fixing" — several are deliberate trade-offs, and the git log shows some of these were
 oscillated on. Roughly ordered by impact.
 
-### 6.1 Nifty VWAP is not volume-weighted, and is never seeded
+### 6.1 ⚠️ PARTLY RESOLVED — Nifty VWAP was not volume-weighted and was never seeded
 
 - Route A calls `updateVwap(NIFTY, ltp, 1)` — a literal volume of `1` per tick. With constant
   weights, `cumulativePV / cumulativeVol` degenerates into an **unweighted arithmetic mean of tick
@@ -876,23 +927,34 @@ oscillated on. Roughly ordered by impact.
   ticks since 09:15, not a true session VWAP.
 - Everything Nifty-side depends on it: `updateNiftyBias` → Bayesian E1; `NiftyVwapReclaim`;
   `NiftyTrendPulse` (the 0.20% distance filter); `NiftyORE` alignment; `DeltaHedging` side selection.
-- Related: the equity `feedTick` volume is real, but the Nifty `feedTick` volume is always 1, so
-  `orderFlowProxy` for Nifty can essentially never see `volRatio ≥ 1.8` → it permanently returns the
-  6.75 "normal volume" branch for every Nifty/option alert.
+**Fixed:** the index is now seeded (`equalWeight` mode, §3.2) and the live value advances once per
+closed 1-min candle at the typical price with weight 1 — the same weighting as the seed — instead of
+once per tick with weight 1. It is a session TWAP and is documented as such, not mislabelled a VWAP.
 
-### 6.2 `NiftyLiquiditySweep` can never fire
+**Still open:** a genuinely volume-weighted index reference needs volume borrowed from the Nifty
+**futures** contract (a new subscription plus expiry rollover). Until then the reference is
+time-weighted, which is materially better than tick-weighted but is not a VWAP.
 
-It requires `GET orb:30min:high:NSE:NIFTY50-INDEX`. The **only** writer of `orb:30min:*` is
-`OrbDetector`, which is **not instantiated** in the live engine. So `!orhRaw → return` on every tick.
-Either wire an ORB-range writer for Nifty, or compute the 30-min ORH inside the detector.
+**Still open (separate):** the equity `feedTick` volume is real, but the Nifty `feedTick` volume is
+still always 1, so `orderFlowProxy` for Nifty can essentially never see `volRatio ≥ 1.8` — it
+permanently returns the 6.75 "normal volume" branch for every Nifty/option alert.
 
-### 6.3 `VolatilityContraction`'s HTF filter is inert
+### 6.2 ✅ RESOLVED — `NiftyLiquiditySweep` could never fire
+
+It required `GET orb:30min:high:NSE:NIFTY50-INDEX`, and the only writer of `orb:30min:*` is
+`orbDetector`, which is not instantiated. Archived to `deprecated/` (Tier C) rather than reviving
+the dependency. `orb:*` is now written by nothing and read by nothing in the live path.
+
+### 6.3 ⚠️ PARTLY RESOLVED — `VolatilityContraction`'s HTF filter is inert
 
 `isDailyTrendAligned('BULLISH')` reads `HTF_TREND:{symbol}`, and no code in this repo writes that key.
 It fails open by design ("so you don't miss trades"), so the daily-trend filter documented in the
-class is effectively **off**. Its volume check also compares a **single tick's** volume to a **5-min
-candle average** (`tick.volume > newVol × 1.5`) — a unit/scale mismatch that makes the condition
-nearly unsatisfiable for liquid names.
+class is **still effectively off** — nothing writes `HTF_TREND:*`.
+
+**Fixed:** the volume check used to compare a **single tick's** volume against a **5-min candle
+average** (`tick.volume > newVol × 1.5`), a ~300× scale mismatch that made the condition
+unsatisfiable. Both sides now read the closed 5-min candle, and the pivot is computed from
+`history[1..3]` so the breakout candle is no longer part of the box it has to clear.
 
 ### 6.4 Stale option strikes are never pruned
 
@@ -933,16 +995,42 @@ i.e. **below the 78 threshold**. Practically, nothing fires early in the session
 quality. If that is not intended, either warm the aggregator from `getHistory` at boot, or scale the
 threshold by data availability.
 
-### 6.9 Smaller items
+### 6.9 ✅ RESOLVED — the REGIME hard gate was driven by alert copy
+
+No detector passed `detectorName`, so `checkRegimeCompatibility` always fell through to
+`classifyFromTrigger` — fuzzy keyword matching on emoji-laden Telegram copy. Two confirmed
+consequences:
+
+- **The entire live momentum stack classified UNIVERSAL.** None of `Stock Momentum Breakout`,
+  `Nifty Opening Range Explosion`, `Nifty Trend Pulse`, `Gap_And_Go_V2` or
+  `Volatility_Contraction_V2` matched any MOMENTUM pattern, and `classifyDetector`'s default is
+  UNIVERSAL — so regime suppression never applied to any of them. Momentum signals fired at full
+  size in high-entropy ranging markets, which is precisely the "fires then immediately reverses"
+  failure mode `regimeDetector.ts`'s own header describes.
+- **`OiLiquiditySweepDetector` classified REVERSION.** Its trigger contains "Trap", so an
+  intentionally UNIVERSAL detector was suppressed in trending regimes.
+
+Fixed by the explicit `regimeClass` tag (§3.8), with the live names added to the pattern arrays as a
+safety net and `classificationSource` exposed so any future silent fallback shows up in
+`jsfilter:decisions`. Covered by `tests/regimeGate.test.ts`, including a regression test for each.
+
+**Behaviour change to watch:** four detectors moved UNIVERSAL → MOMENTUM, so they are now suppressed
+in `ranging` and half-sized in `transition`; `OiLiquiditySweep` moved REVERSION → UNIVERSAL, so it
+stops being suppressed in `trending`. Expect fewer equity/Nifty momentum alerts in chop and more OI
+sweep alerts in trends.
+
+### 6.10 Smaller items
 
 - `SLIPPAGE_PTS = 2.0` flat across all asset classes — §5.3.
 - `BayesianResult.pass` / `POSTERIOR_FIRE_THRESHOLD = 0.55` are dead in the live path — §3.9.
 - `rejectedAt` never becomes `'BAYESIAN'` or `'KELLY'` — §5.6.
 - Equity SL is computed twice, differently (detector `trigger` vs worker template) — §5.8.
 - `vwapPullbackDetector`: `volConfirmedLong`/`volConfirmedShort` computed, never used in the `if`.
+  (Now archived; eslint reports both.)
 - `NiftyTrendPulse`: `isVolConfirmed` only annotates the message; it is not a filter.
-- `GapAndGoMomentum`: `openingVolume` is accumulated and never read. If the engine boots after 09:30,
-  `orHigh === 0` → a permanent early return for that symbol for the rest of the day.
+- `GapAndGoMomentum`: ✅ `openingVolume` is now the per-minute volume baseline (it used to be
+  accumulated and never read, with a hardcoded `volumeSpikeRatio: 2.0` sent instead). **Still open:**
+  if the engine boots after 09:30, `orHigh === 0` → a permanent early return for that symbol all day.
 - `VolatilityContraction`: the cooldown `GET` happens **after** the `LPUSH`/`LTRIM` of history, so the
   history keeps mutating during cooldown (probably harmless, but not what the comment implies).
 - `candleAggregator.resetCandles()` and `marketStructure.resetStructure()` are never called at boot.
@@ -950,8 +1038,13 @@ threshold by data availability.
 - `resetVwap(symbol)` deletes `vwap:{symbol}` — it is missing the `:{date}` suffix, so it deletes nothing.
 - `ioredis`, `bullmq`, `nodemailer`, `pdfkit`, `node-cron` are in `package.json` but unused in the live
   path. There is no BullMQ queue and no RabbitMQ, despite the README's "Message Queue: RabbitMQ".
-- `tsconfig.json` sets `"types": []` and there is no build step, so type-checking is not part of any
-  npm script — `tsx` transpiles without surfacing type errors.
+- ✅ `tsconfig.json` still sets `"types": []`, but `npm run typecheck`
+  (`tsc --noEmit --types node`) now exists and reports **0 errors** across the repo.
+- ✅ `eslint.config.js` had a stray `s` token (`sourceType: "module", s`) that threw
+  `ReferenceError: s is not defined` on load, so `npm run lint` and `npm run check` had **never
+  run**. Fixed; its `semi` rule (which contradicted `.prettierrc`) was replaced with
+  `eslint-config-prettier`. 9 errors remain, all pre-existing: 2 in the dead `src/index.ts` stub and
+  7 in `deprecated/`.
 - The `Dockerfile` installs `pm2` globally, but the active compose command uses `npx tsx`. PM2 appears
   only in commented-out compose blocks.
 - `lifecycle.sh stop_engine` purges the volume `quant_token_store` while compose declares `token_store`
@@ -983,9 +1076,7 @@ threshold by data availability.
 | `v2:cooldown:vcp:{sym}` | flag | 3600 s | VolatilityContraction | itself |
 | `v2:vcp_history:{sym}` | list, 6 candles | none | VolatilityContraction | itself |
 | `v2:cooldown:gapgo:{sym}` | flag | 28 800 s | GapAndGoMomentum | itself |
-| `v2:state:nifty_sweep` (+ `:time`, `:trapLow`) | FSM | none | NiftyLiquiditySweep | itself |
-| `v2:cooldown:nifty_sweep` | flag | 3600 s | NiftyLiquiditySweep | itself |
-| `orb:{15\|30}min:{high\|low}:{sym}` | price | 8 h | **`orbDetector` (dormant)** | NiftyLiquiditySweep, liquiditySweepDetector |
+| `orb:{15\|30}min:{high\|low}:{sym}` | price | 8 h | **`orbDetector` (dormant)** | nothing in the live path (was NiftyLiquiditySweep, now archived) |
 | `HTF_TREND:{sym}` | `BULLISH\|BEARISH` | — | **nothing** | `BaseDetector.isDailyTrendAligned` |
 | `session_open:{sym}` | price | 8 h | Multitimeframebreakout (dormant) | itself |
 | `armed:vcp:{sym}`, `memory:vcp:*`, `baseline:vcp:*` | flag / lists | 8 h / none | vcpDetector (dormant) | itself |
@@ -994,7 +1085,7 @@ Boot cleanup in `websocket.ts` deletes, per symbol: `cooldown:v2:momentum:*`, `v
 `v2:cooldown:vcp:*`, `v2:cooldown:gapgo:*`, `v2:vcp_history:*`; and globally:
 `cooldown:v2:nifty_pulse`, `cooldown:v2:vwap_reclaim`, `cooldown:v2:nifty_ore`, `cooldown:oi_sweep`,
 `cooldown:delta_squeeze`, `market:nifty:bias`, `regime:nifty:returns_1min`, `regime:nifty:current`,
-`jsfilter:decisions`, `v2:state:nifty_sweep`, `v2:cooldown:nifty_sweep`.
+`jsfilter:decisions`.
 
 It does **not** clear `vwap:*` (correct — the seeder owns those), `orb:*`, `HTF_TREND:*`, or the
 in-memory `optionTickStore` / `candleAggregator` / `bosStreak` (irrelevant on a fresh process, but
@@ -1034,8 +1125,11 @@ CONFIRMATION_THRESHOLD=78   # read directly via process.env in janeStreetFilter
 3. **`trigger` strings are an interface.** The filter parses `SL ₹…` / `T1 ₹…` and keyword-matches for
    regime/reversion classification. A new detector must emit `SL ₹X` and `T1 ₹Y` in the trigger, or it
    gets the 0.3%/1.5R fallback and probably an EV rejection.
-4. **Prefer passing `detectorName`** in `AlertPayload`. Name-based regime classification is exact;
-   trigger-text classification is a fuzzy fallback.
+4. **Always set `regimeClass` AND `detectorName`** on `AlertPayload`. `regimeClass` is the only
+   non-guessing path through the REGIME hard gate; name matching is a safety net and trigger-text
+   matching is a legacy fallback that has already caused two real misclassifications (§6.9). If you
+   add a detector without a tag, its `classificationSource` will read `name`/`trigger`/`default` in
+   `jsfilter:decisions` — treat that as a bug.
 5. **Never block the synchronous socket handler.** All I/O belongs behind `tickEmitter`.
 6. **Preserve the fail-open property** of the filter call in `telegramWorker`.
 7. **Never remove the index/options VSR bypass** in Bayesian E3 or the `volume: actualTickVol || 1`
@@ -1047,10 +1141,13 @@ CONFIRMATION_THRESHOLD=78   # read directly via process.env in janeStreetFilter
 10. **Formatting**: run `npm run check` (prettier + eslint) before finishing. Note that the `v2/` and
     `v2/high_alpha/` directories use 4-space indent and semicolons while the rest of the repo uses tabs
     and no semicolons — match the file you are in.
-11. **No tests exist.** If you change maths, add a small `tsx` script exercising the pure functions —
-    `computeShannonEntropy`, `bayesUpdate`, `computeEV`, `computeKelly`, `getStructureScore`,
-    `getLiquidityScore`, `getOrderFlowScore`, `getBestStrike`, `buildOptionSymbol` are all pure and
-    easy to test in isolation.
+11. **Tests: `npm test`** runs `tests/**/*.test.ts` with `node:test` via `tsx` — currently 14 cases
+    over the REGIME gate. Note that importing anything under `src/` pulls in `config/env.ts`, which
+    calls `process.exit(1)` on missing credentials, so a test must set dummy env vars **before** a
+    dynamic `import()` — see the header of `tests/regimeGate.test.ts`. If you change maths, add
+    cases: `getStructureScore`, `getLiquidityScore`, `getOrderFlowScore`, `getBestStrike` and
+    `buildOptionSymbol` are already pure and exported. `computeShannonEntropy`, `bayesUpdate`,
+    `computeEV` and `computeKelly` are pure but **not exported** — export them to test them.
 12. **This engine sends alerts; it does not trade.** There is no order placement, position tracking,
     P&L, or outcome labelling anywhere. Every "win rate" and every `L=` constant in the comments is an
     **assumption**, not a measured or back-tested value. Do not present them as validated. Building an
@@ -1063,12 +1160,18 @@ CONFIRMATION_THRESHOLD=78   # read directly via process.env in janeStreetFilter
 
 Priority order, based on the analysis above:
 
+**Landed on `v2` already:** the approved pruning (15 detectors archived, §4.4), the Nifty VWAP
+seed + minute weighting (§6.1), the explicit regime class (§6.9), candle confirmation for
+`VolatilityContraction` and `GapAndGoMomentum` (§6.3), and working lint/typecheck/test scripts.
+
 1. **Outcome labelling + calibration harness.** Log every fired alert, then poll price to label
-   SL-hit / T1-hit / timeout. Without this, every constant in §3.9 and §5.1 is a guess.
-2. **Fix the Nifty VWAP** (§6.1) — seed `NSE:NIFTY50-INDEX` from `getHistory`, and feed real index
-   volume (or explicitly document it as an unweighted tick mean and rename the function).
+   SL-hit / T1-hit / timeout. Without this, every constant in §3.9 and §5.1 is a guess. This is
+   still the single highest-value missing piece.
+2. **Volume-weight the Nifty reference properly** (§6.1) — borrow volume from the Nifty futures
+   contract, or keep the TWAP and rename the accessor so nothing reads it as a VWAP.
 3. **Verify the NSE weekly expiry weekday** (§6.5) and make it configurable rather than hardcoded.
-4. **Wire or remove `NiftyLiquiditySweep`** (§6.2) and `HTF_TREND` (§6.3) — dead code that looks alive.
+4. **Write `HTF_TREND:*` or delete the filter that reads it** (§6.3) — it fails open, so the
+   daily-trend gate on `VolatilityContraction` is documented but off.
 5. **Call `pruneStaleStrikes`** after every option resubscribe (§6.4).
 6. **Make slippage relative** (basis points of price) instead of a flat 2.0 (§5.3).
 7. **Reconcile the two equity SL computations** (§5.8) so the level scored by the EV gate is the level
