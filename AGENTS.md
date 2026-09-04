@@ -24,7 +24,7 @@
 | Output channel | Telegram — two IDs: `TELEGRAM_ADMIN_ID` (private control) and `TELEGRAM_CHANNEL_ID` (public alerts) |
 | Tests | **None.** `npm test` intentionally fails. |
 | Lint / format | `npm run check` = prettier + eslint. Tabs, no semicolons, single quotes, 100 cols (`.prettierrc`). |
-| Big caveat #1 | ~50% of the detector files on disk are **dormant** — not wired into the live engine. See §4. |
+| Big caveat #1 | 17 of the 26 detector classes on disk are **dormant** — not wired into the live engine. See §4. |
 | Big caveat #2 | Most files carry a large **commented-out previous version** at the bottom. Always confirm you are editing live code, not the archive block. |
 
 ---
@@ -228,7 +228,7 @@ src/
     janeStreetFilter.ts ★ THE CONFIRMATION ENGINE (unified 0–100 score)
     v2/                 4 active v2 detectors
     v2/high_alpha/      BaseDetector + 3 detectors
-    …16 legacy detectors (mostly dormant — see §4.4)
+    …19 legacy detectors (17 of them dormant — see §4.4)
   workers/telegramWorker.ts  ★ the only alert egress + the gate call
   scripts/validateWatchlist.ts  watchlist ⊆ fyersUniverse check
   types/fyers-api-v3.d.ts       one-line untyped module shim
@@ -1077,5 +1077,5 @@ Priority order, based on the analysis above:
    fixes the cold-start scoring floor (§6.7, §6.8).
 9. **Cut Redis hot-path traffic** — in-memory VWAP/bias with periodic Redis mirroring, `MGET` at boot
    (§6.6).
-10. **Delete or archive the 16 dormant detectors** and the commented archive blocks, so the live
+10. **Delete or archive the 17 dormant detectors** and the commented archive blocks, so the live
     surface area is unambiguous.
