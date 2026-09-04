@@ -24,7 +24,6 @@ import { NiftyOpeningRangeExplosionDetector } from '../detectors/v2/niftyOpening
 import { StockMomentumBreakoutDetector } from '../detectors/v2/stockMomentumBreakoutDetector.js'
 import type { IDetector, TickData } from '../core/types.js'
 import { fileURLToPath } from 'url'
-import { NiftyLiquiditySweep } from '../detectors/v2/high_alpha/NiftyLiquiditySweep.js'
 import { VolatilityContraction } from '../detectors/v2/high_alpha/VolatilityContraction.js'
 import { GapAndGoMomentum } from '../detectors/v2/high_alpha/GapAndGoMomentum.js'
 
@@ -83,7 +82,6 @@ const niftyTrendPulse = new NiftyTrendPulseDetector()
 const niftyVwapReclaim = new NiftyVwapReclaimDetector()
 const niftyOpeningRangeExpl = new NiftyOpeningRangeExplosionDetector()
 const deltaHedgingDetector = new DeltaHedgingPressureDetector()
-const v2NiftySweepDetector = new NiftyLiquiditySweep()
 
 export const startLiveEngine = async () => {
 	console.log(`[Engine] 📡 Booting Institutional Quant Router with Jane Street Filter...`)
@@ -136,8 +134,6 @@ export const startLiveEngine = async () => {
 		redisClient.del('regime:nifty:returns_1min'),
 		redisClient.del('regime:nifty:current'),
 		redisClient.del('jsfilter:decisions'),
-		redisClient.del(`v2:state:nifty_sweep`),
-		redisClient.del(`v2:cooldown:nifty_sweep`),
 	])
 
 	console.log('[Engine] ✅ Full boot cleanup complete.')
@@ -169,7 +165,6 @@ export const startLiveEngine = async () => {
 				await niftyVwapReclaim.analyze(liveTick)
 				await oiSweepDetector.analyze(liveTick)
 				await deltaHedgingDetector.analyze(liveTick)
-				await v2NiftySweepDetector.analyze(liveTick)
 
 				// Option Chain Dynamic Rolling
 				if (lastSubscribedNiftySpot === 0 || hasATMShifted(rawTick.ltp, lastSubscribedNiftySpot)) {

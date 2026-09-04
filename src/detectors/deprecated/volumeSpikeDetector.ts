@@ -22,10 +22,10 @@
 // The only change is how baseline volume is measured.
 // ============================================================
 
-import { sendTelegramAlert } from '../workers/telegramWorker.js'
-import type { IDetector, TickData } from '../core/types.js'
-import { redisClient } from '../config/redis.js'
-import { getVwap, getMarketBias } from '../utils/vwapUtils.js'
+import { sendTelegramAlert } from '../../workers/telegramWorker.js'
+import type { IDetector, TickData } from '../../core/types.js'
+import { redisClient } from '../../config/redis.js'
+import { getVwap, getMarketBias } from '../../utils/vwapUtils.js'
 
 // [FIX] Changed from tick-count to candle-count baseline
 const BASELINE_CANDLE_COUNT = 15 // last 15 completed 1-min candles (~15 min of data)

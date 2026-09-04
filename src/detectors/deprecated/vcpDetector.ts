@@ -1,7 +1,7 @@
-import { sendTelegramAlert } from '../workers/telegramWorker.js'
-import type { IDetector, TickData } from '../core/types.js'
-import { redisClient } from '../config/redis.js'
-import { getVwap, getMarketBias } from '../utils/vwapUtils.js'
+import { sendTelegramAlert } from '../../workers/telegramWorker.js'
+import type { IDetector, TickData } from '../../core/types.js'
+import { redisClient } from '../../config/redis.js'
+import { getVwap, getMarketBias } from '../../utils/vwapUtils.js'
 
 const BOX_MEMORY_LENGTH = 20
 const BASELINE_MEMORY_LENGTH = 100

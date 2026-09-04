@@ -1,7 +1,7 @@
-import { sendTelegramAlert } from '../workers/telegramWorker.js'
-import type { IDetector, TickData } from '../core/types.js'
-import { redisClient } from '../config/redis.js'
-import { getVwap } from '../utils/vwapUtils.js'
+import { sendTelegramAlert } from '../../workers/telegramWorker.js'
+import type { IDetector, TickData } from '../../core/types.js'
+import { redisClient } from '../../config/redis.js'
+import { getVwap } from '../../utils/vwapUtils.js'
 
 const RANGE_END_MINUTES = 9 * 60 + 20
 const WINDOW_END_MINUTES = 9 * 60 + 45

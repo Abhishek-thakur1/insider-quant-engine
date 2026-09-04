@@ -1,8 +1,8 @@
-import { sendTelegramAlert } from '../workers/telegramWorker.js'
-import type { IDetector, TickData } from '../core/types.js'
-import { redisClient } from '../config/redis.js'
-import { getVwap, getMarketBias } from '../utils/vwapUtils.js'
-import { getBestStrike } from '../utils/optionUtils.js'
+import { sendTelegramAlert } from '../../workers/telegramWorker.js'
+import type { IDetector, TickData } from '../../core/types.js'
+import { redisClient } from '../../config/redis.js'
+import { getVwap, getMarketBias } from '../../utils/vwapUtils.js'
+import { getBestStrike } from '../../utils/optionUtils.js'
 
 // ─── TUNABLE CONSTANTS ───────────────────────────────────────
 const CANDLE_DURATION_MS = 60 * 1000 // 1-minute aggregation

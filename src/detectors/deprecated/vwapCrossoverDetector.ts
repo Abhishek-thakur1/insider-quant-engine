@@ -1,8 +1,8 @@
-import { sendTelegramAlert } from '../workers/telegramWorker.js'
-import type { IDetector, TickData } from '../core/types.js'
-import { redisClient } from '../config/redis.js'
-import { getVwap } from '../utils/vwapUtils.js'
-import { getBestStrike } from '../utils/optionUtils.js'
+import { sendTelegramAlert } from '../../workers/telegramWorker.js'
+import type { IDetector, TickData } from '../../core/types.js'
+import { redisClient } from '../../config/redis.js'
+import { getVwap } from '../../utils/vwapUtils.js'
+import { getBestStrike } from '../../utils/optionUtils.js'
 
 const CANDLE_DURATION_MS = 60 * 1000 // 1-minute candles for sniper entries
 const MEMORY_LENGTH = 3 // Just need previous candle context

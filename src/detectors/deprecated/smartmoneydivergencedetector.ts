@@ -82,10 +82,10 @@
 // smartMoneyDivergenceDetector.ts
 // ============================================================
 
-import { sendTelegramAlert } from '../workers/telegramWorker.js'
-import type { IDetector, TickData } from '../core/types.js'
-import { redisClient } from '../config/redis.js'
-import { getVwap, getMarketBias } from '../utils/vwapUtils.js'
+import { sendTelegramAlert } from '../../workers/telegramWorker.js'
+import type { IDetector, TickData } from '../../core/types.js'
+import { redisClient } from '../../config/redis.js'
+import { getVwap, getMarketBias } from '../../utils/vwapUtils.js'
 
 // ─── TUNABLE CONSTANTS ───────────────────────────────────────
 const CANDLE_DURATION_MS = 60 * 1000 // 1-minute candles

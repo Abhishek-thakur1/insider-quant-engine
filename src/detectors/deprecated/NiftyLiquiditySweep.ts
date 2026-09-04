@@ -1,8 +1,8 @@
-import { redisClient } from "../../../config/redis.js";
-import type { TickData } from "../../../core/types.js";
-import { getBestStrike } from "../../../utils/optionUtils.js";
-import { getVwap } from "../../../utils/vwapUtils.js";
-import { BaseDetector } from "./baseDetector.js";
+import { redisClient } from "../../config/redis.js";
+import type { TickData } from "../../core/types.js";
+import { getBestStrike } from "../../utils/optionUtils.js";
+import { getVwap } from "../../utils/vwapUtils.js";
+import { BaseDetector } from "../v2/high_alpha/baseDetector.js";
 
 
 const COOLDOWN_SECONDS = 3600;
