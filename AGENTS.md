@@ -22,10 +22,11 @@
 | Broker / data | Fyers API v3 (`fyers-api-v3`) — REST for historical candles, WebSocket for ticks |
 | State store | Redis (`redis` npm client, **not** ioredis, despite ioredis being in `package.json`) |
 | Output channel | Telegram — two IDs: `TELEGRAM_ADMIN_ID` (private control) and `TELEGRAM_CHANNEL_ID` (public alerts) |
-| Tests | `npm test` → 14 cases (node:test via tsx) covering the REGIME hard gate. Was previously a deliberate failure stub. |
+| Tests | `npm test` → 53 cases (node:test via tsx): the REGIME hard gate, plus the backtest harness and an end-to-end replay. Was previously a deliberate failure stub. |
 | Lint / format | `npm run check` = prettier + eslint + tests. `npm run typecheck` = `tsc --noEmit --types node` (0 errors). Tabs, no semicolons, single quotes, 100 cols (`.prettierrc`). |
 | Big caveat #1 | Of 26 detector classes, **8 are live**. 15 are archived under `src/detectors/deprecated/`, and 3 more are dormant but still in `src/detectors/`. See §4. |
 | Big caveat #2 | Most files carry a large **commented-out previous version** at the bottom. Always confirm you are editing live code, not the archive block. |
+| Backtest | `backtest/` replays historical bars through the real detectors. Read `backtest/README.md` before touching it — it depends on a virtual clock and an in-memory Redis, and it deliberately reproduces a live routing bug. |
 
 ---
 
@@ -1019,6 +1020,34 @@ in `ranging` and half-sized in `transition`; `OiLiquiditySweep` moved REVERSION 
 stops being suppressed in `trending`. Expect fewer equity/Nifty momentum alerts in chop and more OI
 sweep alerts in trends.
 
+### 6.11 🔴 LIVE BUG — five equities are silently dropped by option routing
+
+`websocket.ts:223` classifies a tick as an option with a bare substring test:
+
+```ts
+if (rawTick.symbol.includes('CE') || rawTick.symbol.includes('PE'))
+```
+
+Five watchlist symbols contain those letters inside the **company name**, so they are routed into
+the option branch:
+
+```
+NSE:RELIANCE-EQ   NSE:ULTRACEMCO-EQ   NSE:CEATLTD-EQ   NSE:BAJFINANCE-EQ   NSE:KAJARIACER-EQ
+```
+
+For those five, in production: `updateVwap` is never called, `feedTick` is never called,
+`strategyRouter` is never consulted — **all three equity detectors never run** — and
+`isIndexOrOption` at line 290 is also true, so their zero-volume ticks are not filtered and tick
+volume falls back to 1. Three of the five are among the most liquid names in the watchlist.
+
+The same substring test appears in `janeStreetFilter` (structure symbol resolution),
+`bayesianEngine` (volume bypass and the DTE evidence) and `telegramWorker` (message template),
+so even if routing were fixed those would still misclassify.
+
+The correct test needs a strike: `/\d{3,}\s*(CE|PE)$/`. Both the faithful and the correct
+version live in `backtest/core/symbolClass.ts`, with a test pinning the five affected symbols.
+**Not yet fixed** — found during backtest work, whose guardrails forbid modifying `websocket.ts`.
+
 ### 6.10 Smaller items
 
 - `SLIPPAGE_PTS = 2.0` flat across all asset classes — §5.3.
@@ -1164,9 +1193,13 @@ Priority order, based on the analysis above:
 seed + minute weighting (§6.1), the explicit regime class (§6.9), candle confirmation for
 `VolatilityContraction` and `GapAndGoMomentum` (§6.3), and working lint/typecheck/test scripts.
 
-1. **Outcome labelling + calibration harness.** Log every fired alert, then poll price to label
-   SL-hit / T1-hit / timeout. Without this, every constant in §3.9 and §5.1 is a guess. This is
-   still the single highest-value missing piece.
+0. **Fix the CE/PE substring routing** (§6.11) — five liquid equities are currently dead in the
+   live engine. Smallest change, largest effect, and it invalidates any equity backtest run
+   before it lands.
+1. **Run the backtest on real data.** The harness exists (`backtest/`) and is verified; it needs
+   a Fyers token and an overnight fetch. That produces the outcome data every constant in §3.9
+   and §5.1 currently lacks. On synthetic data the filter passed 0 of 953 signals, so the gate's
+   real pass rate is the first thing to measure.
 2. **Volume-weight the Nifty reference properly** (§6.1) — borrow volume from the Nifty futures
    contract, or keep the TWAP and rename the accessor so nothing reads it as a VWAP.
 3. **Verify the NSE weekly expiry weekday** (§6.5) and make it configurable rather than hardcoded.
