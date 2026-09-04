@@ -4,7 +4,10 @@ import prettierConfig from 'eslint-config-prettier'
 
 export default [
 	{
-		files: ['src/**/*.ts'],
+		// The backtest harness and the test suite are linted too — they were added
+		// after this config and would otherwise be silently skipped, which is how
+		// the stray-token bug above went unnoticed for so long.
+		files: ['src/**/*.ts', 'backtest/**/*.ts', 'tests/**/*.ts'],
 		languageOptions: {
 			parser: tsParser,
 			ecmaVersion: 'latest',

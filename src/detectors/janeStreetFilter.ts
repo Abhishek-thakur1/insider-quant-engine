@@ -107,7 +107,10 @@ const resolveStructureSymbol = (payload: AlertPayload): string => {
 // Every current detector already embeds "SL ₹X ... T1 ₹Y" in the trigger text.
 // This is the ONLY reliable source right now — payload.sl/t1 don't exist on
 // the live AlertPayload type, so we never depend on them being present.
-const parseRiskRewardFromTrigger = (
+// Exported for the backtest exit simulator, so it recovers SL/T1 with exactly
+// the same parser the EV gate uses rather than a divergent copy. Additive —
+// no behavioural or configuration change.
+export const parseRiskRewardFromTrigger = (
 	trigger: string,
 	price: number,
 ): { risk: number; reward: number; rr: number; parsed: boolean } => {

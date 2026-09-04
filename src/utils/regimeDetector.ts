@@ -39,6 +39,15 @@ const inMemoryReturns: number[] = []
 
 export type MarketRegime = 'trending' | 'transition' | 'ranging'
 
+// Additive backtest seam. `inMemoryReturns` is module state with no reset, and
+// the live engine never needs one because the process restarts every session.
+// A backtest replays many sessions in one process, so without this the first
+// ~20 minutes of each simulated day would inherit the previous day's returns
+// and compute the wrong regime. Not used by the live engine.
+export const resetRegimeState = (): void => {
+	inMemoryReturns.length = 0
+}
+
 export interface RegimeState {
 	regime: MarketRegime
 	entropy: number

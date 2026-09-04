@@ -47,3 +47,13 @@ redis_data/
 
 
 access_token.txt
+# ---------------------------------------------------
+# 8. Backtest harness artefacts
+# ---------------------------------------------------
+# Fetched candle cache — large, regenerable, and machine-specific.
+backtest/data/cache/
+# Real-run outputs. sample-report.html IS committed (synthetic, small, and is
+# the reference for the report format).
+backtest/output/results.json
+backtest/output/backtest-report.html
+backtest/access_token.txt

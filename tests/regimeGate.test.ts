@@ -36,7 +36,13 @@ test('explicit regimeClass wins over a contradicting detector name', () => {
 })
 
 test('explicit regimeClass wins over contradicting trigger text', () => {
-	const r = checkRegimeCompatibility('trending', H, undefined, '🪤 Bull Trap at 24500 OI Wall', 'UNIVERSAL')
+	const r = checkRegimeCompatibility(
+		'trending',
+		H,
+		undefined,
+		'🪤 Bull Trap at 24500 OI Wall',
+		'UNIVERSAL',
+	)
 	assert.equal(r.detectorType, 'UNIVERSAL')
 	assert.equal(r.classificationSource, 'explicit')
 	assert.equal(r.allowed, true)

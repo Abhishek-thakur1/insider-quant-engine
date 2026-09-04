@@ -37,7 +37,30 @@ export interface AlertPayload {
 	regimeClass?: DetectorType
 }
 
+// ── BACKTEST SEAM (additive; inert unless explicitly enabled) ───────────────
+// The backtest harness must capture what a detector WOULD have alerted without
+// dispatching to Telegram, and it needs the raw (ungated) signal so it can
+// report gated vs ungated fire rates. Detectors import `sendTelegramAlert`
+// directly and ESM const bindings cannot be reassigned by an importer, so the
+// interception point has to live here.
+//
+// Two independent conditions must both hold to divert a signal: BACKTEST_MODE
+// must be set in the environment AND a collector must have been installed at
+// runtime. In normal operation neither is true and the only added cost is one
+// boolean check per alert.
+export const backtestSink: { collect: ((payload: AlertPayload) => void) | null } = {
+	collect: null,
+}
+const BACKTEST_MODE = process.env.BACKTEST_MODE === 'true'
+
 export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
+	if (BACKTEST_MODE && backtestSink.collect) {
+		// Capture and stop. No filter call (the harness invokes the gating chain
+		// itself, so it can score gated and ungated separately) and no dispatch.
+		backtestSink.collect(data)
+		return
+	}
+
 	// ── CONFIRMATION ENGINE GATE ─────────────────────────────────────────────
 	let decision: Awaited<ReturnType<typeof runJaneStreetFilter>> | null = null
 
