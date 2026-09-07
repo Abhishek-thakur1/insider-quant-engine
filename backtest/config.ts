@@ -18,7 +18,7 @@ export const OUTPUT_DIR = path.join(BACKTEST_ROOT, 'output')
 export const DATA = {
 	/** Fyers history resolutions. 'D' for the daily store, '5' for intraday. */
 	dailyResolution: 'D',
-	intradayResolution: '5',
+	intradayResolution: '1',
 
 	/**
 	 * Fyers caps getHistory to a limited span per call. Daily tolerates long

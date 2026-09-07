@@ -33,7 +33,7 @@ import type { Bar } from '../data/store.js'
 
 export const TICKS_PER_BAR = 4
 
-const tickStepMs = (5 * 60_000) / TICKS_PER_BAR
+const tickStepMs = 60_000 / TICKS_PER_BAR
 /** Offsets within the bar, in ms. */
 const OFFSETS_MS = [0, tickStepMs, tickStepMs * 2, tickStepMs * 3]
 
