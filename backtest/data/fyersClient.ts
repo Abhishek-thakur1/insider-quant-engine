@@ -93,8 +93,8 @@ const isRateLimitError = (error: unknown): boolean => {
 	const e = error as { response?: { status?: number; data?: unknown }; message?: string }
 	return (
 		e?.response?.status === 429 ||
-		/rate.?limit/i.test(e?.message ?? '') ||
-		/rate.?limit/i.test(JSON.stringify(e?.response?.data ?? ''))
+		/(rate|request).?limit/i.test(e?.message ?? '') ||
+		/(rate|request).?limit/i.test(JSON.stringify(e?.response?.data ?? ''))
 	)
 }
 
@@ -189,12 +189,15 @@ export const fetchSymbol = async (
 				chunksFetched++
 				break
 			} catch (error) {
-				if (isRateLimitError(error) && attempt < DATA.maxRetries) {
-					const backoff = 1000 * Math.pow(2, attempt + 1)
-					console.warn(`[fetch] rate limited on ${symbol} ${resolution}, retry in ${backoff}ms`)
-					await new Promise((r) => setTimeout(r, backoff))
-					attempt++
-					continue
+				if (isRateLimitError(error)) {
+					const maxAttempts = 20;
+					if (attempt < maxAttempts) {
+						const backoff = Math.min(60000, 1000 * Math.pow(2, attempt + 1))
+						console.warn(`[fetch] rate limited on ${symbol} ${resolution}, retry in ${backoff}ms (attempt ${attempt + 1}/${maxAttempts})`)
+						await new Promise((r) => setTimeout(r, backoff))
+						attempt++
+						continue
+					}
 				}
 				return {
 					symbol,

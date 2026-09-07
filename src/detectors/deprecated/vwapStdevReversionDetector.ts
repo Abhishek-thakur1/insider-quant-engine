@@ -154,12 +154,14 @@ export class VwapStdevReversionDetector implements IDetector {
 				console.log(`   Routing to Strike: ${bestStrike?.strike} PE | Premium: ₹${bestStrike?.ltp}`)
 
 			sendTelegramAlert({
+				regimeClass: 'REVERSION' as const,
+				detectorName: this.name,
 				symbol: isIndex && bestStrike ? `NIFTY ${bestStrike.strike} PE` : this.symbol,
 				price: closedCandle.close,
 				side: 'SHORT',
 				percentageChange: Number((((closedCandle.close - vwap) / vwap) * 100).toFixed(2)),
 				volumeSpikeRatio: isIndex ? 1 : Number((closedCandle.volume / avgVol).toFixed(1)),
-				trigger: `📉 +${SD_MULTIPLIER} SD Statistical Exhaustion | ${isIndex ? 'Index' : 'Stock'} ₹${closedCandle.close} | VWAP ₹${vwap.toFixed(2)} | SL ₹${sl} | Target VWAP ₹${target}`,
+				trigger: `📉 +${SD_MULTIPLIER} SD Statistical Exhaustion | ${isIndex ? 'Index' : 'Stock'} ₹${closedCandle.close} | VWAP ₹${vwap.toFixed(2)} | SL ₹${sl} | T1 ₹${target}`,
 				vwap: vwap,
 				avgPrice: mean,
 			})
@@ -190,12 +192,14 @@ export class VwapStdevReversionDetector implements IDetector {
 				console.log(`   Routing to Strike: ${bestStrike?.strike} CE | Premium: ₹${bestStrike?.ltp}`)
 
 			sendTelegramAlert({
+				regimeClass: 'REVERSION' as const,
+				detectorName: this.name,
 				symbol: isIndex && bestStrike ? `NIFTY ${bestStrike.strike} CE` : this.symbol,
 				price: closedCandle.close,
 				side: 'LONG',
 				percentageChange: Number((((closedCandle.close - vwap) / vwap) * 100).toFixed(2)),
 				volumeSpikeRatio: isIndex ? 1 : Number((closedCandle.volume / avgVol).toFixed(1)),
-				trigger: `📈 -${SD_MULTIPLIER} SD Statistical Exhaustion | ${isIndex ? 'Index' : 'Stock'} ₹${closedCandle.close} | VWAP ₹${vwap.toFixed(2)} | SL ₹${sl} | Target VWAP ₹${target}`,
+				trigger: `📈 -${SD_MULTIPLIER} SD Statistical Exhaustion | ${isIndex ? 'Index' : 'Stock'} ₹${closedCandle.close} | VWAP ₹${vwap.toFixed(2)} | SL ₹${sl} | T1 ₹${target}`,
 				vwap: vwap,
 				avgPrice: mean,
 			})

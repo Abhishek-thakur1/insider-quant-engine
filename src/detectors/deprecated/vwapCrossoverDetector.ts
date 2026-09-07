@@ -103,10 +103,12 @@ export class VwapCrossoverDetector implements IDetector {
 			console.log(`\n🚀 [VWAP CROSSOVER CE] Nifty blasted through VWAP. Sniper entry at ${c.close}`)
 
 			sendTelegramAlert({
+				regimeClass: 'REVERSION' as const,
+				detectorName: this.name,
 				symbol: `NIFTY ${best.strike} CE`,
 				price: c.close,
 				side: 'LONG',
-				percentageChange: 0,
+				percentageChange: Number((Math.abs((c.close - vwap) / vwap) * 100).toFixed(2)),
 				volumeSpikeRatio: 1, // Spot index volume ignored
 				trigger: `🚀 VWAP Breakout CE | Strike ${best.strike} | Prem ~₹${best.ltp} | Index ₹${c.close} | SL ₹${indexSl} | T1 ₹${t1} | ${best.reason}`,
 				vwap,
@@ -136,10 +138,12 @@ export class VwapCrossoverDetector implements IDetector {
 			console.log(`\n📉 [VWAP CROSSOVER PE] Nifty crashed through VWAP. Sniper entry at ${c.close}`)
 
 			sendTelegramAlert({
+				regimeClass: 'REVERSION' as const,
+				detectorName: this.name,
 				symbol: `NIFTY ${best.strike} PE`,
 				price: c.close,
 				side: 'SHORT',
-				percentageChange: 0,
+				percentageChange: Number((Math.abs((c.close - vwap) / vwap) * 100).toFixed(2)),
 				volumeSpikeRatio: 1,
 				trigger: `📉 VWAP Breakdown PE | Strike ${best.strike} | Prem ~₹${best.ltp} | Index ₹${c.close} | SL ₹${indexSl} | T1 ₹${t1} | ${best.reason}`,
 				vwap,

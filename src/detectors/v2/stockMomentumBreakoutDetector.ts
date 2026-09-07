@@ -349,6 +349,7 @@ export class StockMomentumBreakoutDetector implements IDetector {
 			avgPrice: (candle.open + candle.close) / 2,
 			detectorName: this.name,
 			regimeClass: 'MOMENTUM',
+			durationClass: 'SWING',
 		})
 
 		await redisClient.setEx(cooldownKey, COOLDOWN_SECONDS, 'true')

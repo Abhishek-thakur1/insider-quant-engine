@@ -148,10 +148,12 @@ export class ValueZoneScalpDetector implements IDetector {
 			)
 
 			sendTelegramAlert({
+				regimeClass: 'REVERSION' as const,
+				detectorName: this.name,
 				symbol: `NIFTY ${best.strike} CE`,
 				price: c.close,
 				side: 'LONG',
-				percentageChange: 0,
+				percentageChange: Number((Math.abs((c.close - vwap) / vwap) * 100).toFixed(2)),
 				volumeSpikeRatio: 1,
 				trigger: `🎯 Value Zone CE | Strike ${best.strike} | Prem ~₹${best.ltp} | Index ₹${c.close} | SL ₹${indexSl} | T1 ₹${t1} | ${best.reason}`,
 				vwap,
@@ -181,10 +183,12 @@ export class ValueZoneScalpDetector implements IDetector {
 			)
 
 			sendTelegramAlert({
+				regimeClass: 'REVERSION' as const,
+				detectorName: this.name,
 				symbol: `NIFTY ${best.strike} PE`,
 				price: c.close,
 				side: 'SHORT',
-				percentageChange: 0,
+				percentageChange: Number((Math.abs((c.close - vwap) / vwap) * 100).toFixed(2)),
 				volumeSpikeRatio: 1,
 				trigger: `🎯 Value Zone PE | Strike ${best.strike} | Prem ~₹${best.ltp} | Index ₹${c.close} | SL ₹${indexSl} | T1 ₹${t1} | ${best.reason}`,
 				vwap,

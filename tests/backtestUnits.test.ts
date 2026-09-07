@@ -496,9 +496,9 @@ test('registry: all 26 detector classes are present and constructible', () => {
 
 test('registry: tier counts match the pruning decision', () => {
 	const count = (t: string) => REGISTRY.filter((d) => d.tier === t).length
-	assert.equal(count('ACTIVE'), 8)
+	assert.equal(count('ACTIVE'), 7) // Gap_And_Go_V2 was archived
 	assert.equal(count('DORMANT'), 3)
-	assert.equal(count('ARCHIVED_A'), 14)
+	assert.equal(count('ARCHIVED_A'), 15)
 	assert.equal(count('ARCHIVED_C'), 1)
 })
 

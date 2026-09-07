@@ -25,7 +25,7 @@ import { NiftyTrendPulseDetector } from '../src/detectors/v2/niftyTrendPulseDete
 import { NiftyVwapReclaimDetector } from '../src/detectors/v2/niftyVwapReclaimDetector.js'
 import { StockMomentumBreakoutDetector } from '../src/detectors/v2/stockMomentumBreakoutDetector.js'
 import { VolatilityContraction } from '../src/detectors/v2/high_alpha/VolatilityContraction.js'
-import { GapAndGoMomentum } from '../src/detectors/v2/high_alpha/GapAndGoMomentum.js'
+import { GapAndGoMomentum } from '../src/detectors/deprecated/GapAndGoMomentum.js'
 import { OiLiquiditySweepDetector } from '../src/detectors/oiLiquiditySweepDetector.js'
 import { DeltaHedgingPressureDetector } from '../src/detectors/deltahedgingpressuredetector.js'
 
@@ -134,7 +134,7 @@ export const REGISTRY: DetectorSpec[] = [
 		id: 'gap_and_go',
 		displayName: 'Gap_And_Go_V2',
 		scope: 'per-symbol',
-		tier: 'ACTIVE',
+		tier: 'ARCHIVED_A',
 		bias: 'MOMENTUM',
 		exitBasis: 'detector-defined',
 		backtestable: true,

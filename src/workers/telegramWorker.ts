@@ -35,6 +35,7 @@ export interface AlertPayload {
 	// matching, so a detector's edge source is declared rather than inferred
 	// from its alert copy. Archived/legacy detectors may omit it and fall back.
 	regimeClass?: DetectorType
+	durationClass?: 'INTRADAY' | 'SWING'
 }
 
 // ── BACKTEST SEAM (additive; inert unless explicitly enabled) ───────────────

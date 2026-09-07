@@ -35,8 +35,8 @@ import { getVwap } from '../../utils/vwapUtils.js'
 import { getBestStrike } from '../../utils/optionUtils.js'
 
 // ─── TUNABLE CONSTANTS ────────────────────────────────────────
-const RANGE_BUILD_CANDLES = 1 // Use first 3-min candle as opening range
-const BREAKOUT_CONFIRM_MS = 3 * 60 * 1000
+const RANGE_BUILD_CANDLES = 1 // Use first 5-min candle as opening range
+const BREAKOUT_CONFIRM_MS = 5 * 60 * 1000
 const MIN_BODY_PCT = 0.06 // real body on break candle (Nifty moves are small)
 const BUFFER_PTS = 5 // Nifty must break 5pts past range (avoid false breaks)
 const COOLDOWN_SECS = 2700 // 45 min — one signal per explosive move

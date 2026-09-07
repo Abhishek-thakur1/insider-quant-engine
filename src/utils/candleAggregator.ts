@@ -26,8 +26,8 @@ export interface Candle {
 	startTs: number
 }
 
-const CANDLE_INTERVAL_MS = 60 * 1000 // 1-minute candles
-const MAX_CANDLES = 60 // 1 hour of rolling history — enough for swing/BOS detection
+const CANDLE_INTERVAL_MS = 5 * 60 * 1000 // 5-minute candles
+const MAX_CANDLES = 60 // 5 hours of rolling history — enough for swing/BOS detection
 
 // symbol -> array of CLOSED candles, oldest first, capped at MAX_CANDLES
 const closedCandles = new Map<string, Candle[]>()

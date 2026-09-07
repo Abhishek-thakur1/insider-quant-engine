@@ -142,6 +142,8 @@ export class VwapPullbackDetector implements IDetector {
 			)
 
 			sendTelegramAlert({
+				regimeClass: 'REVERSION' as const,
+				detectorName: this.name,
 				symbol: `NIFTY ${best.strike} CE`,
 				price: c.close,
 				side: 'LONG',
@@ -190,6 +192,8 @@ export class VwapPullbackDetector implements IDetector {
 			)
 
 			sendTelegramAlert({
+				regimeClass: 'REVERSION' as const,
+				detectorName: this.name,
 				symbol: `NIFTY ${best.strike} PE`,
 				price: c.close,
 				side: 'SHORT',

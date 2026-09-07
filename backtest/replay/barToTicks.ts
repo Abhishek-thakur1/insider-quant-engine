@@ -33,8 +33,9 @@ import type { Bar } from '../data/store.js'
 
 export const TICKS_PER_BAR = 4
 
-/** Offsets within the bar, in ms. The last stays strictly inside the minute. */
-const OFFSETS_MS = [0, 15_000, 30_000, 45_000]
+const tickStepMs = (5 * 60_000) / TICKS_PER_BAR
+/** Offsets within the bar, in ms. */
+const OFFSETS_MS = [0, tickStepMs, tickStepMs * 2, tickStepMs * 3]
 
 /**
  * Expand one bar into its tick sequence. Timestamps are spread across the

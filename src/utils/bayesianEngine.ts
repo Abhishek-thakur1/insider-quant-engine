@@ -28,6 +28,7 @@
 
 import { getMarketBias } from './vwapUtils.js'
 import { getWallStrikes } from './optionUtils.js'
+import { getClosedCandles } from './candleAggregator.js'
 import type { TradeSide } from '../core/types.js'
 import type { AlertPayload } from '../workers/telegramWorker.js'
 
@@ -235,49 +236,58 @@ export const computeBayesianPosterior = async (
 	posterior = bayesUpdate(posterior, likelihoods.volumeRatio)
 
 	// ── EVIDENCE 4: VWAP Deviation Zone ──────────────────────────────────────
-	// The "sweet spot" for momentum trades is 0.1%-0.5% from VWAP.
-	// Too close = no momentum yet. Too far = overextended, reversal risk.
-	// For mean reversion trades, the logic inverts — we WANT overextension.
+	// [FIX] Previously used flat % thresholds (0.1% to 0.5%) which punished volatile
+	// assets by treating their normal moves as "overextended", and punished index/low-beta
+	// by treating valid breakouts as "too small". Now scaled relative to 1-min ATR.
 	const pct = Math.abs(payload.percentageChange)
+	
+	const candles = getClosedCandles(payload.symbol, 30)
+	let typicalMovePct = 0.04 // Default fallback (roughly Nifty's 1-min ATR)
+	if (candles.length >= 10) {
+		let sumRange = 0
+		for (const c of candles) sumRange += ((c.high - c.low) / c.close) * 100
+		typicalMovePct = Math.max(0.01, sumRange / candles.length)
+	}
+	
+	// Threshold multipliers calibrated against the old 0.04% baseline:
+	// Momentum Sweet Spot: 2.5x to 12.5x ATR
+	// Mean Reversion Target: > 10x ATR
+	const extNeutral = typicalMovePct * 5.0
+	const extStrong = typicalMovePct * 10.0
+	const momEarly = typicalMovePct * 2.5
+	const momLate = typicalMovePct * 12.5
 
-	// Detect if this is a mean reversion or momentum detector from trigger text
 	const isMeanReversion =
 		payload.trigger.includes('OFE') ||
 		payload.trigger.includes('Defense') ||
 		payload.trigger.includes('Reversion') ||
 		payload.trigger.includes('Exhaustion') ||
 		payload.trigger.includes('Wyckoff') ||
-		payload.trigger.includes('Trap')
+		payload.trigger.includes('Trap') ||
+		payload.regimeClass === 'REVERSION'
 
 	if (isMeanReversion) {
-		// For mean reversion: WANT overextension (it's the trigger condition)
-		if (pct >= 0.4) {
+		if (pct >= extStrong) {
 			likelihoods.vwapZoneRatio = VOL_STRONG_LR
-			reasons.push(`✅ Reversion: ${pct.toFixed(2)}% VWAP deviation → strong setup (L=${VOL_STRONG_LR})`)
-		} else if (pct >= 0.2) {
+			reasons.push(`✅ Reversion: ${pct.toFixed(2)}% VWAP dev (> ${extStrong.toFixed(2)}%) = strong setup (L=${VOL_STRONG_LR})`)
+		} else if (pct >= extNeutral) {
 			likelihoods.vwapZoneRatio = VWAP_NEUTRAL_LR
-			reasons.push(`○ Reversion: ${pct.toFixed(2)}% VWAP deviation (moderate)`)
+			reasons.push(`○ Reversion: ${pct.toFixed(2)}% VWAP dev (moderate)`)
 		} else {
 			likelihoods.vwapZoneRatio = VWAP_OVEREXTENDED_LR
-			reasons.push(
-				`⚠️ Reversion: ${pct.toFixed(2)}% VWAP deviation too small for reversion (L=${VWAP_OVEREXTENDED_LR})`,
-			)
+			reasons.push(`⚠️ Reversion: ${pct.toFixed(2)}% VWAP dev < ${extNeutral.toFixed(2)}% - too small (L=${VWAP_OVEREXTENDED_LR})`)
 		}
 	} else {
-		// For momentum: WANT moderate extension (0.1-0.5% is the sweet spot)
-		if (pct >= 0.1 && pct <= 0.5) {
+		// For momentum: WANT moderate extension
+		if (pct >= momEarly && pct <= momLate) {
 			likelihoods.vwapZoneRatio = VWAP_SWEET_SPOT_LR
-			reasons.push(
-				`✅ Momentum: ±${pct.toFixed(2)}% from VWAP — sweet spot (L=${VWAP_SWEET_SPOT_LR})`,
-			)
-		} else if (pct > 0.5) {
+			reasons.push(`✅ Momentum: ±${pct.toFixed(2)}% from VWAP - sweet spot (L=${VWAP_SWEET_SPOT_LR})`)
+		} else if (pct > momLate) {
 			likelihoods.vwapZoneRatio = VWAP_OVEREXTENDED_LR
-			reasons.push(
-				`⚠️ Momentum: ±${pct.toFixed(2)}% from VWAP — overextended, reversal risk (L=${VWAP_OVEREXTENDED_LR})`,
-			)
+			reasons.push(`⚠️ Momentum: ±${pct.toFixed(2)}% from VWAP - overextended, reversal risk (L=${VWAP_OVEREXTENDED_LR})`)
 		} else {
 			likelihoods.vwapZoneRatio = VWAP_NEUTRAL_LR
-			reasons.push(`○ Momentum: ±${pct.toFixed(2)}% from VWAP — early`)
+			reasons.push(`○ Momentum: ±${pct.toFixed(2)}% from VWAP - early`)
 		}
 	}
 
@@ -291,7 +301,10 @@ export const computeBayesianPosterior = async (
 	const inPrimeWindow2 = m >= 13 * 60 + 30 && m <= 15 * 60 + 0
 	const inDeadZone = m > 11 * 60 + 30 && m < 13 * 60 + 30
 
-	if (inPrimeWindow1 || inPrimeWindow2) {
+	if (payload.durationClass === 'SWING') {
+		likelihoods.timeRatio = TIME_PRIME_LR
+		reasons.push(`✅ Swing trade - time of day restrictions bypassed (L=${TIME_PRIME_LR})`)
+	} else if (inPrimeWindow1 || inPrimeWindow2) {
 		likelihoods.timeRatio = TIME_PRIME_LR
 		reasons.push(`✅ Prime liquidity window (L=${TIME_PRIME_LR})`)
 	} else if (inDeadZone) {

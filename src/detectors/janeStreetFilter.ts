@@ -41,7 +41,7 @@
 
 import { redisClient } from '../config/redis.js'
 import { computeBayesianPosterior } from '../utils/bayesianEngine.js'
-import { getMarketRegime, checkRegimeCompatibility } from '../utils/regimeDetector.js'
+import { getMarketRegime, checkRegimeCompatibility, type MarketRegime } from '../utils/regimeDetector.js'
 import { getStructureScore } from '../utils/marketStructure.js'
 import { getLiquidityScore } from '../utils/liquidityMap.js'
 import { getOrderFlowScore } from '../utils/orderFlowProxy.js'
@@ -52,7 +52,6 @@ import type { TradeSide } from '../core/types.js'
 const MIN_EV_PTS = 0 // Hard gate — never fire on negative expectancy
 const DEFAULT_RR = 1.5 // Fallback R:R if trigger text is unparseable
 const DEFAULT_RISK_PCT = 0.003 // Fallback risk = 0.3% of price if no SL in trigger
-const SLIPPAGE_PTS = 2.0
 const CONFIRMATION_THRESHOLD = Number(process.env.CONFIRMATION_THRESHOLD) || 78 // fire above this /100
 const SHADOW_MODE = process.env.SHADOW_MODE === 'true'
 const JS_LOG_KEY = 'jsfilter:decisions'
@@ -136,8 +135,9 @@ export const parseRiskRewardFromTrigger = (
 	return { risk: defaultRisk, reward: defaultReward, rr: DEFAULT_RR, parsed: false }
 }
 
-const computeEV = (pWin: number, reward: number, risk: number): number => {
-	return pWin * reward - (1 - pWin) * risk - SLIPPAGE_PTS
+const computeEV = (pWin: number, reward: number, risk: number, price: number): number => {
+	const slippage = price * 0.0005 // 5 bps flat slippage instead of ₹2.0 absolute
+	return pWin * reward - (1 - pWin) * risk - slippage
 }
 
 const computeKelly = (pWin: number, rr: number): number => {
@@ -177,14 +177,22 @@ export const runJaneStreetFilter = async (
 	const breakdown: ScoreComponent[] = []
 
 	// ── HARD GATE: Regime Compatibility ──────────────────────────────────────
-	const regimeState = await getMarketRegime()
-	const regimeCheck = checkRegimeCompatibility(
-		regimeState.regime,
-		regimeState.entropy,
-		detectorName ?? payload.detectorName,
-		payload.trigger,
-		payload.regimeClass,
-	)
+	let regimeCheck
+	let regimeState = { regime: 'TRENDING' as MarketRegime, entropy: 1.0, dataPoints: 20 }
+	
+	if (payload.durationClass === 'SWING') {
+		// Swing setups evaluate weeks of price structure, not 20 mins of Nifty.
+		regimeCheck = { allowed: true, sizeMult: 1.0, reason: 'SWING bypass', detectorType: 'UNIVERSAL', classificationSource: 'explicit' }
+	} else {
+		regimeState = await getMarketRegime()
+		regimeCheck = checkRegimeCompatibility(
+			regimeState.regime,
+			regimeState.entropy,
+			detectorName ?? payload.detectorName,
+			payload.trigger,
+			payload.regimeClass,
+		)
+	}
 
 	if (!regimeCheck.allowed) {
 		const decision: FilterDecision = {
@@ -219,30 +227,49 @@ export const runJaneStreetFilter = async (
 
 	// ── NEW: Market Structure ────────────────────────────────────────────────
 	const structureSymbol = resolveStructureSymbol(payload)
-	const structure = getStructureScore(structureSymbol, side)
+	let structureScore = WEIGHT_STRUCTURE
+	let structureReason = 'SWING bypass'
+	if (payload.durationClass !== 'SWING') {
+		const res = getStructureScore(structureSymbol, side)
+		structureScore = res.score
+		structureReason = res.reason
+	}
 	breakdown.push({
 		component: 'STRUCTURE',
-		points: structure.score,
+		points: structureScore,
 		maxPoints: WEIGHT_STRUCTURE,
-		reason: structure.reason,
+		reason: structureReason,
 	})
 
-	// ── NEW: Liquidity / Stop-Hunt Mapping ───────────────────────────────────
-	const liquidity = getLiquidityScore(structureSymbol, side, payload.price)
+	// ── NEW: Liquidity Mapping ───────────────────────────────────────────────
+	let liquidityScore = WEIGHT_LIQUIDITY
+	let liquidityReason = 'SWING bypass'
+	if (payload.durationClass !== 'SWING') {
+		const res = getLiquidityScore(structureSymbol, side, payload.price)
+		liquidityScore = res.score
+		liquidityReason = res.reason
+	}
 	breakdown.push({
 		component: 'LIQUIDITY',
-		points: liquidity.score,
+		points: liquidityScore,
 		maxPoints: WEIGHT_LIQUIDITY,
-		reason: liquidity.reason,
+		reason: liquidityReason,
 	})
 
 	// ── NEW: Order Flow Proxy ────────────────────────────────────────────────
-	const orderFlow = getOrderFlowScore(structureSymbol, side)
+	let orderFlowScore = WEIGHT_ORDERFLOW
+	let orderFlowReason = 'SWING bypass'
+	if (payload.durationClass !== 'SWING') {
+		const res = getOrderFlowScore(structureSymbol, side)
+		orderFlowScore = res.score
+		orderFlowReason = res.reason
+	}
+
 	breakdown.push({
 		component: 'ORDER_FLOW',
-		points: orderFlow.score,
+		points: orderFlowScore,
 		maxPoints: WEIGHT_ORDERFLOW,
-		reason: orderFlow.reason,
+		reason: orderFlowReason,
 	})
 
 	// ── Bayesian Posterior (existing engine, rescaled to points) ────────────
@@ -259,7 +286,7 @@ export const runJaneStreetFilter = async (
 
 	// ── HARD GATE: Expected Value ────────────────────────────────────────────
 	const { risk, reward, rr, parsed } = parseRiskRewardFromTrigger(payload.trigger, payload.price)
-	const ev = computeEV(pWin, reward, risk)
+	const ev = computeEV(pWin, reward, risk, payload.price)
 
 	if (ev < MIN_EV_PTS) {
 		const decision: FilterDecision = {

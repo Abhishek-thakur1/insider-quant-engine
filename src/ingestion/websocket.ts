@@ -25,7 +25,6 @@ import { StockMomentumBreakoutDetector } from '../detectors/v2/stockMomentumBrea
 import type { IDetector, TickData } from '../core/types.js'
 import { fileURLToPath } from 'url'
 import { VolatilityContraction } from '../detectors/v2/high_alpha/VolatilityContraction.js'
-import { GapAndGoMomentum } from '../detectors/v2/high_alpha/GapAndGoMomentum.js'
 
 const NIFTY_SYMBOL = 'NSE:NIFTY50-INDEX'
 
@@ -134,7 +133,6 @@ export const startLiveEngine = async () => {
 			strategyRouter.set(symbol, [
 				new StockMomentumBreakoutDetector(symbol),
 				new VolatilityContraction(symbol),
-				new GapAndGoMomentum(symbol),
 			])
 
 			// Full boot cleanup — all detector state reset for new session

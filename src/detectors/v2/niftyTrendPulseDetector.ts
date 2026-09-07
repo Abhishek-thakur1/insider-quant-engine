@@ -37,7 +37,7 @@ import { getVwap } from '../../utils/vwapUtils.js'
 import { getBestStrike } from '../../utils/optionUtils.js'
 
 // ─── TUNABLE CONSTANTS ────────────────────────────────────────
-const CANDLE_MS = 3 * 60 * 1000 // 3-min candles (vs 5-min old)
+const CANDLE_MS = 5 * 60 * 1000 // 5-min candles
 const MIN_BODY_PCT = 0.1 // real body filter (same)
 const CONFIRMS_NEEDED = 2 // 2 closes in same direction (vs 3 old = too slow)
 const VWAP_DIST_PCT = 0.2 // 0.20% from VWAP (vs 0.15% old — passes JSFilter better)
