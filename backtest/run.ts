@@ -25,6 +25,7 @@ import { barsInRange, cacheReport, ensureDirs, loadSeries, type Bar } from './da
 import { fetchUniverse } from './data/fyersClient.js'
 import { replaySession } from './replay/engine.js'
 import { resolveUnderlying, simulateExit, type SimulatedTrade } from './sim/exit.js'
+import { MULTIDAY_DETECTORS, globalMultidayLedger } from './sim/multiday.js'
 import { computeMetrics, rankByExpectancy, type DetectorMetrics } from './sim/metrics.js'
 import { renderHtmlReport } from './report/html.js'
 
@@ -91,7 +92,7 @@ interface RunAccumulator {
 	ticksDispatched: number
 }
 
-const cmdRun = async (dayLimit?: number): Promise<void> => {
+const cmdRun = async (dayLimit?: number, targetDetectors?: string[]): Promise<void> => {
 	if (process.env.BACKTEST_MODE !== 'true') {
 		throw new Error(
 			'BACKTEST_MODE=true is required. Without it the telegramWorker seam is inert and detector signals would be DISPATCHED TO TELEGRAM instead of collected.',
@@ -102,7 +103,11 @@ const cmdRun = async (dayLimit?: number): Promise<void> => {
 
 	const symbols = loadWatchlist()
 	const days = tradingDays(dayLimit)
-	const specs = REGISTRY.filter((s) => s.backtestable)
+
+	let specs = REGISTRY.filter((s) => s.backtestable)
+	if (targetDetectors && targetDetectors.length > 0) {
+		specs = specs.filter((s) => targetDetectors.includes(s.id))
+	}
 
 	console.log(`[run] ${days.length} sessions × ${specs.length} backtestable detectors`)
 	console.log(`[run] ${notBacktestable().length} detector(s) reported as NOT BACKTESTABLE`)
@@ -155,6 +160,13 @@ const cmdRun = async (dayLimit?: number): Promise<void> => {
 
 			// ── outcome simulation, per signal, within the same session ───────
 			for (const signal of result.signals) {
+				const underlying = resolveUnderlying(signal.payload.symbol)
+
+				if (MULTIDAY_DETECTORS.includes(signal.detectorId)) {
+					const added = globalMultidayLedger.add(signal, underlying)
+					if (!added) continue
+				}
+
 				acc.signalsUngated.set(
 					signal.detectorId,
 					(acc.signalsUngated.get(signal.detectorId) ?? 0) + 1,
@@ -172,7 +184,10 @@ const cmdRun = async (dayLimit?: number): Promise<void> => {
 					acc.rejections.set(signal.detectorId, rej)
 				}
 
-				const underlying = resolveUnderlying(signal.payload.symbol)
+				if (MULTIDAY_DETECTORS.includes(signal.detectorId)) {
+					continue
+				}
+
 				const series = barsBySymbol.get(underlying)
 				if (!series) continue
 
@@ -187,12 +202,29 @@ const cmdRun = async (dayLimit?: number): Promise<void> => {
 				acc.trades.set(signal.detectorId, list)
 			}
 
+			const closedTrades = globalMultidayLedger.evaluateEndOfDay(day, dayStart, barsBySymbol)
+			for (const t of closedTrades) {
+				const list = acc.trades.get(t.detectorId) ?? []
+				list.push(t)
+				acc.trades.set(t.detectorId, list)
+			}
+
 			if (acc.sessionsReplayed % 10 === 0) {
 				const secs = ((realNow() - startedAt) / 1000).toFixed(0)
 				const sig = [...acc.signalsUngated.values()].reduce((a, b) => a + b, 0)
 				console.log(
-					`[run] ${acc.sessionsReplayed}/${days.length} sessions · ${acc.ticksDispatched.toLocaleString()} ticks · ${sig} raw signals · ${secs}s`,
+					`[run] ${acc.sessionsReplayed}/${days.length} sessions — ${acc.ticksDispatched.toLocaleString()} ticks — ${sig} raw signals — ${secs}s`,
 				)
+			}
+		}
+
+		const finalDay = days[days.length - 1]
+		if (finalDay) {
+			const finalTrades = globalMultidayLedger.forceCloseAll(finalDay)
+			for (const t of finalTrades) {
+				const list = acc.trades.get(t.detectorId) ?? []
+				list.push(t)
+				acc.trades.set(t.detectorId, list)
 			}
 		}
 	} finally {
@@ -245,6 +277,7 @@ const cmdRun = async (dayLimit?: number): Promise<void> => {
 	}
 
 	fs.writeFileSync(RESULTS_JSON, JSON.stringify(payload, null, 2))
+	fs.writeFileSync(path.join(OUTPUT_DIR, 'trades.json'), JSON.stringify(Object.fromEntries(acc.trades.entries()), null, 2))
 	console.log(`\n[run] results → ${RESULTS_JSON}`)
 
 	fs.writeFileSync(REPORT_HTML, renderHtmlReport(payload))
@@ -305,13 +338,15 @@ const main = async (): Promise<void> => {
 	const [cmd, ...rest] = process.argv.slice(2)
 	const daysFlag = rest.indexOf('--days')
 	const dayLimit = daysFlag >= 0 ? Number(rest[daysFlag + 1]) : undefined
+	const detFlag = rest.indexOf('--detectors')
+	const targetDetectors = detFlag >= 0 ? rest[detFlag + 1]?.split(',') : undefined
 
 	switch (cmd) {
 		case 'fetch':
 			await cmdFetch()
 			break
 		case 'run':
-			await cmdRun(dayLimit)
+			await cmdRun(dayLimit, targetDetectors)
 			break
 		case 'report':
 			cmdReport()

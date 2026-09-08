@@ -5,7 +5,7 @@ import { DATA, SIM } from '../config.js'
 import { looksCircuitLocked } from '../replay/barToTicks.js'
 import { istDateStringOf } from '../core/clock.js'
 
-export const MULTIDAY_DETECTORS = ['Stock Momentum Breakout']
+export const MULTIDAY_DETECTORS = ['stock_momentum_breakout']
 
 type PositionStage = 'full' | 'scaled' | 'trailing'
 
@@ -25,11 +25,19 @@ export interface MultidayPosition {
 
 class MultidayLedger {
     positions: MultidayPosition[] = []
+    dailyCache: Map<string, any> = new Map()
 
-    add(signal: RawSignal, underlying: string) {
+    getDailySeries(symbol: string) {
+        if (!this.dailyCache.has(symbol)) {
+            this.dailyCache.set(symbol, loadSeries(symbol, DATA.dailyResolution))
+        }
+        return this.dailyCache.get(symbol)
+    }
+
+    add(signal: RawSignal, underlying: string): boolean {
         // [FIX - Pyramiding Contamination] Max 1 open position per symbol
         if (this.positions.some(p => p.underlying === underlying)) {
-            return
+            return false
         }
 
         const levels = deriveLevels(signal)
@@ -45,6 +53,7 @@ class MultidayLedger {
             daysHeld: 0,
             basis: levels.basis
         })
+        return true
     }
 
     getEma(bars: Bar[], period: number, currentDayStr: string): number | null {
@@ -68,7 +77,7 @@ class MultidayLedger {
         return price * (1 + adverse * factor)
     }
 
-    evaluateEndOfDay(currentDayStr: string, currentDayTs: number): SimulatedTrade[] {
+    evaluateEndOfDay(currentDayStr: string, currentDayTs: number, barsBySymbol: Map<string, Bar[]>): SimulatedTrade[] {
         const closed: SimulatedTrade[] = []
         
         for (let i = this.positions.length - 1; i >= 0; i--) {
@@ -79,13 +88,13 @@ class MultidayLedger {
                 pos.daysHeld++
             }
             
-            const dailySeries = loadSeries(pos.underlying, DATA.dailyResolution)
+            const dailySeries = this.getDailySeries(pos.underlying)
             if (!dailySeries) continue
             
             const ema10 = this.getEma(dailySeries.bars, 10, currentDayStr)
             if (!ema10) continue
             
-            const todayBar = dailySeries.bars.find(b => istDateStringOf(b.t) === currentDayStr)
+            const todayBar = dailySeries.bars.find((b: Bar) => istDateStringOf(b.t) === currentDayStr)
             if (!todayBar) continue
 
             if (SIM.circuitLockZeroRange && looksCircuitLocked(todayBar)) {
@@ -113,9 +122,9 @@ class MultidayLedger {
             // Stops
             let hardStopBreached = false
             if (pos.daysHeld === 0) {
-                const intradaySeries = loadSeries(pos.underlying, DATA.intradayResolution)
-                if (intradaySeries) {
-                    const forwardBars = intradaySeries.bars.filter(b => b.t > pos.entryTs && istDateStringOf(b.t) === currentDayStr)
+                const todayBars = barsBySymbol.get(pos.underlying)
+                if (todayBars) {
+                    const forwardBars = todayBars.filter(b => b.t > pos.entryTs)
                     for (const b of forwardBars) {
                         if (isLong && b.l <= pos.stopLevel) {
                             hardStopBreached = true
@@ -187,9 +196,9 @@ class MultidayLedger {
     forceCloseAll(finalDayStr: string): SimulatedTrade[] {
         const closed: SimulatedTrade[] = []
         for (const pos of this.positions) {
-            const dailySeries = loadSeries(pos.underlying, DATA.dailyResolution)
+            const dailySeries = this.getDailySeries(pos.underlying)
             if (!dailySeries) continue
-            const todayBar = dailySeries.bars.find(b => istDateStringOf(b.t) === finalDayStr)
+            const todayBar = dailySeries.bars.find((b: Bar) => istDateStringOf(b.t) === finalDayStr)
             if (!todayBar) continue
 
             const exitPrice = todayBar.c

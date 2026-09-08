@@ -57,3 +57,4 @@ backtest/data/cache/
 backtest/output/results.json
 backtest/output/backtest-report.html
 backtest/access_token.txt
+backtest/output/trades.json

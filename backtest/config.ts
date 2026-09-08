@@ -33,7 +33,7 @@ export const DATA = {
 	maxRetries: 3,
 
 	/** Lookback target. Intraday history availability is the real constraint. */
-	lookbackTradingDays: 180,
+	lookbackTradingDays: 1260,
 } as const
 
 // ── Simulation assumptions ─────────────────────────────────────────────────

@@ -27,7 +27,8 @@
 | Big caveat #1 | Of 26 detector classes, **8 are live**. 15 are archived under `src/detectors/deprecated/`, and 3 more are dormant but still in `src/detectors/`. See §4. |
 | Big caveat #2 | Most files carry a large **commented-out previous version** at the bottom. Always confirm you are editing live code, not the archive block. |
 | Backtest | `backtest/` replays historical bars through the real detectors. Read `backtest/README.md` before touching it — it depends on a virtual clock and an in-memory Redis, and it deliberately reproduces a live routing bug. |
-| 🔴 Known live bug | Five watchlist equities (RELIANCE, ULTRACEMCO, CEATLTD, BAJFINANCE, KAJARIACER) never reach any detector — see §6.11. Unfixed by instruction, not by oversight. |
+| 🟢 Known live bug | None currently. The CE/PE equity routing bug was fixed in v2. |
+| ⚠️ **Current Status** | **Alerting-only**. No execution/risk layer exists or should be built yet. No tested strategy has cleared statistical significance. JaneStreetFilter has no working swing gate (the hardcoded bypass was removed). AWS deployment is strictly for gathering out-of-sample data. |
 
 ---
 
@@ -1309,3 +1310,19 @@ Do not decide these unilaterally:
 
 If you change behaviour, update `AGENTS.md` in the same commit. A stale brief is worse than no
 brief, because the next agent will trust it.
+
+## 12. AWS Deployment (EC2 + Docker Compose)
+
+The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 
+
+### Architecture
+- **Target**: A persistent EC2 instance running Amazon Linux.
+- **Topology**: Retains the exact `docker-compose.yml` topology. `quant_scheduler` mounts the Docker socket (`/var/run/docker.sock`) to orchestrate the siblings `quant_auth` and `quant_engine` according to the daily market hours.
+- **Liveness**: A `liveness.sh` script runs in the scheduler at 09:10 IST to verify that the Fyers `access_token.txt` was freshly generated. If missing/stale, it fires a Telegram alert immediately, preventing the engine from hanging silently.
+- **Secrets**: Managed via AWS Systems Manager (SSM) Parameter Store. A boot script fetches secrets dynamically and populates the `.env` file. Secrets are never hardcoded.
+
+### Constraints & Facts
+1. **Fyers OAuth Constraint**: The morning login via the Telegram link is a hard constraint by design (it utilizes phone biometrics to securely authenticate with Fyers). It cannot be bypassed with TOTP scraping.
+2. **Elastic IP**: The EC2 instance requires an Elastic IP because the Fyers OAuth callback `FYERS_REDIRECT_URI` must be static and point to `http://<EC2_ELASTIC_IP>:3000/callback`.
+3. **No Strategy Edge**: No tested strategy has currently cleared statistical significance. Any future agent attempting to add execution layers MUST read this and refuse until an edge is mathematically proven.
+4. **No SWING bypass**: The `SWING` gate bypass in `janeStreetFilter.ts` has been fully removed. Swing signals are currently evaluated using intraday gating logic because no swing-appropriate replacement gate exists yet.

@@ -109,5 +109,5 @@ export class LiquiditySweepDetector implements IDetector {
 }
 
 function isOption(sym: string) {
-	return sym.includes('CE') || sym.includes('PE')
+	return sym.endsWith('CE') || sym.endsWith('PE')
 }

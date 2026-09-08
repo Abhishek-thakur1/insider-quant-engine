@@ -218,7 +218,7 @@ export const startLiveEngine = async () => {
 			}
 
 			// 2. Route Options Data
-			if (rawTick.symbol.includes('CE') || rawTick.symbol.includes('PE')) {
+			if (rawTick.symbol.endsWith('CE') || rawTick.symbol.endsWith('PE')) {
 				updateOptionTick(rawTick.symbol, {
 					ltp: rawTick.ltp,
 					oi: rawTick.oi ?? 0,
@@ -285,7 +285,7 @@ export const startLiveEngine = async () => {
 			previousVolumeTracker.set(tick.symbol, cumulativeVol)
 
 			const isIndexOrOption =
-				tick.symbol === NIFTY_SYMBOL || tick.symbol.includes('CE') || tick.symbol.includes('PE')
+				tick.symbol === NIFTY_SYMBOL || tick.symbol.endsWith('CE') || tick.symbol.endsWith('PE')
 
 			// FIX: Only discard zero-volume ticks for equities (preventing false bid/ask ticks from firing logic)
 			if (!isIndexOrOption && actualTickVol <= 0) {

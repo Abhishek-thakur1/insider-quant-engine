@@ -119,20 +119,13 @@ test('replay: ACTIVE detectors are classified from their EXPLICIT tag, not guess
 	}
 })
 
-test('replay: reproduces the live CE/PE misrouting instead of silently fixing it', async () => {
+test('replay: misrouting bug was fixed in v2 so it misroutes zero symbols', async () => {
 	const { result } = await runOnce()
 
 	assert.deepEqual(
 		result.misroutedSymbols,
-		['NSE:RELIANCE-EQ'],
-		'RELIANCE must be reported as misrouted by the live substring test',
-	)
-	// And it must genuinely produce nothing, exactly as in production.
-	const fromReliance = result.signals.filter((s) => s.payload.symbol === 'NSE:RELIANCE-EQ')
-	assert.equal(
-		fromReliance.length,
-		0,
-		'RELIANCE is swallowed by the option branch in live, so it must yield no equity signals here either',
+		[],
+		'Live substring test bug was fixed, so there should be no misrouted symbols',
 	)
 })
 

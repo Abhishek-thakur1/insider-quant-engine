@@ -254,15 +254,15 @@ test('deriveLevels: falls back to the documented harness default when the trigge
 	assert.ok(lv.target > 100)
 })
 
-test('symbolClass: the LIVE substring test misroutes five real equities', async () => {
+test('symbolClass: the LIVE substring test misroutes zero real equities in v2', async () => {
 	const { isOptionSymbolLive, isOptionSymbolPrecise, misroutedByLiveTest } =
 		await import('../backtest/core/symbolClass.js')
 	const watchlist = JSON.parse(
 		(await import('fs')).readFileSync('watchlist.json', 'utf8'),
 	) as string[]
 
-	// The bug: an equity whose NAME contains CE/PE is treated as an option.
-	assert.equal(isOptionSymbolLive('NSE:RELIANCE-EQ'), true, 'reproduces the live bug')
+	// The bug was fixed in v2.
+	assert.equal(isOptionSymbolLive('NSE:RELIANCE-EQ'), false, 'no longer reproduces the live bug')
 	assert.equal(isOptionSymbolPrecise('NSE:RELIANCE-EQ'), false, 'and the correct answer')
 
 	// A real option is classified correctly by both.
@@ -272,13 +272,7 @@ test('symbolClass: the LIVE substring test misroutes five real equities', async 
 	}
 
 	const misrouted = misroutedByLiveTest(watchlist)
-	assert.deepEqual(misrouted.sort(), [
-		'NSE:BAJFINANCE-EQ',
-		'NSE:CEATLTD-EQ',
-		'NSE:KAJARIACER-EQ',
-		'NSE:RELIANCE-EQ',
-		'NSE:ULTRACEMCO-EQ',
-	])
+	assert.deepEqual(misrouted, [])
 })
 
 test('resolveUnderlying: option alerts resolve to the index, equities to themselves', () => {

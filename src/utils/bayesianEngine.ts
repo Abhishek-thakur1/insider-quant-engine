@@ -207,8 +207,8 @@ export const computeBayesianPosterior = async (
 	const vsr = payload.volumeSpikeRatio
 	const isIndexOrOptions =
 		payload.symbol.includes('NIFTY') ||
-		payload.symbol.includes('CE') ||
-		payload.symbol.includes('PE') ||
+		payload.symbol.endsWith('CE') ||
+		payload.symbol.endsWith('PE') ||
 		payload.symbol === 'NSE:NIFTY50-INDEX'
 
 	if (isIndexOrOptions && vsr <= 1.1) {
@@ -322,7 +322,7 @@ export const computeBayesianPosterior = async (
 
 	// ── EVIDENCE 6: Days to Expiry (Theta / Gamma Factor) ───────────────────
 	const dayOfWeek = new Date(Date.now() + 5.5 * 60 * 60 * 1000).getUTCDay() // 0=Sun, 4=Thu
-	const isOptionsAsset = payload.symbol.includes('CE') || payload.symbol.includes('PE')
+	const isOptionsAsset = payload.symbol.endsWith('CE') || payload.symbol.endsWith('PE')
 
 	if (isOptionsAsset) {
 		if (dayOfWeek === 4) {

@@ -7,8 +7,9 @@ ENV TZ=Asia/Kolkata
 
 COPY scheduler/lifecycle.sh /usr/local/bin/lifecycle.sh
 COPY scheduler/market_message.sh /usr/local/bin/market_message.sh
+COPY scheduler/liveness.sh /usr/local/bin/liveness.sh
 COPY scheduler/crontab /etc/crontabs/root
 
-RUN chmod +x /usr/local/bin/lifecycle.sh /usr/local/bin/market_message.sh
+RUN chmod +x /usr/local/bin/lifecycle.sh /usr/local/bin/market_message.sh /usr/local/bin/liveness.sh
 
 CMD ["crond", "-f", "-l", "2"]

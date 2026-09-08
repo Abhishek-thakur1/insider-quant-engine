@@ -96,8 +96,8 @@ const NIFTY_SPOT_SYMBOL = 'NSE:NIFTY50-INDEX'
 // contract's own (mostly meaningless) price series.
 const resolveStructureSymbol = (payload: AlertPayload): string => {
 	const isOption =
-		payload.symbol.includes('CE') ||
-		payload.symbol.includes('PE') ||
+		payload.symbol.endsWith('CE') ||
+		payload.symbol.endsWith('PE') ||
 		payload.symbol.includes('NIFTY')
 	return isOption ? NIFTY_SPOT_SYMBOL : payload.symbol
 }
@@ -177,22 +177,16 @@ export const runJaneStreetFilter = async (
 	const breakdown: ScoreComponent[] = []
 
 	// ── HARD GATE: Regime Compatibility ──────────────────────────────────────
-	let regimeCheck
 	let regimeState = { regime: 'TRENDING' as MarketRegime, entropy: 1.0, dataPoints: 20 }
 	
-	if (payload.durationClass === 'SWING') {
-		// Swing setups evaluate weeks of price structure, not 20 mins of Nifty.
-		regimeCheck = { allowed: true, sizeMult: 1.0, reason: 'SWING bypass', detectorType: 'UNIVERSAL', classificationSource: 'explicit' }
-	} else {
-		regimeState = await getMarketRegime()
-		regimeCheck = checkRegimeCompatibility(
-			regimeState.regime,
-			regimeState.entropy,
-			detectorName ?? payload.detectorName,
-			payload.trigger,
-			payload.regimeClass,
-		)
-	}
+	regimeState = await getMarketRegime()
+	let regimeCheck = checkRegimeCompatibility(
+		regimeState.regime,
+		regimeState.entropy,
+		detectorName ?? payload.detectorName,
+		payload.trigger,
+		payload.regimeClass,
+	)
 
 	if (!regimeCheck.allowed) {
 		const decision: FilterDecision = {
@@ -227,13 +221,9 @@ export const runJaneStreetFilter = async (
 
 	// ── NEW: Market Structure ────────────────────────────────────────────────
 	const structureSymbol = resolveStructureSymbol(payload)
-	let structureScore = WEIGHT_STRUCTURE
-	let structureReason = 'SWING bypass'
-	if (payload.durationClass !== 'SWING') {
-		const res = getStructureScore(structureSymbol, side)
-		structureScore = res.score
-		structureReason = res.reason
-	}
+	const structureRes = getStructureScore(structureSymbol, side)
+	let structureScore = structureRes.score
+	let structureReason = structureRes.reason
 	breakdown.push({
 		component: 'STRUCTURE',
 		points: structureScore,
@@ -242,13 +232,9 @@ export const runJaneStreetFilter = async (
 	})
 
 	// ── NEW: Liquidity Mapping ───────────────────────────────────────────────
-	let liquidityScore = WEIGHT_LIQUIDITY
-	let liquidityReason = 'SWING bypass'
-	if (payload.durationClass !== 'SWING') {
-		const res = getLiquidityScore(structureSymbol, side, payload.price)
-		liquidityScore = res.score
-		liquidityReason = res.reason
-	}
+	const liquidityRes = getLiquidityScore(structureSymbol, side, payload.price)
+	let liquidityScore = liquidityRes.score
+	let liquidityReason = liquidityRes.reason
 	breakdown.push({
 		component: 'LIQUIDITY',
 		points: liquidityScore,
@@ -257,13 +243,9 @@ export const runJaneStreetFilter = async (
 	})
 
 	// ── NEW: Order Flow Proxy ────────────────────────────────────────────────
-	let orderFlowScore = WEIGHT_ORDERFLOW
-	let orderFlowReason = 'SWING bypass'
-	if (payload.durationClass !== 'SWING') {
-		const res = getOrderFlowScore(structureSymbol, side)
-		orderFlowScore = res.score
-		orderFlowReason = res.reason
-	}
+	const orderFlowRes = getOrderFlowScore(structureSymbol, side)
+	let orderFlowScore = orderFlowRes.score
+	let orderFlowReason = orderFlowRes.reason
 
 	breakdown.push({
 		component: 'ORDER_FLOW',

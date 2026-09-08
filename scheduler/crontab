@@ -4,6 +4,9 @@
 # ── Market open message — 9:07 AM Mon–Fri
 07 9 * * 1-5 /usr/local/bin/market_message.sh open >> /var/log/scheduler.log 2>&1
 
+# ── Liveness Check - 9:10 AM Mon-Fri (Verifies token before boot)
+10 9 * * 1-5 /usr/local/bin/liveness.sh >> /var/log/scheduler.log 2>&1
+
 # ── Quant engine boot — 9:15 AM Mon–Fri
 15 9 * * 1-5 /usr/local/bin/lifecycle.sh start_engine >> /var/log/scheduler.log 2>&1
 
