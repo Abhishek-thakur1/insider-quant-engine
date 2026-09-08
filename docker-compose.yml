@@ -74,6 +74,23 @@ services:
     depends_on:
       - redis_cache
 
+  # ── API Server (Dashboard Backend) ────────────────────────────────────────
+  quant_api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: quant_api
+    command: npx tsx src/api/server.ts
+    restart: always
+    ports:
+      - '8080:8080'
+    volumes:
+      - /app/node_modules
+    env_file:
+      - .env
+    depends_on:
+      - redis_cache
+
 volumes:
   token_store:
   scheduler_logs:

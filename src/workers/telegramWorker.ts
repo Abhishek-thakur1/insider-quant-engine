@@ -100,6 +100,56 @@ export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
 		const isLong = data.side === 'LONG'
 		const isOptions = data.symbol.endsWith('CE') || data.symbol.endsWith('PE')
 
+		const entry = data.price
+
+		// Calculate exact SL and Targets (mimicking the message payload logic)
+		let stopLoss = entry
+		let target1 = entry
+		let target2 = entry
+
+		if (!isOptions) {
+			stopLoss = isLong
+				? Number((data.vwap * 0.998).toFixed(2))
+				: Number((data.vwap * 1.002).toFixed(2))
+
+			const risk = Math.abs(entry - stopLoss)
+
+			target1 = isLong
+				? Number((entry + risk * 1.5).toFixed(2))
+				: Number((entry - risk * 1.5).toFixed(2))
+
+			target2 = isLong
+				? Number((entry + risk * 2.5).toFixed(2))
+				: Number((entry - risk * 2.5).toFixed(2))
+		} else {
+			// For options, trigger string usually contains SL ₹x, we can attempt to parse it
+			// Or we default to a standard 10% SL for options if not found
+			const slMatch = data.trigger.match(/SL ₹(\d+(\.\d+)?)/)
+			const t1Match = data.trigger.match(/T1 ₹(\d+(\.\d+)?)/)
+			
+			if (slMatch) stopLoss = Number(slMatch[1])
+			else stopLoss = isLong ? entry * 0.9 : entry * 1.1
+
+			if (t1Match) target1 = Number(t1Match[1])
+			else target1 = isLong ? entry * 1.2 : entry * 0.8
+		}
+
+		// Register to the shadow execution engine
+		// We import inline to avoid circular dependency issues at boot if any
+		const { positionTracker } = await import('../core/positionTracker.js')
+		
+		await positionTracker.registerTrade({
+			id: `trade_${Date.now()}_${data.symbol}`,
+			symbol: data.symbol,
+			side: data.side,
+			entryPrice: entry,
+			stopLoss,
+			target: target1, // We track Target 1 for the PnL hit
+			timestamp: Date.now(),
+			detectorName: data.detectorName || 'UNKNOWN',
+			size: 100 // Standardize 100 shares for equity PnL calculation, or adjust based on EV
+		})
+
 		const scoreNote = decision
 			? `\n\n🧮 *Confirmation Score: ${decision.score}/100*${decision.shadowMode && !decision.passed ? ' ⚠️ SHADOW — below threshold' : ''}\n• Regime: ${decision.regime} (H=${decision.entropy.toFixed(2)})\n• Bayesian P(win): ${(decision.posterior * 100).toFixed(0)}%\n• EV: ₹${decision.ev.toFixed(0)} | Half-Kelly: ${(decision.kellyHalf * 100).toFixed(1)}%\n• ${decision.positionNote}`
 			: ''

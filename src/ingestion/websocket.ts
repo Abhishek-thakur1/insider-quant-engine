@@ -100,6 +100,8 @@ let isShuttingDown = false
 const tickEmitter = new EventEmitter()
 tickEmitter.setMaxListeners(200)
 
+import { positionTracker } from '../core/positionTracker.js'
+
 // High-Conviction Nifty Singleton Detectors
 const oiSweepDetector = new OiLiquiditySweepDetector()
 const niftyTrendPulse = new NiftyTrendPulseDetector()
@@ -120,6 +122,7 @@ export const startLiveEngine = async () => {
 
 	await bootRedis()
 	await seedHistoricalVwap()
+	await positionTracker.init()
 
 	const watchlist: string[] = JSON.parse(fs.readFileSync(WATCHLIST_PATH, 'utf8'))
 	const activeUniverse = watchlist.slice(0, 100)
@@ -157,6 +160,8 @@ export const startLiveEngine = async () => {
 		redisClient.del('regime:nifty:returns_1min'),
 		redisClient.del('regime:nifty:current'),
 		redisClient.del('jsfilter:decisions'),
+		redisClient.del('trades:open'), // Clear any dangling open trades from yesterday
+		redisClient.del('pnl:daily'),
 	])
 
 	// Prime the in-memory Nifty reference from the seeded value so bias checks
@@ -181,6 +186,9 @@ export const startLiveEngine = async () => {
 	tickEmitter.on('processTick', async (tickData) => {
 		try {
 			const { rawTick, liveTick } = tickData
+
+			// 0. Shadow Execution Layer (PnL Tracker)
+			positionTracker.processTick(rawTick.symbol, liveTick).catch(e => console.error('[PositionTracker] Error:', e))
 
 			// 1. Route Nifty Spot
 			if (rawTick.symbol === NIFTY_SYMBOL) {
