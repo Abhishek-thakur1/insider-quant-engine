@@ -28,6 +28,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - scheduler_logs:/var/log
+      - token_store:/app/token
     depends_on:
       - redis_cache
 
