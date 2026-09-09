@@ -147,7 +147,9 @@ export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
 			target: target1, // We track Target 1 for the PnL hit
 			timestamp: Date.now(),
 			detectorName: data.detectorName || 'UNKNOWN',
-			size: 100 // Standardize 100 shares for equity PnL calculation, or adjust based on EV
+			size: 100, // Standardize 100 shares for equity PnL calculation, or adjust based on EV
+			regimeClass: data.regimeClass || decision?.regime || 'UNIVERSAL',
+			gated: decision?.passed || false
 		})
 
 		const scoreNote = decision

@@ -1,4 +1,5 @@
 import { redisClient } from '../config/redis.js'
+import { pool } from '../config/db.js'
 import type { TickData } from './types.js'
 
 export interface OpenPosition {
@@ -11,6 +12,8 @@ export interface OpenPosition {
 	timestamp: number
 	detectorName: string
 	size: number
+	regimeClass?: string
+	gated?: boolean
 }
 
 export interface ClosedPosition extends OpenPosition {
@@ -54,6 +57,19 @@ class PositionTracker {
 		await redisClient.hSet('trades:open', pos.id, JSON.stringify(pos))
 		// Track in memory for ultra-fast tick checking
 		this.addToMemory(pos)
+
+		// Insert into Postgres
+		try {
+			await pool.query(
+				`INSERT INTO paper_trades (
+					symbol, detector, direction, entry_price, entry_time, stop_price, target_price, status, regime_class, gated
+				) VALUES ($1, $2, $3, $4, to_timestamp($5 / 1000.0), $6, $7, 'OPEN', $8, $9)`,
+				[pos.symbol, pos.detectorName, pos.side, pos.entryPrice, pos.timestamp, pos.stopLoss, pos.target, pos.regimeClass || null, pos.gated || false]
+			)
+		} catch (dbErr) {
+			console.error('[PositionTracker] ❌ Postgres insert error:', dbErr)
+		}
+
 		console.log(`[PositionTracker] 📝 Registered new ${pos.side} position for ${pos.symbol} at ₹${pos.entryPrice}`)
 	}
 
@@ -106,6 +122,18 @@ class PositionTracker {
 				// Update daily PnL counter
 				pipeline.incrByFloat('pnl:daily', closedPos.pnl)
 				await pipeline.exec()
+
+				// Update Postgres
+				try {
+					await pool.query(
+						`UPDATE paper_trades 
+						 SET exit_price = $1, exit_time = to_timestamp($2 / 1000.0), realized_pnl = $3, status = 'CLOSED' 
+						 WHERE symbol = $4 AND status = 'OPEN' AND entry_time = to_timestamp($5 / 1000.0)`,
+						[closedPos.exitPrice, closedPos.exitTimestamp, closedPos.pnl, pos.symbol, pos.timestamp]
+					)
+				} catch (dbErr) {
+					console.error('[PositionTracker] ❌ Postgres update error:', dbErr)
+				}
 
 				console.log(`[PositionTracker] 🏁 Closed ${pos.symbol} | Reason: ${exitReason} | PnL: ₹${closedPos.pnl}`)
 			} else {

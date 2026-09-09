@@ -15,6 +15,19 @@ services:
     volumes:
       - redis_data:/data
 
+  # ── Postgres ───────────────────────────────────────────────────────────────
+  postgres_db:
+    image: postgres:15-alpine
+    container_name: quant_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-insider_quant}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+
   # ── Scheduler ─────────────────────────────────────────────────────────────
   # Always on. Owns the full daily lifecycle via cron + docker start/stop.
   quant_scheduler:
@@ -74,6 +87,7 @@ services:
       - .env
     depends_on:
       - redis_cache
+      - postgres_db
 
   # ── API Server (Dashboard Backend) ────────────────────────────────────────
   quant_api:
@@ -91,11 +105,13 @@ services:
       - .env
     depends_on:
       - redis_cache
+      - postgres_db
 
 volumes:
   token_store:
   scheduler_logs:
   redis_data:
+  pg_data:
 
 # services:
 #   redis_cache:
