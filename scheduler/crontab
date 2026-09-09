@@ -15,3 +15,6 @@
 
 # ── Stop engine — 3:30 PM Mon–Fri
 30 15 * * 1-5 /usr/local/bin/lifecycle.sh stop_engine >> /var/log/scheduler.log 2>&1
+
+# ── Database Backup — 4:00 PM Mon-Fri
+00 16 * * 1-5 /usr/local/bin/db_backup.sh >> /var/log/scheduler.log 2>&1
