@@ -1,47 +1,125 @@
 import Fastify from 'fastify'
 import { redisClient, bootRedis } from '../config/redis.js'
-import { ENV } from '../config/env.js'
+import { pool } from '../config/db.js'
 
 const fastify = Fastify({ logger: true })
 
-// Enable CORS if you run dashboard on a different port locally
+// Enable CORS
 fastify.register(import('@fastify/cors'), {
-	origin: '*',
+	origin: '*', // Adjust this for production security
 })
 
-// Route: Get Open Trades
-fastify.get('/api/trades/open', async (request, reply) => {
-	const keys = await redisClient.hKeys('trades:open')
-	const trades = []
-	for (const key of keys) {
-		const data = await redisClient.hGet('trades:open', key)
-		if (data) trades.push(JSON.parse(data))
-	}
-	// Sort by newest first
-	trades.sort((a, b) => b.timestamp - a.timestamp)
-	return { success: true, count: trades.length, data: trades }
-})
+// Pub/Sub duplicate for SSE
+const subscriber = redisClient.duplicate()
+subscriber.on('error', (err) => console.error('[Redis SSE] Subscriber Error:', err))
 
-// Route: Get Closed Trades History
-fastify.get('/api/trades/history', async (request, reply) => {
-	const limit = (request.query as any).limit || 50
-	const data = await redisClient.lRange('trades:history', 0, limit - 1)
-	const trades = data.map((t) => JSON.parse(t))
-	return { success: true, count: trades.length, data: trades }
-})
+const clients = new Set<any>()
 
-// Route: Get Daily PnL
-fastify.get('/api/pnl/daily', async (request, reply) => {
+// Connect Subscriber
+const bootSubscriber = async () => {
+	await subscriber.connect()
+	await subscriber.subscribe('sse:events', (message) => {
+		for (const client of clients) {
+			client.raw.write(`data: ${message}\n\n`)
+		}
+	})
+	console.log('🟢 [API Server] Subscribed to sse:events channel')
+}
+
+// REST: Get Today's Status (Fetch-on-mount for Dashboard)
+fastify.get('/api/today', async (request, reply) => {
+	const openRes = await pool.query(`
+		SELECT * FROM paper_trades 
+		WHERE status = 'OPEN' 
+		AND entry_time >= current_date
+		ORDER BY entry_time DESC
+	`)
+	
 	const pnlStr = await redisClient.get('pnl:daily')
-	return { success: true, pnl: Number(pnlStr || 0) }
+	
+	return {
+		success: true,
+		realizedPnl: Number(pnlStr || 0),
+		openTrades: openRes.rows.map(r => ({
+			id: r.id,
+			symbol: r.symbol,
+			side: r.direction,
+			entryPrice: Number(r.entry_price),
+			timestamp: new Date(r.entry_time).getTime(),
+			target: Number(r.target_price),
+			stopLoss: Number(r.stop_price),
+			detectorName: r.detector
+		}))
+	}
 })
 
-// Start the API Server
+// REST: Get Historical Trades (With Date and Detector Filtering)
+fastify.get('/api/trades/history', async (request, reply) => {
+	const query = request.query as any
+	const date = query.date // format YYYY-MM-DD
+	const detector = query.detector
+
+	let sql = `SELECT * FROM paper_trades WHERE status = 'CLOSED'`
+	const params: any[] = []
+	
+	if (date) {
+		params.push(date)
+		sql += ` AND entry_time::date = $${params.length}`
+	}
+	
+	if (detector) {
+		params.push(detector)
+		sql += ` AND detector = $${params.length}`
+	}
+	
+	sql += ` ORDER BY exit_time DESC LIMIT 200`
+	
+	const res = await pool.query(sql, params)
+	
+	return {
+		success: true,
+		count: res.rowCount,
+		data: res.rows.map(r => ({
+			id: r.id,
+			symbol: r.symbol,
+			side: r.direction,
+			entryPrice: Number(r.entry_price),
+			exitPrice: Number(r.exit_price),
+			pnl: Number(r.realized_pnl),
+			timestamp: new Date(r.entry_time).getTime(),
+			exitTimestamp: new Date(r.exit_time).getTime(),
+			detectorName: r.detector,
+			regimeClass: r.regime_class,
+			gated: r.gated
+		}))
+	}
+})
+
+// SSE Stream Endpoint
+fastify.get('/api/stream', (request, reply) => {
+	reply.raw.writeHead(200, {
+		'Content-Type': 'text/event-stream',
+		'Cache-Control': 'no-cache',
+		'Connection': 'keep-alive',
+		'Access-Control-Allow-Origin': '*'
+	})
+
+	reply.raw.write('retry: 3000\n\n')
+
+	clients.add(reply)
+	console.log(`[SSE] Client connected. Active clients: ${clients.size}`)
+
+	request.raw.on('close', () => {
+		clients.delete(reply)
+		console.log(`[SSE] Client disconnected. Active clients: ${clients.size}`)
+	})
+})
+
 const startServer = async () => {
 	await bootRedis()
+	await bootSubscriber()
 
 	try {
-		// Use port 8080 or process.env.API_PORT
 		const port = 8080
 		await fastify.listen({ port, host: '0.0.0.0' })
 		console.log(`[API Server] 📡 Listening on http://0.0.0.0:${port}`)

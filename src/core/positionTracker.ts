@@ -25,6 +25,7 @@ export interface ClosedPosition extends OpenPosition {
 
 class PositionTracker {
 	private openPositions = new Map<string, OpenPosition[]>()
+	private lastPnlPublishTime = new Map<string, number>()
 	private isInitialized = false
 
 	// Load open positions from Redis on boot
@@ -69,6 +70,12 @@ class PositionTracker {
 		} catch (dbErr) {
 			console.error('[PositionTracker] ❌ Postgres insert error:', dbErr)
 		}
+
+		// Publish signal_event for open
+		redisClient.publish('sse:events', JSON.stringify({
+			type: 'signal_event',
+			data: pos
+		})).catch(() => {})
 
 		console.log(`[PositionTracker] 📝 Registered new ${pos.side} position for ${pos.symbol} at ₹${pos.entryPrice}`)
 	}
@@ -136,14 +143,35 @@ class PositionTracker {
 				}
 
 				console.log(`[PositionTracker] 🏁 Closed ${pos.symbol} | Reason: ${exitReason} | PnL: ₹${closedPos.pnl}`)
+				// Publish signal_event for close
+				redisClient.publish('sse:events', JSON.stringify({
+					type: 'signal_event',
+					data: closedPos
+				})).catch(() => {})
 			} else {
 				remaining.push(pos)
+				
+				// Throttle PnL updates to 1 per second per symbol
+				const now = Date.now()
+				if (now - this.lastPnlPublishTime.get(symbol)! > 1000 || !this.lastPnlPublishTime.has(symbol)) {
+					const unrealizedPnl = pos.side === 'LONG' 
+						? (ltp - pos.entryPrice) * pos.size 
+						: (pos.entryPrice - ltp) * pos.size
+					
+					redisClient.publish('sse:events', JSON.stringify({
+						type: 'pnl_update',
+						data: { symbol: pos.symbol, currentPrice: ltp, unrealizedPnl, timestamp: tick.timestamp }
+					})).catch(() => {})
+					
+					this.lastPnlPublishTime.set(symbol, now)
+				}
 			}
 		}
 
 		if (remaining.length !== positions.length) {
 			if (remaining.length === 0) {
 				this.openPositions.delete(symbol)
+				this.lastPnlPublishTime.delete(symbol)
 			} else {
 				this.openPositions.set(symbol, remaining)
 			}
