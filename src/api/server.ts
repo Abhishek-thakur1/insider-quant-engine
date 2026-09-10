@@ -95,6 +95,28 @@ fastify.get('/api/trades/history', async (request, reply) => {
 	}
 })
 
+// REST: Get Heatmap Data (Daily signal counts)
+fastify.get('/api/trades/heatmap', async (request, reply) => {
+	const sql = `
+		SELECT 
+			entry_time::date as date, 
+			COUNT(*) as count
+		FROM paper_trades 
+		GROUP BY entry_time::date
+		ORDER BY entry_time::date DESC
+		LIMIT 100
+	`
+	const res = await pool.query(sql)
+	
+	return {
+		success: true,
+		data: res.rows.map(r => ({
+			date: r.date,
+			count: Number(r.count)
+		}))
+	}
+})
+
 // SSE Stream Endpoint
 fastify.get('/api/stream', (request, reply) => {
 	reply.raw.writeHead(200, {
