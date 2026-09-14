@@ -27,6 +27,11 @@ case "$ACTION" in
   #   3. Write access_token.txt to the shared volume
   #   4. Call process.exit(0) on its own — Docker restart:no means it stays dead
   start_auth)
+    TODAY_DATE=$(date '+%Y-%m-%d')
+    if grep -q "^$TODAY_DATE" /etc/periodic/nse_holidays.txt 2>/dev/null; then
+        log "🏖️  Today is an NSE Holiday ($TODAY_DATE). Skipping auth bridge."
+        exit 0
+    fi
     log "🔐 Starting quant_auth..."
     docker start quant_auth
     log "✅ quant_auth started. Awaiting manual Fyers login via Telegram."
@@ -37,6 +42,11 @@ case "$ACTION" in
   # quant_engine polls for the token file internally — if it's not there yet
   # it will wait (the `until` loop in docker-compose command).
   start_engine)
+    TODAY_DATE=$(date '+%Y-%m-%d')
+    if grep -q "^$TODAY_DATE" /etc/periodic/nse_holidays.txt 2>/dev/null; then
+        log "🏖️  Today is an NSE Holiday ($TODAY_DATE). Skipping engine boot."
+        exit 0
+    fi
     log "🚀 Starting quant_engine..."
     docker start quant_engine
     log "✅ quant_engine started. Internal boot sequence running."

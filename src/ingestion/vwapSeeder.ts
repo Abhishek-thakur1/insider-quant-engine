@@ -66,6 +66,9 @@ const fetchAndSeedSymbol = async (
 			}
 			await redisClient.set(`vwap:${symbol}:${todayStr}`, JSON.stringify(state))
 		}
+	} else if (response.s === 'ok' && (!response.candles || response.candles.length === 0)) {
+		console.warn(`[Seeder] ⚠️ No candles for ${symbol}. Market may be closed, delayed, or symbol inactive.`)
+		return
 	} else {
 		throw new Error(
 			`API returned status: ${response.s} - ${response.message || 'No candles found'}`,

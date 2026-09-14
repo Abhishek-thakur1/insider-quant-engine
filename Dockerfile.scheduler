@@ -9,6 +9,7 @@ COPY scheduler/lifecycle.sh /usr/local/bin/lifecycle.sh
 COPY scheduler/market_message.sh /usr/local/bin/market_message.sh
 COPY scheduler/liveness.sh /usr/local/bin/liveness.sh
 COPY scheduler/db_backup.sh /usr/local/bin/db_backup.sh
+COPY scheduler/nse_holidays.txt /etc/periodic/nse_holidays.txt
 COPY scheduler/crontab /etc/crontabs/root
 
 RUN chmod +x /usr/local/bin/lifecycle.sh /usr/local/bin/market_message.sh /usr/local/bin/liveness.sh /usr/local/bin/db_backup.sh
