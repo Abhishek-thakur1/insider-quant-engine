@@ -120,9 +120,10 @@ class PositionTracker {
 			}
 
 			if (isClosed && exitReason) {
+				const executedSize = pos.actualSize ?? pos.size;
 				const pnl = pos.side === 'LONG' 
-					? (ltp - pos.entryPrice) * pos.size 
-					: (pos.entryPrice - ltp) * pos.size
+					? (ltp - pos.entryPrice) * executedSize 
+					: (pos.entryPrice - ltp) * executedSize
 
 				const closedPos: ClosedPosition = {
 					...pos,

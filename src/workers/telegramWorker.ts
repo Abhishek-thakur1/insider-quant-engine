@@ -188,7 +188,17 @@ export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
 			actualSize: skipAlert ? 0 : telegramQty
 		})
 
-		if (skipAlert) return
+		if (skipAlert) {
+			const message = `⏭️ *Trade Skipped: ${data.symbol}*\n\nCondition met, but skipped due to capital constraint (₹1L limit).`
+			try {
+				await bot.telegram.sendMessage(TELEGRAM_CHANNEL_ID, message, {
+					parse_mode: 'Markdown',
+				})
+			} catch (err) {
+				console.error(`[TelegramWorker] ❌ Failed to send skip alert for ${data.symbol}`, err)
+			}
+			return
+		}
 
 		const scoreNote = decision
 			? `\n\n🧮 *Confirmation Score: ${decision.score}/100*${decision.shadowMode && !decision.passed ? ' ⚠️ SHADOW — below threshold' : ''}\n• Regime: ${decision.regime} (H=${decision.entropy.toFixed(2)})\n• Bayesian P(win): ${(decision.posterior * 100).toFixed(0)}%\n• EV: ₹${decision.ev.toFixed(0)} | Half-Kelly: ${(decision.kellyHalf * 100).toFixed(1)}%\n• ${decision.positionNote}${sizeNote}`

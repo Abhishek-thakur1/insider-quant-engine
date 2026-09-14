@@ -161,7 +161,10 @@ const startServer = async () => {
 			SET 
 				qty = CASE 
 					WHEN stop_price IS NOT NULL AND stop_price != entry_price THEN 
-						GREATEST(1, FLOOR(1000.0 / ABS(entry_price - stop_price)))
+						LEAST(
+							GREATEST(1, FLOOR(10000.0 / entry_price)),
+							GREATEST(1, FLOOR(1000.0 / ABS(entry_price - stop_price)))
+						)
 					ELSE 100 
 				END,
 				r_multiple = CASE 
@@ -180,8 +183,8 @@ const startServer = async () => {
 		const pnlRes = await pool.query(`
 			UPDATE paper_trades
 			SET realized_pnl = CASE
-				WHEN exit_price IS NOT NULL AND direction = 'LONG' THEN (exit_price - entry_price) * qty
-				WHEN exit_price IS NOT NULL AND direction = 'SHORT' THEN (entry_price - exit_price) * qty
+				WHEN exit_price IS NOT NULL AND direction = 'LONG' THEN (exit_price - entry_price) * actual_size
+				WHEN exit_price IS NOT NULL AND direction = 'SHORT' THEN (entry_price - exit_price) * actual_size
 				ELSE realized_pnl
 			END
 			WHERE exit_price IS NOT NULL;
