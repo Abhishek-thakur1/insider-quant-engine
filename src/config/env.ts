@@ -12,6 +12,10 @@ export const ENV = {
 	TELEGRAM_CHANNEL_ID: process.env.TELEGRAM_CHANNEL_ID || '',
 	TELEGRAM_ADMIN_ID: process.env.TELEGRAM_ADMIN_ID || '',
 
+	// Paper Trading Config
+	PAPER_CAPITAL_BASE: Number(process.env.PAPER_CAPITAL_BASE) || 100000,
+	CAPITAL_CONSTRAINT_BEHAVIOR: process.env.CAPITAL_CONSTRAINT_BEHAVIOR || 'REDUCE', // 'REDUCE' or 'SKIP'
+
 	// Redis Credentials
 	REDIS_HOST: process.env.REDIS_HOST || 'localhost',
 	REDIS_PORT: Number(process.env.REDIS_PORT) || 6379,

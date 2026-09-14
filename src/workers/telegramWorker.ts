@@ -134,10 +134,40 @@ export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
 			else target1 = isLong ? entry * 1.2 : entry * 0.8
 		}
 
-		// Register to the shadow execution engine
-		// We import inline to avoid circular dependency issues at boot if any
+		// Capital-Constrained Position Sizing
 		const { positionTracker } = await import('../core/positionTracker.js')
+		const capitalBase = ENV.PAPER_CAPITAL_BASE // default ₹1,00,000
+		const maxSingleName = capitalBase * 0.10 // 10%
+		const riskAmount = capitalBase * 0.01 // 1% risk per trade
 		
+		const stopDistance = Math.abs(entry - stopLoss) || (entry * 0.01)
+		let qty = Math.floor(riskAmount / stopDistance)
+		if (qty < 1) qty = 1
+
+		// Apply Max Single Name Constraint
+		if (qty * entry > maxSingleName) {
+			qty = Math.floor(maxSingleName / entry)
+		}
+
+		// Apply Concurrent Capital Cap
+		const currentNotional = positionTracker.getCurrentNotional()
+		const availableHeadroom = capitalBase - currentNotional
+		let sizeNote = ''
+		
+		if (qty * entry > availableHeadroom) {
+			if (ENV.CAPITAL_CONSTRAINT_BEHAVIOR === 'SKIP') {
+				console.warn(`[PositionSizing] ⏭️ Skipped ${data.symbol}: Reached capital cap (Available: ₹${availableHeadroom.toFixed(0)}, Required: ₹${(qty * entry).toFixed(0)})`)
+				return
+			} else { // REDUCE
+				qty = Math.floor(availableHeadroom / entry)
+				sizeNote = `\n⚠️ *Size reduced to fit ₹1L capital cap*`
+				if (qty < 1) {
+					console.warn(`[PositionSizing] ⏭️ Skipped ${data.symbol}: Capital exhausted.`)
+					return
+				}
+			}
+		}
+
 		await positionTracker.registerTrade({
 			id: `trade_${Date.now()}_${data.symbol}`,
 			symbol: data.symbol,
@@ -147,14 +177,14 @@ export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
 			target: target1, // We track Target 1 for the PnL hit
 			timestamp: Date.now(),
 			detectorName: data.detectorName || 'UNKNOWN',
-			size: 100, // Standardize 100 shares for equity PnL calculation, or adjust based on EV
+			size: qty, 
 			regimeClass: data.regimeClass || decision?.regime || 'UNIVERSAL',
 			gated: decision?.passed || false
 		})
 
 		const scoreNote = decision
-			? `\n\n🧮 *Confirmation Score: ${decision.score}/100*${decision.shadowMode && !decision.passed ? ' ⚠️ SHADOW — below threshold' : ''}\n• Regime: ${decision.regime} (H=${decision.entropy.toFixed(2)})\n• Bayesian P(win): ${(decision.posterior * 100).toFixed(0)}%\n• EV: ₹${decision.ev.toFixed(0)} | Half-Kelly: ${(decision.kellyHalf * 100).toFixed(1)}%\n• ${decision.positionNote}`
-			: ''
+			? `\n\n🧮 *Confirmation Score: ${decision.score}/100*${decision.shadowMode && !decision.passed ? ' ⚠️ SHADOW — below threshold' : ''}\n• Regime: ${decision.regime} (H=${decision.entropy.toFixed(2)})\n• Bayesian P(win): ${(decision.posterior * 100).toFixed(0)}%\n• EV: ₹${decision.ev.toFixed(0)} | Half-Kelly: ${(decision.kellyHalf * 100).toFixed(1)}%\n• ${decision.positionNote}${sizeNote}`
+			: `\n\n🧮 *Size:* ${qty} shares${sizeNote}`
 
 		let message = ''
 

@@ -48,7 +48,8 @@ fastify.get('/api/today', async (request, reply) => {
 			timestamp: new Date(r.entry_time).getTime(),
 			target: Number(r.target_price),
 			stopLoss: Number(r.stop_price),
-			detectorName: r.detector
+			detectorName: r.detector,
+			size: Number(r.qty) || 100
 		}))
 	}
 })
@@ -90,7 +91,9 @@ fastify.get('/api/trades/history', async (request, reply) => {
 			exitTimestamp: new Date(r.exit_time).getTime(),
 			detectorName: r.detector,
 			regimeClass: r.regime_class,
-			gated: r.gated
+			gated: r.gated,
+			size: Number(r.qty) || 100,
+			r_multiple: r.r_multiple ? Number(r.r_multiple) : undefined
 		}))
 	}
 })
@@ -140,6 +143,46 @@ fastify.get('/api/stream', (request, reply) => {
 const startServer = async () => {
 	await bootRedis()
 	await bootSubscriber()
+
+	// ── Auto-Migration & Backfill ──
+	try {
+		console.log('[API Server] 🔄 Checking and backfilling paper_trades schema...')
+		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS r_multiple NUMERIC(10,2)`)
+		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS qty NUMERIC(10,2)`)
+		
+		const backfillRes = await pool.query(`
+			UPDATE paper_trades
+			SET 
+				qty = CASE 
+					WHEN stop_price IS NOT NULL AND stop_price != entry_price THEN 
+						GREATEST(1, FLOOR(1000.0 / ABS(entry_price - stop_price)))
+					ELSE 100 
+				END,
+				r_multiple = CASE 
+					WHEN exit_price IS NOT NULL AND stop_price IS NOT NULL AND stop_price != entry_price THEN
+						CASE 
+							WHEN direction = 'LONG' THEN (exit_price - entry_price) / (entry_price - stop_price)
+							WHEN direction = 'SHORT' THEN (entry_price - exit_price) / (stop_price - entry_price)
+						END
+					ELSE NULL
+				END
+			WHERE r_multiple IS NULL OR qty IS NULL OR qty = 0;
+		`)
+		
+		const pnlRes = await pool.query(`
+			UPDATE paper_trades
+			SET realized_pnl = CASE
+				WHEN exit_price IS NOT NULL AND direction = 'LONG' THEN (exit_price - entry_price) * qty
+				WHEN exit_price IS NOT NULL AND direction = 'SHORT' THEN (entry_price - exit_price) * qty
+				ELSE realized_pnl
+			END
+			WHERE exit_price IS NOT NULL;
+		`)
+		
+		console.log(`[API Server] ✅ Backfilled ${backfillRes.rowCount} trades with R-Multiple/Size. Adjusted PnL for ${pnlRes.rowCount} trades.`)
+	} catch (err) {
+		console.error('[API Server] ❌ Migration failed:', err)
+	}
 
 	try {
 		const port = 8080

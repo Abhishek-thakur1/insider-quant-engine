@@ -53,6 +53,14 @@ class PositionTracker {
 		this.openPositions.set(pos.symbol, existing)
 	}
 
+	public getOpenPositions(): OpenPosition[] {
+		return Array.from(this.openPositions.values()).flat()
+	}
+
+	public getCurrentNotional(): number {
+		return this.getOpenPositions().reduce((sum, pos) => sum + (pos.entryPrice * pos.size), 0)
+	}
+
 	public async registerTrade(pos: OpenPosition) {
 		// Save to Redis for persistence and API access
 		await redisClient.hSet('trades:open', pos.id, JSON.stringify(pos))
@@ -63,9 +71,9 @@ class PositionTracker {
 		try {
 			await pool.query(
 				`INSERT INTO paper_trades (
-					symbol, detector, direction, entry_price, entry_time, stop_price, target_price, status, regime_class, gated
-				) VALUES ($1, $2, $3, $4, to_timestamp($5 / 1000.0), $6, $7, 'OPEN', $8, $9)`,
-				[pos.symbol, pos.detectorName, pos.side, pos.entryPrice, pos.timestamp, pos.stopLoss, pos.target, pos.regimeClass || null, pos.gated || false]
+					symbol, detector, direction, entry_price, entry_time, stop_price, target_price, status, regime_class, gated, qty
+				) VALUES ($1, $2, $3, $4, to_timestamp($5 / 1000.0), $6, $7, 'OPEN', $8, $9, $10)`,
+				[pos.symbol, pos.detectorName, pos.side, pos.entryPrice, pos.timestamp, pos.stopLoss, pos.target, pos.regimeClass || null, pos.gated || false, pos.size]
 			)
 		} catch (dbErr) {
 			console.error('[PositionTracker] ❌ Postgres insert error:', dbErr)
@@ -132,11 +140,15 @@ class PositionTracker {
 
 				// Update Postgres
 				try {
+					const r_multiple = pos.side === 'LONG' 
+						? (closedPos.exitPrice - pos.entryPrice) / (pos.entryPrice - pos.stopLoss)
+						: (pos.entryPrice - closedPos.exitPrice) / (pos.stopLoss - pos.entryPrice);
+						
 					await pool.query(
 						`UPDATE paper_trades 
-						 SET exit_price = $1, exit_time = to_timestamp($2 / 1000.0), realized_pnl = $3, status = 'CLOSED' 
-						 WHERE symbol = $4 AND status = 'OPEN' AND entry_time = to_timestamp($5 / 1000.0)`,
-						[closedPos.exitPrice, closedPos.exitTimestamp, closedPos.pnl, pos.symbol, pos.timestamp]
+						 SET exit_price = $1, exit_time = to_timestamp($2 / 1000.0), realized_pnl = $3, status = 'CLOSED', r_multiple = $4 
+						 WHERE symbol = $5 AND status = 'OPEN' AND entry_time = to_timestamp($6 / 1000.0)`,
+						[closedPos.exitPrice, closedPos.exitTimestamp, closedPos.pnl, r_multiple, pos.symbol, pos.timestamp]
 					)
 				} catch (dbErr) {
 					console.error('[PositionTracker] ❌ Postgres update error:', dbErr)
