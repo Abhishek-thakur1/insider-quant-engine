@@ -267,8 +267,23 @@ export const startLiveEngine = async () => {
 		skt.subscribe([...activeUniverse, NIFTY_SYMBOL, ...subscribedOptionSymbols])
 	})
 
+	let lastTickTime = Date.now()
+	const WATCHDOG_TIMEOUT_MS = 30000 // 30 seconds without data is a dead socket
+
+	const watchdog = setInterval(() => {
+		if (isShuttingDown) return
+		if (Date.now() - lastTickTime > WATCHDOG_TIMEOUT_MS) {
+			console.error('[Watchdog] ⚠️ No ticks received for 30 seconds! Zombie connection detected. Forcing reconnect...')
+			lastTickTime = Date.now() // Reset to prevent spamming
+			try {
+				skt.close() // Forces the built-in autoreconnect(5) to trigger
+			} catch {}
+		}
+	}, 10000)
+
 	skt.on('message', (rawMessage: any) => {
 		if (!rawMessage || isShuttingDown) return
+		lastTickTime = Date.now()
 
 		let ticks: any[] = []
 		try {
@@ -313,6 +328,7 @@ export const startLiveEngine = async () => {
 	const shutdown = async (signal: string) => {
 		if (isShuttingDown) return
 		isShuttingDown = true
+		clearInterval(watchdog)
 		console.log(`\n[Engine] 🛑 ${signal} received. Shutting down gracefully...`)
 		try {
 			skt.close()
