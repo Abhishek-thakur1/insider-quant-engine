@@ -149,21 +149,25 @@ export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
 			qty = Math.floor(maxSingleName / entry)
 		}
 
-		// Apply Concurrent Capital Cap
+		// Evaluate Concurrent Capital Cap
 		const currentNotional = positionTracker.getCurrentNotional()
 		const availableHeadroom = capitalBase - currentNotional
+		let telegramQty = qty
 		let sizeNote = ''
+		let capitalGated = false
+		let skipAlert = false
 		
 		if (qty * entry > availableHeadroom) {
+			capitalGated = true
 			if (ENV.CAPITAL_CONSTRAINT_BEHAVIOR === 'SKIP') {
-				console.warn(`[PositionSizing] ⏭️ Skipped ${data.symbol}: Reached capital cap (Available: ₹${availableHeadroom.toFixed(0)}, Required: ₹${(qty * entry).toFixed(0)})`)
-				return
+				console.warn(`[PositionSizing] ⏭️ Skipped alert for ${data.symbol}: Reached capital cap (Available: ₹${availableHeadroom.toFixed(0)}, Required: ₹${(qty * entry).toFixed(0)})`)
+				skipAlert = true
 			} else { // REDUCE
-				qty = Math.floor(availableHeadroom / entry)
+				telegramQty = Math.floor(availableHeadroom / entry)
 				sizeNote = `\n⚠️ *Size reduced to fit ₹1L capital cap*`
-				if (qty < 1) {
-					console.warn(`[PositionSizing] ⏭️ Skipped ${data.symbol}: Capital exhausted.`)
-					return
+				if (telegramQty < 1) {
+					console.warn(`[PositionSizing] ⏭️ Skipped alert for ${data.symbol}: Capital exhausted.`)
+					skipAlert = true
 				}
 			}
 		}
@@ -177,14 +181,17 @@ export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
 			target: target1, // We track Target 1 for the PnL hit
 			timestamp: Date.now(),
 			detectorName: data.detectorName || 'UNKNOWN',
-			size: qty, 
+			size: qty, // Full unconstrained size for historical significance testing
 			regimeClass: data.regimeClass || decision?.regime || 'UNIVERSAL',
-			gated: decision?.passed || false
+			gated: decision?.passed || false,
+			capitalGated
 		})
+
+		if (skipAlert) return
 
 		const scoreNote = decision
 			? `\n\n🧮 *Confirmation Score: ${decision.score}/100*${decision.shadowMode && !decision.passed ? ' ⚠️ SHADOW — below threshold' : ''}\n• Regime: ${decision.regime} (H=${decision.entropy.toFixed(2)})\n• Bayesian P(win): ${(decision.posterior * 100).toFixed(0)}%\n• EV: ₹${decision.ev.toFixed(0)} | Half-Kelly: ${(decision.kellyHalf * 100).toFixed(1)}%\n• ${decision.positionNote}${sizeNote}`
-			: `\n\n🧮 *Size:* ${qty} shares${sizeNote}`
+			: `\n\n🧮 *Size:* ${telegramQty} shares${sizeNote}`
 
 		let message = ''
 

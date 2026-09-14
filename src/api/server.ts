@@ -49,7 +49,8 @@ fastify.get('/api/today', async (request, reply) => {
 			target: Number(r.target_price),
 			stopLoss: Number(r.stop_price),
 			detectorName: r.detector,
-			size: Number(r.qty) || 100
+			size: Number(r.qty) || 100,
+			capitalGated: r.capital_gated || false
 		}))
 	}
 })
@@ -93,7 +94,8 @@ fastify.get('/api/trades/history', async (request, reply) => {
 			regimeClass: r.regime_class,
 			gated: r.gated,
 			size: Number(r.qty) || 100,
-			r_multiple: r.r_multiple ? Number(r.r_multiple) : undefined
+			r_multiple: r.r_multiple ? Number(r.r_multiple) : undefined,
+			capitalGated: r.capital_gated || false
 		}))
 	}
 })
@@ -149,6 +151,7 @@ const startServer = async () => {
 		console.log('[API Server] 🔄 Checking and backfilling paper_trades schema...')
 		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS r_multiple NUMERIC(10,2)`)
 		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS qty NUMERIC(10,2)`)
+		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS capital_gated BOOLEAN DEFAULT FALSE`)
 		
 		const backfillRes = await pool.query(`
 			UPDATE paper_trades
