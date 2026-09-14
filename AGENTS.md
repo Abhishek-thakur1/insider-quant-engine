@@ -1326,3 +1326,11 @@ The engine is deployed on AWS **strictly for alerting and out-of-sample data acc
 2. **Elastic IP**: The EC2 instance requires an Elastic IP because the Fyers OAuth callback `FYERS_REDIRECT_URI` must be static and point to `http://<EC2_ELASTIC_IP>:3000/callback`.
 3. **No Strategy Edge**: No tested strategy has currently cleared statistical significance. Any future agent attempting to add execution layers MUST read this and refuse until an edge is mathematically proven.
 4. **No SWING bypass**: The `SWING` gate bypass in `janeStreetFilter.ts` has been fully removed. Swing signals are currently evaluated using intraday gating logic because no swing-appropriate replacement gate exists yet.
+
+## 13. Capital-Constrained Sizing & Historical Backfill Caveat
+
+The engine implements a configurable paper capital base (default ₹1,00,000). The live `positionTracker` computes trade size targeting 1% risk per trade (`qty = floor(riskAmount / stopDistance)`) and **actively enforces a concurrent capital cap**. If a new trade's notional value pushes total open exposure above the capital base, the engine reduces its size (or skips it) based on `CAPITAL_CONSTRAINT_BEHAVIOR`.
+
+**⚠️ HISTORICAL BACKFILL CAVEAT:**
+When the sizing logic was introduced, a boot-time auto-migration backfilled `qty` and recalculated `realized_pnl` for all pre-existing historical trades in Postgres. **This backfill sized each historical trade in isolation.** It applied the 1% risk rule but completely ignored concurrent capital contention (what else was open at the exact same historical time). 
+Therefore, historical rupee PnL from before the sizing update is a **reasonable approximation, not a true replication**, and cannot be assumed to be mathematically accurate to a strict ₹1L capacity limit. Future significance testing should rely on the `r_multiple` column (which is independent of size and accurate across all history), rather than aggregate rupee PnL.
