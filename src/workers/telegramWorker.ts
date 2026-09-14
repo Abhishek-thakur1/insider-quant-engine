@@ -184,7 +184,8 @@ export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
 			size: qty, // Full unconstrained size for historical significance testing
 			regimeClass: data.regimeClass || decision?.regime || 'UNIVERSAL',
 			gated: decision?.passed || false,
-			capitalGated
+			capitalGated,
+			actualSize: skipAlert ? 0 : telegramQty
 		})
 
 		if (skipAlert) return

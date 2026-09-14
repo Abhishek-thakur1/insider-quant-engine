@@ -50,7 +50,8 @@ fastify.get('/api/today', async (request, reply) => {
 			stopLoss: Number(r.stop_price),
 			detectorName: r.detector,
 			size: Number(r.qty) || 100,
-			capitalGated: r.capital_gated || false
+			capitalGated: r.capital_gated || false,
+			actualSize: r.actual_size !== null ? Number(r.actual_size) : (Number(r.qty) || 100)
 		}))
 	}
 })
@@ -95,7 +96,8 @@ fastify.get('/api/trades/history', async (request, reply) => {
 			gated: r.gated,
 			size: Number(r.qty) || 100,
 			r_multiple: r.r_multiple ? Number(r.r_multiple) : undefined,
-			capitalGated: r.capital_gated || false
+			capitalGated: r.capital_gated || false,
+			actualSize: r.actual_size !== null ? Number(r.actual_size) : (Number(r.qty) || 100)
 		}))
 	}
 })
@@ -152,6 +154,7 @@ const startServer = async () => {
 		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS r_multiple NUMERIC(10,2)`)
 		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS qty NUMERIC(10,2)`)
 		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS capital_gated BOOLEAN DEFAULT FALSE`)
+		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS actual_size NUMERIC(10,2)`)
 		
 		const backfillRes = await pool.query(`
 			UPDATE paper_trades
@@ -171,6 +174,8 @@ const startServer = async () => {
 				END
 			WHERE r_multiple IS NULL OR qty IS NULL OR qty = 0;
 		`)
+		
+		await pool.query(`UPDATE paper_trades SET actual_size = qty WHERE actual_size IS NULL;`)
 		
 		const pnlRes = await pool.query(`
 			UPDATE paper_trades

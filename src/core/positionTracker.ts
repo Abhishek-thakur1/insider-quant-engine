@@ -15,6 +15,7 @@ export interface OpenPosition {
 	regimeClass?: string
 	gated?: boolean
 	capitalGated?: boolean
+	actualSize?: number
 }
 
 export interface ClosedPosition extends OpenPosition {
@@ -59,9 +60,7 @@ class PositionTracker {
 	}
 
 	public getCurrentNotional(): number {
-		return this.getOpenPositions()
-			.filter(pos => !pos.capitalGated)
-			.reduce((sum, pos) => sum + (pos.entryPrice * pos.size), 0)
+		return this.getOpenPositions().reduce((sum, pos) => sum + (pos.entryPrice * (pos.actualSize ?? pos.size)), 0)
 	}
 
 	public async registerTrade(pos: OpenPosition) {
@@ -74,9 +73,9 @@ class PositionTracker {
 		try {
 			await pool.query(
 				`INSERT INTO paper_trades (
-					symbol, detector, direction, entry_price, entry_time, stop_price, target_price, status, regime_class, gated, qty, capital_gated
-				) VALUES ($1, $2, $3, $4, to_timestamp($5 / 1000.0), $6, $7, 'OPEN', $8, $9, $10, $11)`,
-				[pos.symbol, pos.detectorName, pos.side, pos.entryPrice, pos.timestamp, pos.stopLoss, pos.target, pos.regimeClass || null, pos.gated || false, pos.size, pos.capitalGated || false]
+					symbol, detector, direction, entry_price, entry_time, stop_price, target_price, status, regime_class, gated, qty, capital_gated, actual_size
+				) VALUES ($1, $2, $3, $4, to_timestamp($5 / 1000.0), $6, $7, 'OPEN', $8, $9, $10, $11, $12)`,
+				[pos.symbol, pos.detectorName, pos.side, pos.entryPrice, pos.timestamp, pos.stopLoss, pos.target, pos.regimeClass || null, pos.gated || false, pos.size, pos.capitalGated || false, pos.actualSize ?? pos.size]
 			)
 		} catch (dbErr) {
 			console.error('[PositionTracker] ❌ Postgres insert error:', dbErr)
