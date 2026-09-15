@@ -14,13 +14,25 @@ const subscriber = redisClient.duplicate()
 subscriber.on('error', (err) => console.error('[Redis SSE] Subscriber Error:', err))
 
 const clients = new Set<any>()
+const livePnlCache: Record<string, any> = {}
 
 // Connect Subscriber
 const bootSubscriber = async () => {
 	await subscriber.connect()
 	await subscriber.subscribe('sse:events', (message) => {
+		try {
+			const parsed = JSON.parse(message)
+			if (parsed.type === 'pnl_update') {
+				livePnlCache[parsed.data.symbol] = parsed.data.unrealizedPnl
+			} else if (parsed.type === 'signal_event' && (parsed.data.status === 'CLOSED' || parsed.data.exitPrice)) {
+				delete livePnlCache[parsed.data.symbol]
+			}
+		} catch(e) {}
+
 		for (const client of clients) {
-			client.raw.write(`data: ${message}\n\n`)
+			client.raw.write(`data: ${message}
+
+`)
 		}
 	})
 	console.log('🟢 [API Server] Subscribed to sse:events channel')
@@ -102,6 +114,11 @@ fastify.get('/api/trades/history', async (request, reply) => {
 	}
 })
 
+// REST: Get Live PnL (for Polling Fallback)
+fastify.get('/api/live-pnl', async (request, reply) => {
+	return { success: true, data: livePnlCache }
+})
+
 // REST: Get Heatmap Data (Daily signal counts)
 fastify.get('/api/trades/heatmap', async (request, reply) => {
 	const sql = `
@@ -125,7 +142,7 @@ fastify.get('/api/trades/heatmap', async (request, reply) => {
 })
 
 // SSE Stream Endpoint
-fastify.get('/api/stream', (request, reply) => {
+fastify.get('/api/events', (request, reply) => {
 	reply.raw.writeHead(200, {
 		'Content-Type': 'text/event-stream',
 		'Cache-Control': 'no-cache',
