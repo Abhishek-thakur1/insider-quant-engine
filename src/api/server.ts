@@ -79,7 +79,7 @@ fastify.get('/api/trades/history', async (request, reply) => {
 	
 	if (date) {
 		params.push(date)
-		sql += ` AND entry_time::date = $${params.length}`
+		sql += ` AND exit_time::date = $${params.length}`
 	}
 	
 	if (detector) {
@@ -123,11 +123,12 @@ fastify.get('/api/live-pnl', async (request, reply) => {
 fastify.get('/api/trades/heatmap', async (request, reply) => {
 	const sql = `
 		SELECT 
-			entry_time::date as date, 
+			exit_time::date as date, 
 			COUNT(*) as count
 		FROM paper_trades 
-		GROUP BY entry_time::date
-		ORDER BY entry_time::date DESC
+		WHERE status = 'CLOSED'
+		GROUP BY exit_time::date
+		ORDER BY exit_time::date DESC
 		LIMIT 100
 	`
 	const res = await pool.query(sql)
