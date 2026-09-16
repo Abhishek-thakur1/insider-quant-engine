@@ -307,6 +307,12 @@ export class StockMomentumBreakoutDetector implements IDetector {
 		setupNote: string,
 		stockOpen: number | null,
 	): Promise<void> {
+		// [URGENT BUG] Pausing all SHORT signal generation pending corruption investigation
+		if (side === 'SHORT') {
+			console.log(`[Detector] StockMomentumBreakout: Blocked SHORT signal for ${this.symbol} (disabled)`)
+			return
+		}
+
 		const entry = candle.close
 		const vwapRef = vwap ?? entry
 
