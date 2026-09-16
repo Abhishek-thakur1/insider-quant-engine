@@ -43,7 +43,6 @@ fastify.get('/api/today', async (request, reply) => {
 	const openRes = await pool.query(`
 		SELECT * FROM paper_trades 
 		WHERE status = 'OPEN' 
-		AND entry_time >= current_date
 		ORDER BY entry_time DESC
 	`)
 	
