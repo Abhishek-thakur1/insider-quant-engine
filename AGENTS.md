@@ -22,7 +22,7 @@
 | Broker / data | Fyers API v3 (`fyers-api-v3`) — REST for historical candles, WebSocket for ticks |
 | State store | Redis (`redis` npm client, **not** ioredis, despite ioredis being in `package.json`) |
 | Output channel | Telegram — two IDs: `TELEGRAM_ADMIN_ID` (private control) and `TELEGRAM_CHANNEL_ID` (public alerts) |
-| Tests | `npm test` → 53 cases (node:test via tsx): the REGIME hard gate, plus the backtest harness and an end-to-end replay. Was previously a deliberate failure stub. |
+| Tests | `npm test` → 69 cases (node:test via tsx): REGIME hard gate, backtest harness, end-to-end replay, and SHORT-direction geometry regression tests (`tests/shortDirectionGeometry.test.ts`). |
 | Lint / format | `npm run check` = prettier + eslint + tests. `npm run typecheck` = `tsc --noEmit --types node` (0 errors). Tabs, no semicolons, single quotes, 100 cols (`.prettierrc`). |
 | Big caveat #1 | Of 26 detector classes, **8 are live**. 15 are archived under `src/detectors/deprecated/`, and 3 more are dormant but still in `src/detectors/`. See §4. |
 | Big caveat #2 | Most files carry a large **commented-out previous version** at the bottom. Always confirm you are editing live code, not the archive block. |
@@ -459,7 +459,7 @@ volatility  = population stddev = sqrt( Σ(v − μ)² / n )
 
 `RegimeCheckResult.classificationSource` reports which path was taken
 (`'explicit' | 'name' | 'trigger' | 'default'`) and is appended to the REGIME breakdown reason, so
-anything other than `explicit` is visible in `jsfilter:decisions`. Guessing from trigger text was
+anything other than `explicit` is visible in `jsfilter:decisions`, `jsfilter:stats`, `trades:open`, `pnl:daily`. Guessing from trigger text was
 the cause of two real misclassifications — see §6.9.
 
 `checkRegimeCompatibility(regime, entropy, name?, trigger?)`:
@@ -1023,7 +1023,7 @@ consequences:
 
 Fixed by the explicit `regimeClass` tag (§3.8), with the live names added to the pattern arrays as a
 safety net and `classificationSource` exposed so any future silent fallback shows up in
-`jsfilter:decisions`. Covered by `tests/regimeGate.test.ts`, including a regression test for each.
+`jsfilter:decisions`, `jsfilter:stats`, `trades:open`, `pnl:daily`. Covered by `tests/regimeGate.test.ts`, including a regression test for each.
 
 **Behaviour change to watch:** four detectors moved UNIVERSAL → MOMENTUM, so they are now suppressed
 in `ranging` and half-sized in `transition`; `OiLiquiditySweep` moved REVERSION → UNIVERSAL, so it
@@ -1123,7 +1123,7 @@ Boot cleanup in `websocket.ts` deletes, per symbol: `cooldown:v2:momentum:*`, `v
 `v2:cooldown:vcp:*`, `v2:cooldown:gapgo:*`, `v2:vcp_history:*`; and globally:
 `cooldown:v2:nifty_pulse`, `cooldown:v2:vwap_reclaim`, `cooldown:v2:nifty_ore`, `cooldown:oi_sweep`,
 `cooldown:delta_squeeze`, `market:nifty:bias`, `regime:nifty:returns_1min`, `regime:nifty:current`,
-`jsfilter:decisions`.
+`jsfilter:decisions`, `jsfilter:stats`, `trades:open`, `pnl:daily`.
 
 It does **not** clear `vwap:*` (correct — the seeder owns those), `orb:*`, `HTF_TREND:*`, or the
 in-memory `optionTickStore` / `candleAggregator` / `bosStreak` (irrelevant on a fresh process, but
@@ -1268,7 +1268,7 @@ chop, more OI-sweep alerts in trends.
 
 ### 11.3 What is verified, and what is not
 
-**Verified:** `npm run typecheck` → 0 errors. `npm test` → 53/53. `npm run lint` runs (9 errors
+**Verified:** `npm run typecheck` → 0 errors. `npm test` → 69/69. `npm run lint` runs (9 errors
 remain, all pre-existing: 2 in the dead `src/index.ts` stub, 7 in `deprecated/`). The backtest
 replays 40 synthetic sessions / 75,000 bars / 300,000 ticks / 953 signals in ~14s with real
 detectors firing through the real gating chain.
@@ -1335,3 +1335,97 @@ The engine implements a configurable paper capital base (default ₹1,00,000). T
 When the sizing logic was introduced (Sep 14, 2026), a boot-time auto-migration backfilled `qty` (unconstrained size) and `actual_size` (capital-constrained executed size), and recalculated `realized_pnl` for all pre-existing historical trades in Postgres. **This backfill sized each historical trade in isolation.** There was no chronological replay of concurrent capital. As a result, for all trades prior to Sep 14, 2026, `actual_size` is just a direct copy of `qty`.
 
 Because it completely ignored concurrent capital contention, historical rupee PnL prior to Sep 14, 2026 is a **reasonable approximation, not a true replication**. Dashboard PnL only becomes strictly realistic to the REDUCE/SKIP constraint for trades occurring *after* this feature went live. Future significance testing should rely on the `r_multiple` column (which is independent of size and strictly accurate), rather than aggregate rupee PnL.
+
+---
+
+## 14. Paper-trade Postgres schema (paper_trades) — full column reference
+
+Maintained by db/init.sql (static) and the runtime ALTER TABLE block in src/api/server.ts (idempotent, runs on every API container start).
+
+| Column | Type | Written by | Notes |
+|---|---|---|---|
+| id | SERIAL PK | Postgres | Auto-increment |
+| symbol | TEXT | positionTracker.registerTrade | |
+| detector | TEXT | positionTracker.registerTrade | e.g. "Stock Momentum Breakout" |
+| direction | TEXT | positionTracker.registerTrade | LONG or SHORT |
+| ntry_price | NUMERIC | positionTracker.registerTrade | |
+| ntry_time | TIMESTAMPTZ | positionTracker.registerTrade | Used by positionTracker UPDATE WHERE clause |
+| stop_price | NUMERIC | positionTracker.registerTrade | |
+| 	arget_price | NUMERIC | positionTracker.registerTrade | |
+| xit_price | NUMERIC NULL | positionTracker.processTick | NULL while OPEN |
+| xit_time | TIMESTAMPTZ NULL | positionTracker.processTick | NULL while OPEN; **primary filter for history/heatmap queries** |
+| xit_reason | TEXT NULL | positionTracker.processTick | STOP_LOSS, TARGET, or EOD_EXPIRED |
+| status | TEXT | both | OPEN or CLOSED |
+| ealized_pnl | NUMERIC NULL | positionTracker.processTick | NULL while OPEN |
+| egime_class | TEXT NULL | positionTracker.registerTrade | Regime at entry time |
+| gated | BOOLEAN | positionTracker.registerTrade | Whether JaneStreetFilter passed |
+| qty | NUMERIC(10,2) | migration / egisterTrade | Unconstrained theoretical size |
+| capital_gated | BOOLEAN | positionTracker.registerTrade | True if size was zeroed by capital constraint |
+| ctual_size | NUMERIC(10,2) | migration / egisterTrade | Real executed size (may be 0 if cap-gated) |
+| _multiple | NUMERIC(10,2) NULL | positionTracker.processTick | (exit-entry)/|entry-sl|; NULL if sl==entry; clamped away from Infinity/NaN |
+| duration_class | TEXT NULL | positionTracker.registerTrade | INTRADAY or SWING; derived from detector at signal time |
+| created_at | TIMESTAMPTZ | Postgres | DEFAULT now() |
+
+**Indexes on paper_trades:**
+
+| Index | Column(s) | Notes |
+|---|---|---|
+| idx_trades_entry_time | ntry_time | Used by positionTracker UPDATE WHERE |
+| idx_trades_exit_time | xit_time DESC | Primary filter for history/heatmap (exit-date bucketing) |
+| idx_trades_status | status | WHERE status = 'OPEN' / 'CLOSED' scans |
+| idx_trades_symbol | symbol | positionTracker UPDATE WHERE |
+| idx_trades_detector | detector | Per-detector history filter |
+| idx_trades_open | ntry_time DESC WHERE status='OPEN' | Fast scan of live positions; partial index |
+
+**Dangling-OPEN cleanup:** On every API container start, server.ts runs:
+`sql
+UPDATE paper_trades
+SET status='CLOSED', exit_price=entry_price, exit_time=now(), realized_pnl=0,
+    exit_reason='EOD_EXPIRED', r_multiple=0
+WHERE status='OPEN' AND entry_time::date < CURRENT_DATE
+`
+This closes any position that was still OPEN from a prior day (engine stopped at 15:30 before the position hit SL/target).
+
+**duration_class classification** — sourced from the detector at signal time, hardcoded in egisterTrade:
+- StockMomentumBreakoutDetector → SWING (set at line ~358 of the detector; also hardcodes durationClass: 'SWING' on AlertPayload which permanently bypasses bayesianEngine time-of-day restriction — see §3.9)
+- All Nifty detectors, GapAndGoMomentum, VolatilityContraction → INTRADAY (default)
+- Backfill: migration classifies existing rows using ILIKE '%Momentum%' / ILIKE '%VCP%'
+
+---
+
+## 11.6 What changed in the full-audit session (Sept 24, 2026)
+
+Commit 0d51fc on 2. All changes are additive / fixes only — no new detectors, no threshold changes.
+
+### Engine (src/)
+
+| File | Change |
+|---|---|
+| db/init.sql | Added duration_class TEXT, xit_reason TEXT columns; added idx_trades_exit_time, idx_trades_status, idx_trades_symbol, idx_trades_open indexes |
+| src/api/server.ts | Migration block: adds duration_class, xit_reason columns; creates the 4 new indexes; backfills duration_class for existing rows; closes dangling OPEN rows from prior days (EOD_EXPIRED); exposes durationClass and xitReason in all REST responses; null-safe xitTimestamp in history endpoint |
+| src/core/positionTracker.ts | Added durationClass to OpenPosition interface; writes duration_class in egisterTrade INSERT; fixed _multiple division-by-zero (guard denominator !== 0, clamp Infinity/NaN to null); writes xit_reason in processTick UPDATE; fixed unrealized PnL to use ctualSize (was using raw size) |
+| src/ingestion/websocket.ts | Added jsfilter:stats to boot-cleanup Promise.all — was accumulating across sessions |
+| src/detectors/v2/stockMomentumBreakoutDetector.ts | Removed emergency SHORT pause guard (lines 310–314). Investigation confirmed _fire() was always geometrically correct for SHORT. Added explanatory comment pointing to test file. |
+| src/workers/telegramWorker.ts | Fixed TELEGRAM_CHANNEL_ID → ENV.TELEGRAM_CHANNEL_ID (pre-existing bare reference; caused type error, would error at runtime on skip-alert path) |
+| 	ests/shortDirectionGeometry.test.ts | **New file.** 13 tests asserting SHORT levels satisfy 	arget < entry < stop and LONG levels satisfy stop < entry < target across StockMomentumBreakout, NiftyORE, NiftyTrendPulse, and the processTick exit-check conditionals. |
+
+### What was investigated and confirmed **not** a bug
+- _fire() SHORT geometry: sl = candle.high * 1.0015 (above entry ✓), 	1 = entry - risk * 1.5 (below entry ✓), isk = Math.abs(entry - sl) (safe ✓). Historical SHORT trades: none found with 	arget_price > entry_price or stop_price < entry_price.
+- (Number(r.qty) || 100) fallback in server.ts: intentional stub for pre-sizing-era rows. Documented.
+- The four ₹0-PnL trades: confirmed capitalGated: true, ctualSize: 0, PnL = (exit - entry) * 0 = 0. Not a bug.
+
+### Dashboard (insider-quant-dashboard, commit eec74d on main)
+
+Full rewrite of App.tsx:
+
+| Bug | Fix |
+|---|---|
+| "Trade History" nav view showed only chart, no trades | Dedicated currentView === 'history' section renders full trade list, split by INTRADAY/SWING |
+| Detector dropdown emptied after filtering | Added separate llDetectors fetch from unfiltered history; dropdown never collapses |
+| ormat(new Date(t.exitTimestamp), 'HH:mm') crash on null exitTimestamp | safeDate() guard; chart data filters null exitTimestamp before mapping |
+| cumulative += t.pnl → NaN when pnl is null | cumulative += t.pnl ?? 0 |
+| SHORT modal: target fallback was ntryPrice * 1.05 (long-shaped) | Direction-aware: SHORT target = ntryPrice * 0.95, stop = ntryPrice * 1.05 |
+| Search bar was uncontrolled, no filtering | Controlled searchQuery state; filters ilteredHistory by symbol and detector name |
+| No INTRADAY/SWING split anywhere | PnL card shows combined total + INTRADAY/SWING breakdown sub-cards; Trade History view groups by duration_class; Performance view has INTRADAY/SWING split panel; Stats computed per-class |
+| xitTimestamp in server.ts was 
+ew Date(null).getTime() = 0 | .exit_time ? new Date(r.exit_time).getTime() : null |
