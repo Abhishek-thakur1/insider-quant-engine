@@ -16,6 +16,7 @@ export interface OpenPosition {
 	gated?: boolean
 	capitalGated?: boolean
 	actualSize?: number
+	durationClass?: 'INTRADAY' | 'SWING'
 }
 
 export interface ClosedPosition extends OpenPosition {
@@ -73,9 +74,9 @@ class PositionTracker {
 		try {
 			await pool.query(
 				`INSERT INTO paper_trades (
-					symbol, detector, direction, entry_price, entry_time, stop_price, target_price, status, regime_class, gated, qty, capital_gated, actual_size
-				) VALUES ($1, $2, $3, $4, to_timestamp($5 / 1000.0), $6, $7, 'OPEN', $8, $9, $10, $11, $12)`,
-				[pos.symbol, pos.detectorName, pos.side, pos.entryPrice, pos.timestamp, pos.stopLoss, pos.target, pos.regimeClass || null, pos.gated || false, pos.size, pos.capitalGated || false, pos.actualSize ?? pos.size]
+					symbol, detector, direction, entry_price, entry_time, stop_price, target_price, status, regime_class, gated, qty, capital_gated, actual_size, duration_class
+				) VALUES ($1, $2, $3, $4, to_timestamp($5 / 1000.0), $6, $7, 'OPEN', $8, $9, $10, $11, $12, $13)`,
+				[pos.symbol, pos.detectorName, pos.side, pos.entryPrice, pos.timestamp, pos.stopLoss, pos.target, pos.regimeClass || null, pos.gated || false, pos.size, pos.capitalGated || false, pos.actualSize ?? pos.size, pos.durationClass || 'INTRADAY']
 			)
 		} catch (dbErr) {
 			console.error('[PositionTracker] ❌ Postgres insert error:', dbErr)
@@ -121,8 +122,8 @@ class PositionTracker {
 
 			if (isClosed && exitReason) {
 				const executedSize = pos.actualSize ?? pos.size;
-				const pnl = pos.side === 'LONG' 
-					? (ltp - pos.entryPrice) * executedSize 
+				const pnl = pos.side === 'LONG'
+					? (ltp - pos.entryPrice) * executedSize
 					: (pos.entryPrice - ltp) * executedSize
 
 				const closedPos: ClosedPosition = {
@@ -143,15 +144,25 @@ class PositionTracker {
 
 				// Update Postgres
 				try {
-					const r_multiple = pos.side === 'LONG' 
-						? (closedPos.exitPrice - pos.entryPrice) / (pos.entryPrice - pos.stopLoss)
-						: (pos.entryPrice - closedPos.exitPrice) / (pos.stopLoss - pos.entryPrice);
-						
+					// Guard against division by zero: if SL === entry, r_multiple is undefined
+					const denominator = pos.side === 'LONG'
+						? (pos.entryPrice - pos.stopLoss)
+						: (pos.stopLoss - pos.entryPrice)
+					const r_multiple_raw = denominator !== 0
+						? (pos.side === 'LONG'
+							? (closedPos.exitPrice - pos.entryPrice) / denominator
+							: (pos.entryPrice - closedPos.exitPrice) / denominator)
+						: null
+					// Clamp: discard Infinity/NaN which crash Postgres NUMERIC(10,2)
+					const r_multiple = r_multiple_raw !== null && isFinite(r_multiple_raw)
+						? Number(r_multiple_raw.toFixed(4))
+						: null
+
 					await pool.query(
 						`UPDATE paper_trades 
-						 SET exit_price = $1, exit_time = to_timestamp($2 / 1000.0), realized_pnl = $3, status = 'CLOSED', r_multiple = $4 
-						 WHERE symbol = $5 AND status = 'OPEN' AND entry_time = to_timestamp($6 / 1000.0)`,
-						[closedPos.exitPrice, closedPos.exitTimestamp, closedPos.pnl, r_multiple, pos.symbol, pos.timestamp]
+						 SET exit_price = $1, exit_time = to_timestamp($2 / 1000.0), realized_pnl = $3, status = 'CLOSED', r_multiple = $4, exit_reason = $5
+						 WHERE symbol = $6 AND status = 'OPEN' AND entry_time = to_timestamp($7 / 1000.0)`,
+						[closedPos.exitPrice, closedPos.exitTimestamp, closedPos.pnl, r_multiple, exitReason, pos.symbol, pos.timestamp]
 					)
 				} catch (dbErr) {
 					console.error('[PositionTracker] ❌ Postgres update error:', dbErr)
@@ -165,19 +176,21 @@ class PositionTracker {
 				})).catch(() => {})
 			} else {
 				remaining.push(pos)
-				
+
 				// Throttle PnL updates to 1 per second per symbol
 				const now = Date.now()
 				if (now - this.lastPnlPublishTime.get(symbol)! > 1000 || !this.lastPnlPublishTime.has(symbol)) {
-					const unrealizedPnl = pos.side === 'LONG' 
-						? (ltp - pos.entryPrice) * pos.size 
-						: (pos.entryPrice - ltp) * pos.size
-					
+					// Use actualSize (real executed qty) not size (unconstrained qty)
+					const executedSize = pos.actualSize ?? pos.size
+					const unrealizedPnl = pos.side === 'LONG'
+						? (ltp - pos.entryPrice) * executedSize
+						: (pos.entryPrice - ltp) * executedSize
+
 					redisClient.publish('sse:events', JSON.stringify({
 						type: 'pnl_update',
 						data: { symbol: pos.symbol, currentPrice: ltp, unrealizedPnl, timestamp: tick.timestamp }
 					})).catch(() => {})
-					
+
 					this.lastPnlPublishTime.set(symbol, now)
 				}
 			}

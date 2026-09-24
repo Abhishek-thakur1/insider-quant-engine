@@ -191,7 +191,7 @@ export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
 		if (skipAlert) {
 			const message = `⏭️ *Trade Skipped: ${data.symbol}*\n\nCondition met, but skipped due to capital constraint (₹1L limit).`
 			try {
-				await bot.telegram.sendMessage(TELEGRAM_CHANNEL_ID, message, {
+				await bot.telegram.sendMessage(ENV.TELEGRAM_CHANNEL_ID, message, {
 					parse_mode: 'Markdown',
 				})
 			} catch (err) {

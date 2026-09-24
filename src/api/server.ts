@@ -62,7 +62,8 @@ fastify.get('/api/today', async (request, reply) => {
 			detectorName: r.detector,
 			size: Number(r.qty) || 100,
 			capitalGated: r.capital_gated || false,
-			actualSize: r.actual_size !== null ? Number(r.actual_size) : (Number(r.qty) || 100)
+			actualSize: r.actual_size !== null ? Number(r.actual_size) : (Number(r.qty) || 100),
+			durationClass: r.duration_class || 'INTRADAY',
 		}))
 	}
 })
@@ -101,14 +102,16 @@ fastify.get('/api/trades/history', async (request, reply) => {
 			exitPrice: Number(r.exit_price),
 			pnl: Number(r.realized_pnl),
 			timestamp: new Date(r.entry_time).getTime(),
-			exitTimestamp: new Date(r.exit_time).getTime(),
+			exitTimestamp: r.exit_time ? new Date(r.exit_time).getTime() : null,
 			detectorName: r.detector,
 			regimeClass: r.regime_class,
 			gated: r.gated,
 			size: Number(r.qty) || 100,
 			r_multiple: r.r_multiple ? Number(r.r_multiple) : undefined,
 			capitalGated: r.capital_gated || false,
-			actualSize: r.actual_size !== null ? Number(r.actual_size) : (Number(r.qty) || 100)
+			actualSize: r.actual_size !== null ? Number(r.actual_size) : (Number(r.qty) || 100),
+			durationClass: r.duration_class || 'INTRADAY',
+			exitReason: r.exit_reason || undefined,
 		}))
 	}
 })
@@ -165,14 +168,26 @@ const startServer = async () => {
 	await bootRedis()
 	await bootSubscriber()
 
-	// ── Auto-Migration & Backfill ──
+	// ── Auto-Migration & Schema Updates ──
 	try {
 		console.log('[API Server] 🔄 Checking and backfilling paper_trades schema...')
+
+		// Column additions (idempotent)
 		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS r_multiple NUMERIC(10,2)`)
 		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS qty NUMERIC(10,2)`)
 		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS capital_gated BOOLEAN DEFAULT FALSE`)
 		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS actual_size NUMERIC(10,2)`)
-		
+		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS duration_class TEXT`)
+		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS exit_reason TEXT`)
+
+		// Indexes (idempotent via IF NOT EXISTS)
+		await pool.query(`CREATE INDEX IF NOT EXISTS idx_trades_entry_time ON paper_trades (entry_time)`)
+		await pool.query(`CREATE INDEX IF NOT EXISTS idx_trades_exit_time  ON paper_trades (exit_time DESC)`)
+		await pool.query(`CREATE INDEX IF NOT EXISTS idx_trades_status     ON paper_trades (status)`)
+		await pool.query(`CREATE INDEX IF NOT EXISTS idx_trades_symbol     ON paper_trades (symbol)`)
+		await pool.query(`CREATE INDEX IF NOT EXISTS idx_trades_open       ON paper_trades (entry_time DESC) WHERE status = 'OPEN'`)
+
+		// Backfill qty and r_multiple for pre-sizing-era trades
 		const backfillRes = await pool.query(`
 			UPDATE paper_trades
 			SET 
@@ -194,9 +209,20 @@ const startServer = async () => {
 				END
 			WHERE r_multiple IS NULL OR qty IS NULL OR qty = 0;
 		`)
-		
+
 		await pool.query(`UPDATE paper_trades SET actual_size = qty WHERE actual_size IS NULL;`)
-		
+
+		// Backfill duration_class for existing trades based on known detector names
+		await pool.query(`
+			UPDATE paper_trades 
+			SET duration_class = CASE
+				WHEN detector ILIKE '%Momentum%' OR detector ILIKE '%VCP%' OR detector ILIKE '%Volatility_Contraction%' THEN 'SWING'
+				ELSE 'INTRADAY'
+			END
+			WHERE duration_class IS NULL
+		`)
+
+		// Backfill PnL using actual_size
 		const pnlRes = await pool.query(`
 			UPDATE paper_trades
 			SET realized_pnl = CASE
@@ -206,8 +232,24 @@ const startServer = async () => {
 			END
 			WHERE exit_price IS NOT NULL;
 		`)
-		
-		console.log(`[API Server] ✅ Backfilled ${backfillRes.rowCount} trades with R-Multiple/Size. Adjusted PnL for ${pnlRes.rowCount} trades.`)
+
+		// Mark stale OPEN trades (opened on a prior day) as expired breakeven closes
+		// so they don't dangle in Postgres forever with NULL exit columns.
+		// These were positions the engine held overnight but the exit condition
+		// was never met and the engine stopped (15:30 shutdown) before closing them.
+		const staleRes = await pool.query(`
+			UPDATE paper_trades
+			SET 
+				status = 'CLOSED',
+				exit_price = entry_price,
+				exit_time = now(),
+				realized_pnl = 0,
+				exit_reason = 'EOD_EXPIRED',
+				r_multiple = 0
+			WHERE status = 'OPEN' AND entry_time::date < CURRENT_DATE
+		`)
+
+		console.log(`[API Server] ✅ Migration complete. Backfilled ${backfillRes.rowCount} R/size, adjusted PnL for ${pnlRes.rowCount} trades, expired ${staleRes.rowCount} stale OPEN rows.`)
 	} catch (err) {
 		console.error('[API Server] ❌ Migration failed:', err)
 	}

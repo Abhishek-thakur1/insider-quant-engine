@@ -307,11 +307,8 @@ export class StockMomentumBreakoutDetector implements IDetector {
 		setupNote: string,
 		stockOpen: number | null,
 	): Promise<void> {
-		// [URGENT BUG] Pausing all SHORT signal generation pending corruption investigation
-		if (side === 'SHORT') {
-			console.log(`[Detector] StockMomentumBreakout: Blocked SHORT signal for ${this.symbol} (disabled)`)
-			return
-		}
+		// SHORT geometry is verified correct: sl = candle.high * 1.0015 (above entry),
+		// t1 = entry - risk * 1.5 (below entry). See tests/shortDirectionGeometry.test.ts.
 
 		const entry = candle.close
 		const vwapRef = vwap ?? entry

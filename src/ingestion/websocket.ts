@@ -160,7 +160,8 @@ export const startLiveEngine = async () => {
 		redisClient.del('regime:nifty:returns_1min'),
 		redisClient.del('regime:nifty:current'),
 		redisClient.del('jsfilter:decisions'),
-		redisClient.del('trades:open'), // Clear any dangling open trades from yesterday
+		redisClient.del('jsfilter:stats'),   // per-session fired/blocked tallies — reset daily
+		redisClient.del('trades:open'),
 		redisClient.del('pnl:daily'),
 	])
 
