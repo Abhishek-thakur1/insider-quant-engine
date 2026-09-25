@@ -306,7 +306,15 @@ export const startLiveEngine = async () => {
 
 	skt.on('connect', () => {
 		console.log('[Firehose] 🟢 Connected to Fyers Data Servers!')
-		skt.subscribe([...fullUniverse, NIFTY_SYMBOL, ...subscribedOptionSymbols])
+		
+		const allSymbols = [...fullUniverse, NIFTY_SYMBOL, ...subscribedOptionSymbols]
+		// FIX: Fyers SDK crashes with "Topic Not Available in TopicList!" if the subscription array is too large.
+		// It corrupts its internal dictionary. We must chunk the subscriptions.
+		const chunkSize = 300;
+		for (let i = 0; i < allSymbols.length; i += chunkSize) {
+			const chunk = allSymbols.slice(i, i + chunkSize);
+			skt.subscribe(chunk);
+		}
 	})
 
 	let lastTickTime = Date.now()
