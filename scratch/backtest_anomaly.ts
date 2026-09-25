@@ -18,11 +18,19 @@ async function run() {
 	const symbols = ['NSE:KSCL-EQ', 'NSE:HGINFRA-EQ']
 	const today = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().split('T')[0]!
 
-	// Provide some baseline ADV stats to the scanner (mocked for the test)
 	const scanner = new AnomalyScanner()
-	;(scanner as any).stats = {
-		'NSE:KSCL-EQ': { advShares: 500_000 },     // Assume 500k ADV -> 25k 5min threshold
-		'NSE:HGINFRA-EQ': { advShares: 1_000_000 }, // Assume 1M ADV -> 50k 5min threshold
+	
+	const STATS_PATH = '/app/universe_stats.json'
+	if (fs.existsSync(STATS_PATH)) {
+		const realStats = JSON.parse(fs.readFileSync(STATS_PATH, 'utf-8'))
+		;(scanner as any).stats = realStats
+		console.log('✅ Loaded real baseline stats from universe_stats.json')
+	} else {
+		console.log('⚠️ universe_stats.json not found! Falling back to mocked ADV stats.')
+		;(scanner as any).stats = {
+			'NSE:KSCL-EQ': { advShares: 500_000 },     // Assume 500k ADV -> 25k 5min threshold
+			'NSE:HGINFRA-EQ': { advShares: 1_000_000 }, // Assume 1M ADV -> 50k 5min threshold
+		}
 	}
 
 	for (const sym of symbols) {
