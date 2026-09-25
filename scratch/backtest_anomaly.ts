@@ -17,7 +17,8 @@ async function run() {
 	fyersApi.setAccessToken(fs.readFileSync(TOKEN_PATH, 'utf-8').trim())
 
 	const symbols = ['NSE:KSCL-EQ', 'NSE:HGINFRA-EQ']
-	const today = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().split('T')[0]!
+	// The market hasn't opened yet today, so we must query yesterday's date (Sept 24)
+	const yesterday = new Date(Date.now() + 5.5 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000).toISOString().split('T')[0]!
 
 	const scanner = new AnomalyScanner()
 	
@@ -40,8 +41,8 @@ async function run() {
 			symbol: sym,
 			resolution: '1',
 			date_format: '1',
-			range_from: today,
-			range_to: today,
+			range_from: yesterday,
+			range_to: yesterday,
 			cont_flag: '1'
 		})
 
