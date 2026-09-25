@@ -48,6 +48,16 @@ const createRateLimiter = (maxPerSecond: number) => {
 export const runDailyScreen = async () => {
 	console.log('\n[Screener] 🔍 Starting Daily Universe Screen...')
 
+	if (fs.existsSync(STATS_PATH)) {
+		const stats = fs.statSync(STATS_PATH)
+		const today = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().split('T')[0]
+		const fileDate = new Date(stats.mtime.getTime() + 5.5 * 60 * 60 * 1000).toISOString().split('T')[0]
+		if (today === fileDate) {
+			console.log(`[Screener] ⏭️ Already generated today (${fileDate}). Skipping...`)
+			return
+		}
+	}
+
 	if (!fs.existsSync(TOKEN_PATH) || !fs.existsSync(UNIVERSE_PATH)) {
 		console.error('[Screener] ❌ Missing access_token.txt or fyersUniverse.json')
 		return
