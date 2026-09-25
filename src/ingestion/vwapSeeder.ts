@@ -156,13 +156,20 @@ export const seedHistoricalVwap = async (): Promise<void> => {
 			await rateLimited(() => fetchAndSeedSymbol(symbol, todayStr, equalWeight))
 			successCount++
 		} catch (error: any) {
+			const isCloudflare = error?.error_code === 1015 || error?.status === 429 || error?.cloudflare_error === true
 			const isRateLimit =
+				isCloudflare ||
 				error?.response?.status === 429 ||
 				/rate.?limit/i.test(error?.message || '') ||
-				/rate.?limit/i.test(JSON.stringify(error?.response?.data || ''))
+				/rate.?limit/i.test(JSON.stringify(error?.response?.data || '')) ||
+				/rate.?limit/i.test(JSON.stringify(error || ''))
 
 			if (isRateLimit && attempt < MAX_RETRIES) {
-				const backoffMs = 1000 * Math.pow(2, attempt + 1) // 2s, then 4s
+				let backoffMs = 1000 * Math.pow(2, attempt + 1) // 2s, then 4s
+				if (isCloudflare && typeof error?.retry_after === 'number') {
+					backoffMs = (error.retry_after * 1000) + 1000 // e.g. 30s + 1s buffer
+				}
+				
 				console.warn(
 					`[Seeder] ⏳ Rate limited on ${symbol}, retrying in ${backoffMs}ms (attempt ${
 						attempt + 1
@@ -177,7 +184,7 @@ export const seedHistoricalVwap = async (): Promise<void> => {
 			if (error.response?.data) {
 				console.error(`[Fyers]:`, JSON.stringify(error.response.data))
 			} else {
-				console.error(`[Error]:`, error.message || error)
+				console.error(`[Error]:`, error)
 			}
 		}
 	}
