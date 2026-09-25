@@ -1,4 +1,5 @@
-import { fyersApi } from 'fyers-api-v3'
+import fyers from 'fyers-api-v3'
+const fyersApi = new fyers.fyersModel({ path: './', enableLogging: false })
 import fs from 'fs'
 import { AnomalyScanner } from '../src/ingestion/anomalyScanner.js'
 
