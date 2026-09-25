@@ -318,8 +318,14 @@ export const startLiveEngine = async () => {
 			console.error('[Watchdog] ⚠️ No ticks received for 30 seconds! Zombie connection detected. Forcing reconnect...')
 			lastTickTime = Date.now() // Reset to prevent spamming
 			try {
-				skt.close() // Forces the built-in autoreconnect(5) to trigger
+				skt.close() // Close the dead socket
 			} catch {}
+			
+			// Fyers SDK autoreconnect is unreliable; manually force connection
+			setTimeout(() => {
+				console.log('[Watchdog] 🔄 Re-initiating connection...')
+				try { skt.connect() } catch {}
+			}, 2000)
 		}
 	}, 10000)
 
