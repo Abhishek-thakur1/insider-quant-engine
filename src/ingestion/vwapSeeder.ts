@@ -11,7 +11,7 @@ const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt')
 const WATCHLIST_PATH = path.resolve(process.cwd(), 'watchlist.json')
 const NIFTY_SYMBOL = 'NSE:NIFTY50-INDEX'
 
-const getTodayString = (): string => {
+export const getTodayString = (): string => {
 	const istDate = new Date(Date.now() + 5.5 * 60 * 60 * 1000)
 	return istDate.toISOString().split('T')[0]!
 }
@@ -25,7 +25,7 @@ const getTodayString = (): string => {
 // candle typical price — a session TWAP. It is a well-defined session reference
 // price, NOT a VWAP; see AGENTS.md 6.1 for the higher-fidelity alternative
 // (borrowing volume from the Nifty futures contract).
-const fetchAndSeedSymbol = async (
+export const fetchAndSeedSymbol = async (
 	symbol: string,
 	todayStr: string,
 	equalWeight = false,

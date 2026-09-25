@@ -76,7 +76,10 @@ services:
           echo '[Engine] Token not found. Retrying in 10s...';
           sleep 10;
         done;
-        echo '[Engine] Token found. Booting live engine.';
+        echo '[Engine] Token found.';
+        echo '[Engine] Running daily screener...';
+        npx tsx src/ingestion/dailyScreener.ts;
+        echo '[Engine] Booting live engine.';
         npx tsx src/ingestion/websocket.ts
       "
     restart: 'no'

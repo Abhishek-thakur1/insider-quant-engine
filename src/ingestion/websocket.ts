@@ -6,8 +6,10 @@ import { ENV } from '../config/env.js'
 import { bootRedis, redisClient } from '../config/redis.js'
 import { updateVwap, getVwap, updateNiftyBias, warnIfVwapMissing } from '../utils/vwapUtils.js'
 import { buildOptionUniverse, updateOptionTick, hasATMShifted } from '../utils/optionUtils.js'
-import { seedHistoricalVwap } from './vwapSeeder.js'
+import { seedHistoricalVwap, fetchAndSeedSymbol, getTodayString } from './vwapSeeder.js'
 import { feedTick } from '../utils/candleAggregator.js'
+import { AnomalyScanner } from './anomalyScanner.js'
+import { Telegraf } from 'telegraf'
 
 // [NEW] Regime detector feed
 import { pushNiftyReturn } from '../utils/regimeDetector.js'
@@ -114,9 +116,10 @@ export const startLiveEngine = async () => {
 
 	const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt')
 	const WATCHLIST_PATH = path.resolve(process.cwd(), 'watchlist.json')
+	const UNIVERSE_PATH = path.resolve(process.cwd(), 'fyersUniverse.json')
 
-	if (!fs.existsSync(TOKEN_PATH) || !fs.existsSync(WATCHLIST_PATH)) {
-		console.error('❌ CRITICAL: Missing access_token.txt or watchlist.json.')
+	if (!fs.existsSync(TOKEN_PATH) || !fs.existsSync(WATCHLIST_PATH) || !fs.existsSync(UNIVERSE_PATH)) {
+		console.error('❌ CRITICAL: Missing access_token.txt, watchlist.json, or fyersUniverse.json.')
 		process.exit(1)
 	}
 
@@ -125,10 +128,43 @@ export const startLiveEngine = async () => {
 	await positionTracker.init()
 
 	const watchlist: string[] = JSON.parse(fs.readFileSync(WATCHLIST_PATH, 'utf8'))
-	const activeUniverse = watchlist.slice(0, 100)
+	const fullUniverse: string[] = JSON.parse(fs.readFileSync(UNIVERSE_PATH, 'utf8'))
+	const activeUniverse = [...watchlist]
+	const activeUniverseSet = new Set<string>(activeUniverse)
+
 	await warnIfVwapMissing(activeUniverse)
 
 	const accessToken = fs.readFileSync(TOKEN_PATH, 'utf8').trim()
+	const bot = new Telegraf(ENV.TELEGRAM_BOT_TOKEN)
+
+	// Anomaly Scanner for Dynamic Promotion
+	const anomalyScanner = new AnomalyScanner()
+	anomalyScanner.onPromote = async (symbol: string, reason: string) => {
+		if (activeUniverseSet.has(symbol)) return
+		console.log(`[Scanner] 🚀 Anomaly detected! Promoting ${symbol} to active universe. Reason: ${reason}`)
+		activeUniverseSet.add(symbol)
+		activeUniverse.push(symbol)
+
+		// Seed VWAP dynamically (runs async)
+		fetchAndSeedSymbol(symbol, getTodayString()).catch(e => console.error(`[Scanner] ❌ VWAP seed failed for ${symbol}:`, e))
+
+		strategyRouter.set(symbol, [
+			new StockMomentumBreakoutDetector(symbol),
+			new VolatilityContraction(symbol),
+		])
+
+		// Cleanup any stale state from prior days
+		await Promise.all([
+			redisClient.del(`cooldown:v2:momentum:${symbol}`),
+			redisClient.del(`v2:session_open:${symbol}`),
+			redisClient.del(`v2:cooldown:vcp:${symbol}`),
+			redisClient.del(`v2:cooldown:gapgo:${symbol}`),
+			redisClient.del(`v2:vcp_history:${symbol}`),
+		])
+
+		bot.telegram.sendMessage(ENV.TELEGRAM_CHANNEL_ID, `🚀 *DYNAMIC PROMOTION*\nSymbol: \`${symbol}\`\nReason: ${reason}\nStatus: Full detectors engaged.`, { parse_mode: 'Markdown' }).catch(console.error)
+	}
+	anomalyScanner.start(activeUniverseSet)
 
 	// ── Boot Cleanup & Strategy Routing ──────────────────────────────────────
 	await Promise.all(
@@ -247,11 +283,16 @@ export const startLiveEngine = async () => {
 			}
 
 			// 3. Route Equities
-			await updateVwap(rawTick.symbol, liveTick.price, liveTick.volume)
-			feedTick(rawTick.symbol, liveTick.price, liveTick.volume)
-			const strategies = strategyRouter.get(rawTick.symbol)
-			if (strategies) {
-				await Promise.all(strategies.map((s) => s.analyze(liveTick)))
+			if (activeUniverseSet.has(rawTick.symbol)) {
+				await updateVwap(rawTick.symbol, liveTick.price, liveTick.volume)
+				feedTick(rawTick.symbol, liveTick.price, liveTick.volume)
+				const strategies = strategyRouter.get(rawTick.symbol)
+				if (strategies) {
+					await Promise.all(strategies.map((s) => s.analyze(liveTick)))
+				}
+			} else {
+				// Feed inactive equities to the anomaly scanner
+				anomalyScanner.updateTick(rawTick.symbol, rawTick.ltp, rawTick.vol_traded_today ?? 0)
 			}
 		} catch (err) {
 			console.error(`[Processing Error] ${tickData?.rawTick?.symbol}:`, err)
@@ -265,7 +306,7 @@ export const startLiveEngine = async () => {
 
 	skt.on('connect', () => {
 		console.log('[Firehose] 🟢 Connected to Fyers Data Servers!')
-		skt.subscribe([...activeUniverse, NIFTY_SYMBOL, ...subscribedOptionSymbols])
+		skt.subscribe([...fullUniverse, NIFTY_SYMBOL, ...subscribedOptionSymbols])
 	})
 
 	let lastTickTime = Date.now()
@@ -330,6 +371,7 @@ export const startLiveEngine = async () => {
 		if (isShuttingDown) return
 		isShuttingDown = true
 		clearInterval(watchdog)
+		anomalyScanner.stop()
 		console.log(`\n[Engine] 🛑 ${signal} received. Shutting down gracefully...`)
 		try {
 			skt.close()

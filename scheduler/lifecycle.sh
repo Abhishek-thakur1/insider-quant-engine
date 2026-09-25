@@ -4,7 +4,7 @@
 #
 # Called by cron at specific times. Receives one argument:
 #   start_auth    → 7:45 AM  — boot quant_auth so it can send the Telegram ping
-#   start_engine  → 9:15 AM  — boot quant_engine (token must exist by now)
+#   start_engine  → 9:00 AM  — boot quant_engine (token must exist by now)
 #   stop_engine   → 3:30 PM  — graceful shutdown of quant_engine
 #
 # Docker socket is mounted from the host, so `docker` commands here control
@@ -37,8 +37,8 @@ case "$ACTION" in
     log "✅ quant_auth started. Awaiting manual Fyers login via Telegram."
     ;;
 
-  # ── 9:15 AM ───────────────────────────────────────────────────────────────
-  # By 9:15 the trader has had 30 minutes to click the Telegram link.
+  # ── 9:00 AM ───────────────────────────────────────────────────────────────
+  # By 9:00 the trader has had 1h15m to click the Telegram link.
   # quant_engine polls for the token file internally — if it's not there yet
   # it will wait (the `until` loop in docker-compose command).
   start_engine)
