@@ -42,7 +42,7 @@ const bootSubscriber = async () => {
 fastify.get('/api/today', async (request, reply) => {
 	const openRes = await pool.query(`
 		SELECT * FROM paper_trades 
-		WHERE status = 'OPEN' 
+		WHERE status = 'OPEN' AND gated = true
 		ORDER BY entry_time DESC
 	`)
 	
@@ -73,8 +73,14 @@ fastify.get('/api/trades/history', async (request, reply) => {
 	const query = request.query as any
 	const date = query.date // format YYYY-MM-DD
 	const detector = query.detector
+	const includeUngated = query.includeUngated === 'true'
 
+	// By default, only show signals that passed the JaneStreetFilter (gated = true).
 	let sql = `SELECT * FROM paper_trades WHERE status = 'CLOSED'`
+	if (!includeUngated) {
+		sql += ` AND gated = true`
+	}
+	
 	const params: any[] = []
 	
 	if (date) {

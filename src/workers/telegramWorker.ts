@@ -200,6 +200,12 @@ export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
 			return
 		}
 
+		// Prevent sending Telegram alerts for trades that failed the filter, even in shadow mode.
+		// They are already registered in the DB for background analysis.
+		if (decision && !decision.passed) {
+			return
+		}
+
 		const scoreNote = decision
 			? `\n\n🧮 *Confirmation Score: ${decision.score}/100*${decision.shadowMode && !decision.passed ? ' ⚠️ SHADOW — below threshold' : ''}\n• Regime: ${decision.regime} (H=${decision.entropy.toFixed(2)})\n• Bayesian P(win): ${(decision.posterior * 100).toFixed(0)}%\n• EV: ₹${decision.ev.toFixed(0)} | Half-Kelly: ${(decision.kellyHalf * 100).toFixed(1)}%\n• ${decision.positionNote}${sizeNote}`
 			: `\n\n🧮 *Size:* ${telegramQty} shares${sizeNote}`
