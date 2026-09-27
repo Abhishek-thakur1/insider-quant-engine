@@ -40,11 +40,16 @@ const bootSubscriber = async () => {
 
 // REST: Get Today's Status (Fetch-on-mount for Dashboard)
 fastify.get('/api/today', async (request, reply) => {
-	const openRes = await pool.query(`
-		SELECT * FROM paper_trades 
-		WHERE status = 'OPEN' AND gated = true
-		ORDER BY entry_time DESC
-	`)
+	const query = request.query as any
+	const includeUngated = query.includeUngated === 'true'
+
+	let sql = `SELECT * FROM paper_trades WHERE status = 'OPEN'`
+	if (!includeUngated) {
+		sql += ` AND gated = true`
+	}
+	sql += ` ORDER BY entry_time DESC`
+
+	const openRes = await pool.query(sql)
 	
 	const pnlStr = await redisClient.get('pnl:daily')
 	
