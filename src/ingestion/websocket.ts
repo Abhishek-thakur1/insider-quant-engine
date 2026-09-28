@@ -306,15 +306,28 @@ export const startLiveEngine = async () => {
 
 	skt.on('connect', () => {
 		console.log('[Firehose] 🟢 Connected to Fyers Data Servers!')
-		
+
 		const allSymbols = [...fullUniverse, NIFTY_SYMBOL, ...subscribedOptionSymbols]
-		// FIX: Fyers SDK crashes with "Topic Not Available in TopicList!" if the subscription array is too large.
-		// It corrupts its internal dictionary. We must chunk the subscriptions.
-		const chunkSize = 300;
-		for (let i = 0; i < allSymbols.length; i += chunkSize) {
-			const chunk = allSymbols.slice(i, i + chunkSize);
-			skt.subscribe(chunk);
+		// FIX: Chunk subscriptions to avoid SDK internal dictionary corruption.
+		// FIX2: Stagger with 600ms delay — sending all chunks simultaneously causes Fyers
+		// server to silently drop later chunks, leaving the socket subscribed to nothing
+		// and triggering the watchdog loop. Each chunk must be fully acknowledged before
+		// the next is sent.
+		const chunkSize = 200
+		const CHUNK_DELAY_MS = 600
+		let chunkIndex = 0
+		const sendNextChunk = () => {
+			if (chunkIndex >= allSymbols.length) {
+				console.log(`[Firehose] ✅ All ${allSymbols.length} symbols subscribed across ${Math.ceil(allSymbols.length / chunkSize)} chunks`)
+				return
+			}
+			const chunk = allSymbols.slice(chunkIndex, chunkIndex + chunkSize)
+			skt.subscribe(chunk)
+			console.log(`[Firehose] 📡 Chunk ${Math.floor(chunkIndex / chunkSize) + 1}: subscribed ${chunk.length} symbols`)
+			chunkIndex += chunkSize
+			setTimeout(sendNextChunk, CHUNK_DELAY_MS)
 		}
+		sendNextChunk()
 	})
 
 	let lastTickTime = Date.now()
