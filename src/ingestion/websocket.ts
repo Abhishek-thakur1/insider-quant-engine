@@ -336,17 +336,18 @@ export const startLiveEngine = async () => {
 	const watchdog = setInterval(() => {
 		if (isShuttingDown) return
 		if (Date.now() - lastTickTime > WATCHDOG_TIMEOUT_MS) {
-			console.error('[Watchdog] ⚠️ No ticks received for 30 seconds! Zombie connection detected. Forcing reconnect...')
-			lastTickTime = Date.now() // Reset to prevent spamming
-			try {
-				skt.close() // Close the dead socket
-			} catch {}
-			
-			// Fyers SDK autoreconnect is unreliable; manually force connection
-			setTimeout(() => {
-				console.log('[Watchdog] 🔄 Re-initiating connection...')
-				try { skt.connect() } catch {}
-			}, 2000)
+			console.error('[Watchdog] ⚠️ No ticks received for 30 seconds! Zombie connection detected.')
+			console.error('[Watchdog] 🔄 In-process reconnect is unreliable with the Fyers SDK singleton — exiting for clean Docker restart...')
+			clearInterval(watchdog)
+			anomalyScanner.stop()
+			try { skt.close() } catch {}
+			// Give Redis a moment to flush, then exit with code 1.
+			// Docker restart: on-failure will bring the container back up cleanly.
+			// Screener skip logic ensures it won't re-run the 7-min screen intraday.
+			setTimeout(async () => {
+				try { await redisClient.quit() } catch {}
+				process.exit(1)
+			}, 1500)
 		}
 	}, 10000)
 

@@ -82,7 +82,7 @@ services:
         echo '[Engine] Booting live engine.';
         npx tsx src/ingestion/websocket.ts
       "
-    restart: 'no'
+    restart: 'on-failure'
     volumes:
       - token_store:/app/token
       - /app/node_modules
