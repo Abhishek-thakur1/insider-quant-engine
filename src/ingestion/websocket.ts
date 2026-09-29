@@ -307,7 +307,7 @@ export const startLiveEngine = async () => {
 	skt.on('connect', () => {
 		console.log('[Firehose] 🟢 Connected to Fyers Data Servers!')
 
-		const allSymbols = [...activeUniverse, NIFTY_SYMBOL, ...subscribedOptionSymbols]
+		const allSymbols = [...fullUniverse, NIFTY_SYMBOL, ...subscribedOptionSymbols]
 		// FIX: Chunk subscriptions to avoid SDK internal dictionary corruption.
 		// FIX2: Stagger with 600ms delay — sending all chunks simultaneously causes Fyers
 		// server to silently drop later chunks, leaving the socket subscribed to nothing
