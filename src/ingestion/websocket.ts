@@ -162,7 +162,7 @@ export const startLiveEngine = async () => {
 			redisClient.del(`v2:vcp_history:${symbol}`),
 		])
 
-		bot.telegram.sendMessage(ENV.TELEGRAM_CHANNEL_ID, `🚀 *DYNAMIC PROMOTION*\nSymbol: \`${symbol}\`\nReason: ${reason}\nStatus: Full detectors engaged.`, { parse_mode: 'Markdown' }).catch(console.error)
+		// bot.telegram.sendMessage(ENV.TELEGRAM_CHANNEL_ID, `🚀 *DYNAMIC PROMOTION*\nSymbol: \`${symbol}\`\nReason: ${reason}\nStatus: Full detectors engaged.`, { parse_mode: 'Markdown' }).catch(console.error)
 	}
 	anomalyScanner.start(activeUniverseSet)
 
