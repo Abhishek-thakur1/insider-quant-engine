@@ -1,4 +1,4 @@
-import { redisClient } from './src/config/redis.js';
+import { redisClient } from '../src/config/redis.js';
 
 async function checkStaleTrades() {
   await redisClient.connect();

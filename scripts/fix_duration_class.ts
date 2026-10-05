@@ -1,4 +1,4 @@
-import { pool } from './src/config/db.js';
+import { pool } from '../src/config/db.js';
 
 async function fixMistaggedTrades() {
   console.log('Connecting to Postgres to fix mistagged Stock Momentum Breakout trades...');
@@ -18,7 +18,7 @@ async function fixMistaggedTrades() {
     
     // Check if we need to update any open trades in Redis
     console.log('\nChecking Redis for open trades...');
-    const { redisClient } = await import('./src/config/redis.js');
+    const { redisClient } = await import('../src/config/redis.js');
     await redisClient.connect();
     
     const openKeys = await redisClient.hKeys('trades:open');

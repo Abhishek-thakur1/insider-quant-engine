@@ -1,4 +1,4 @@
-import { pool } from './src/config/db.js';
+import { pool } from '../src/config/db.js';
 
 async function auditFootprintDetectors() {
   console.log('Auditing Footprint Detectors...\n');
