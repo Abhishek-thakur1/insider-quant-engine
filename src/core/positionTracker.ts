@@ -23,7 +23,7 @@ export interface ClosedPosition extends OpenPosition {
 	exitPrice: number
 	exitTimestamp: number
 	pnl: number
-	exitReason: 'STOP_LOSS' | 'TARGET'
+	exitReason: 'STOP_LOSS' | 'TARGET' | 'TIME'
 }
 
 class PositionTracker {
@@ -98,11 +98,24 @@ class PositionTracker {
 		const ltp = tick.price
 		const remaining: OpenPosition[] = []
 
+		const nowIST = new Date(Date.now() + 5.5 * 3600 * 1000)
+		const m = nowIST.getUTCHours() * 60 + nowIST.getUTCMinutes()
+		const isAfter315 = m >= 15 * 60 + 15
+
+		const todayStr = nowIST.toISOString().split('T')[0]
+
 		for (const pos of positions) {
 			let isClosed = false
-			let exitReason: 'STOP_LOSS' | 'TARGET' | null = null
+			let exitReason: 'STOP_LOSS' | 'TARGET' | 'TIME' | null = null
 
-			if (pos.side === 'LONG') {
+			const posDate = new Date(pos.timestamp + 5.5 * 3600 * 1000).toISOString().split('T')[0]
+			const isStale = posDate !== todayStr
+
+			// Force close INTRADAY positions at or after 3:15 PM, or if they leaked into the next day
+			if ((isAfter315 || isStale) && (!pos.durationClass || pos.durationClass === 'INTRADAY')) {
+				isClosed = true
+				exitReason = 'TIME'
+			} else if (pos.side === 'LONG') {
 				if (ltp <= pos.stopLoss) {
 					isClosed = true
 					exitReason = 'STOP_LOSS'

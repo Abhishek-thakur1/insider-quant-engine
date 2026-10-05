@@ -185,18 +185,13 @@ export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
 			regimeClass: data.regimeClass || decision?.regime || 'UNIVERSAL',
 			gated: decision?.passed || false,
 			capitalGated,
-			actualSize: skipAlert ? 0 : telegramQty
+			actualSize: skipAlert ? 0 : telegramQty,
+			durationClass: data.durationClass || 'INTRADAY'
 		})
 
 		if (skipAlert) {
-			const message = `⏭️ *Trade Skipped: ${data.symbol}*\n\nCondition met, but skipped due to capital constraint (₹1L limit).`
-			try {
-				await bot.telegram.sendMessage(ENV.TELEGRAM_CHANNEL_ID, message, {
-					parse_mode: 'Markdown',
-				})
-			} catch (err) {
-				console.error(`[TelegramWorker] ❌ Failed to send skip alert for ${data.symbol}`, err)
-			}
+			// No longer sending Telegram alerts for capital-constrained skips.
+			// The data is still recorded in Postgres as capitalGated = true.
 			return
 		}
 

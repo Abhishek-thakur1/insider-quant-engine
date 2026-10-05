@@ -20,8 +20,9 @@ const livePnlCache: Record<string, any> = {}
 const bootSubscriber = async () => {
 	await subscriber.connect()
 	await subscriber.subscribe('sse:events', (message) => {
+		let parsed: any = null;
 		try {
-			const parsed = JSON.parse(message)
+			parsed = JSON.parse(message)
 			if (parsed.type === 'pnl_update') {
 				livePnlCache[parsed.data.symbol] = parsed.data.unrealizedPnl
 			} else if (parsed.type === 'signal_event' && (parsed.data.status === 'CLOSED' || parsed.data.exitPrice)) {
@@ -30,9 +31,14 @@ const bootSubscriber = async () => {
 		} catch(e) {}
 
 		for (const client of clients) {
-			client.raw.write(`data: ${message}
-
-`)
+			try {
+				if (parsed && parsed.type === 'signal_event') {
+					if (!client.includeUngated && parsed.data.gated === false) {
+						continue; // Skip sending this event to this client
+					}
+				}
+				client.reply.raw.write(`data: ${message}\n\n`)
+			} catch(e) {}
 		}
 	})
 	console.log('🟢 [API Server] Subscribed to sse:events channel')
@@ -157,6 +163,9 @@ fastify.get('/api/trades/heatmap', async (request, reply) => {
 
 // SSE Stream Endpoint
 fastify.get('/api/events', (request, reply) => {
+	const query = request.query as any
+	const includeUngated = query.includeUngated === 'true'
+
 	reply.raw.writeHead(200, {
 		'Content-Type': 'text/event-stream',
 		'Cache-Control': 'no-cache',
@@ -166,11 +175,12 @@ fastify.get('/api/events', (request, reply) => {
 
 	reply.raw.write('retry: 3000\n\n')
 
-	clients.add(reply)
-	console.log(`[SSE] Client connected. Active clients: ${clients.size}`)
+	const clientObj = { reply, includeUngated }
+	clients.add(clientObj)
+	console.log(`[SSE] Client connected. Active clients: ${clients.size} (includeUngated: ${includeUngated})`)
 
 	request.raw.on('close', () => {
-		clients.delete(reply)
+		clients.delete(clientObj)
 		console.log(`[SSE] Client disconnected. Active clients: ${clients.size}`)
 	})
 })
