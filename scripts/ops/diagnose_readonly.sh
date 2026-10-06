@@ -6,12 +6,15 @@
 #   - Redis: read commands only
 #   - never prints secrets: .env / container env are filtered to a fixed allow-list
 #
-# Usage (on EC2, from anywhere):
-#   REPO=/home/ec2-user/insider-quant-engine DAY=2026-10-06 sh diagnose_readonly.sh
+# Usage (on EC2 — Ubuntu 24.04, user `ubuntu`, repo at ~/insider-quant-engine,
+# compose project name `insider-quant-engine`). Needs only docker + python3:
+#   cd ~/insider-quant-engine && DAY=2026-10-06 sh scripts/ops/diagnose_readonly.sh
 # Output: ~/diag_<DAY>.txt  — paste that file back.
 # ─────────────────────────────────────────────────────────────────────────────
 
-REPO=${REPO:-/home/ec2-user/insider-quant-engine}
+REPO=${REPO:-$HOME/insider-quant-engine}
+# JSON <file> <python-expr over d>
+JSON() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(eval(sys.argv[2]))' "$@" 2>/dev/null; }
 DAY=${DAY:-$(TZ=Asia/Kolkata date +%F)}
 OUT="$HOME/diag_${DAY}.txt"
 SINCE=$(date -u -d "${DAY} 00:00 +0530" +%Y-%m-%dT%H:%M:%SZ)
@@ -54,6 +57,9 @@ docker cp quant_engine:/app/node_modules/fyers-api-v3/package.json - 2>/dev/null
 docker run --rm --entrypoint cat "$IMG" /app/node_modules/fyers-api-v3/package.json 2>/dev/null | grep '"version"' | sed 's/^/image     fyers-api-v3 /'
 docker inspect -f '{{range .Mounts}}{{.Type}} {{.Name}} -> {{.Destination}}{{println}}{{end}}' quant_engine
 
+echo "--- docker volumes (lifecycle.sh purges 'quant_token_store'; compose project is insider-quant-engine)"
+docker volume ls --format '{{.Name}}'
+
 sec "2. config (allow-listed keys only)"
 echo "--- .env"; grep -E "$ALLOW" "$REPO/.env" 2>/dev/null
 echo "--- quant_engine runtime env"; docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' quant_engine | grep -E "$ALLOW"
@@ -81,9 +87,9 @@ docker logs quant_api 2>&1 | grep -E 'Migration|expired|Listening' | tail -20
 
 sec "5. universe_stats / watchlist inside quant_engine"
 docker cp quant_engine:/app/universe_stats.json - 2>/dev/null | tar -xO 2>/dev/null > /tmp/us.json
-echo "universe_stats symbols: $(jq 'length' /tmp/us.json 2>/dev/null)  KSCL: $(jq 'has("NSE:KSCL-EQ")' /tmp/us.json 2>/dev/null)  HGINFRA: $(jq 'has("NSE:HGINFRA-EQ")' /tmp/us.json 2>/dev/null)"
+echo "universe_stats symbols: $(JSON /tmp/us.json 'len(d)')  KSCL: $(JSON /tmp/us.json '"NSE:KSCL-EQ" in d')  HGINFRA: $(JSON /tmp/us.json '"NSE:HGINFRA-EQ" in d')"
 docker cp quant_engine:/app/watchlist.json - 2>/dev/null | tar -xO 2>/dev/null > /tmp/wl.json
-echo "watchlist size: $(jq 'length' /tmp/wl.json 2>/dev/null)"; jq -c '.' /tmp/wl.json 2>/dev/null
+echo "watchlist size: $(JSON /tmp/wl.json 'len(d)')"; JSON /tmp/wl.json '" ".join(d)'
 
 sec "6. redis (read-only)"
 echo "trades:open=$(R HLEN trades:open) trades:history=$(R LLEN trades:history) pnl:daily=$(R GET pnl:daily) jsfilter:decisions=$(R LLEN jsfilter:decisions)"
@@ -91,7 +97,13 @@ echo "jsfilter:stats: $(R HGETALL jsfilter:stats | tr '\n' ' ')"
 echo "cooldown keys: $(R --scan --pattern 'cooldown:*' | wc -l)"
 R CONFIG GET bind; R CONFIG GET protected-mode
 echo "--- jsfilter decisions since last boot (detector, passed, rejectedAt, score)"
-R LRANGE jsfilter:decisions 0 999 | jq -r '[.ts,.detector,.symbol,.side,.passed,.rejectedAt,.score]|@tsv' 2>/dev/null | sort | head -300
+R LRANGE jsfilter:decisions 0 999 | python3 -c '
+import sys, json
+for l in sys.stdin:
+    try: r = json.loads(l)
+    except Exception: continue
+    print(*[r.get(k) for k in ("ts", "detector", "symbol", "side", "passed", "rejectedAt", "score")], sep="\t")
+' | sort | head -300
 echo "--- listening ports"; (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | grep -E ':(6379|8080|5432|3000)\b'
 
 sec "7. postgres (read-only transaction)"
