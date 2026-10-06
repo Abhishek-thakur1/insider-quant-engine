@@ -352,7 +352,10 @@ export class StockMomentumBreakoutDetector implements IDetector {
 			avgPrice: (candle.open + candle.close) / 2,
 			detectorName: this.name,
 			regimeClass: 'MOMENTUM',
-			durationClass: 'SWING',
+			// INTRADAY (decided 2026-10-06): 5-min setups, and there is no durable
+			// multi-day position store — SWING positions were dropped from memory
+			// after one extra session. Revisit only once such a store exists.
+			durationClass: 'INTRADAY',
 		})
 
 		await redisClient.setEx(cooldownKey, COOLDOWN_SECONDS, 'true')

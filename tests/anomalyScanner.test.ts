@@ -45,7 +45,7 @@ test('AnomalyScanner - promotes symbol on >5% ADV and >1.5% price spike', (t) =>
 	;(scanner as any).processMinuteBoundary(activeSet)
 
 	assert.strictEqual(promotedSymbol, 'NSE:TEST-EQ')
-	assert.ok(promoteReason?.includes('2.0%'))
+	assert.ok((promoteReason as string | null)?.includes('2.0%'))
 })
 
 test('AnomalyScanner - ignores already active symbols', (t) => {

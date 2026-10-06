@@ -2,9 +2,19 @@ import { Telegraf } from 'telegraf'
 import { ENV } from '../config/env.js'
 import { runJaneStreetFilter } from '../detectors/janeStreetFilter.js'
 import type { DetectorType } from '../utils/regimeDetector.js'
+import {
+	buildEquityMessage,
+	computeSizing,
+	dispatchBlockReason,
+	getISTDateString,
+	parseMaxAlertsPerDay,
+	releaseAlertSlot,
+	reserveAlertSlot,
+} from './alertPolicy.js'
 
 const bot = new Telegraf(ENV.TELEGRAM_BOT_TOKEN)
 const SHADOW_MODE = process.env.SHADOW_MODE === 'true'
+const MAX_ALERTS_PER_DAY = parseMaxAlertsPerDay(process.env.TELEGRAM_MAX_ALERTS_PER_DAY)
 
 // Gates that represent a structural/mathematical disqualification of the
 // signal (wrong regime, negative EV, failed Bayesian confidence, Kelly sizing
@@ -70,11 +80,10 @@ export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
 
 		const isHardGateRejection = !!decision.rejectedAt && HARD_GATES.has(decision.rejectedAt)
 
-		// Block if: outright failed and not in shadow mode, OR failed on a hard
-		// gate regardless of shadow mode. Shadow mode only lets pure "score came
-		// in under the aggregate threshold" rejections through for calibration.
+		// Not recorded: outright failed outside shadow mode, OR failed on a hard
+		// gate regardless of shadow mode. (Pre-existing behaviour, unchanged here;
+		// the planned `signals` table will log these too.)
 		if (!decision.passed && (isHardGateRejection || !SHADOW_MODE)) {
-			// Signal blocked. Decision already logged to Redis.
 			console.log(
 				`🚫 [${data.side}] ${data.symbol} blocked — score ${decision.score}/100 (${decision.rejectedAt ?? 'below threshold'})${
 					isHardGateRejection && SHADOW_MODE ? ' [hard gate — shadow mode does not override]' : ''
@@ -82,96 +91,60 @@ export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
 			)
 			return
 		}
-
-		if (!decision.passed && SHADOW_MODE) {
-			console.log(
-				`👁️ [SHADOW] [${data.side}] ${data.symbol} would have been BLOCKED — score ${decision.score}/100 — firing anyway (shadow mode, threshold-only rejection)`,
-			)
-		}
 	} catch (filterErr) {
-		// If the engine itself throws (Redis down, etc.), fail OPEN so a bug
-		// in the confirmation layer never silently kills your whole alert
-		// pipeline. Log loudly — this should be rare and worth investigating.
-		console.error('[Confirmation Engine] ⚠️ Error — passing signal through unfiltered:', filterErr)
+		// Fail open for RECORDING: a bug in the confirmation layer must never
+		// silently drop the signal from the data set. It is recorded as ungated
+		// and is NOT sent to the channel (alert policy: gated-only).
+		console.error('[Confirmation Engine] ⚠️ Error — recording signal as ungated, not alerting:', filterErr)
 	}
 	// ── END CONFIRMATION GATE ──────────────────────────────────────────────
 
 	try {
 		const isLong = data.side === 'LONG'
 		const isOptions = data.symbol.endsWith('CE') || data.symbol.endsWith('PE')
-
 		const entry = data.price
+		const durationClass = data.durationClass || 'INTRADAY'
 
-		// Calculate exact SL and Targets (mimicking the message payload logic)
-		let stopLoss = entry
-		let target1 = entry
-		let target2 = entry
+		// Levels — computed ONCE; the same numbers are tracked in Postgres and
+		// shown in the message.
+		let stopLoss: number
+		let target1: number
+		let target2: number
 
 		if (!isOptions) {
 			stopLoss = isLong
 				? Number((data.vwap * 0.998).toFixed(2))
 				: Number((data.vwap * 1.002).toFixed(2))
-
 			const risk = Math.abs(entry - stopLoss)
-
-			target1 = isLong
-				? Number((entry + risk * 1.5).toFixed(2))
-				: Number((entry - risk * 1.5).toFixed(2))
-
-			target2 = isLong
-				? Number((entry + risk * 2.5).toFixed(2))
-				: Number((entry - risk * 2.5).toFixed(2))
+			target1 = isLong ? Number((entry + risk * 1.5).toFixed(2)) : Number((entry - risk * 1.5).toFixed(2))
+			target2 = isLong ? Number((entry + risk * 2.5).toFixed(2)) : Number((entry - risk * 2.5).toFixed(2))
 		} else {
-			// For options, trigger string usually contains SL ₹x, we can attempt to parse it
-			// Or we default to a standard 10% SL for options if not found
+			// Option alerts embed index-level SL/T1 in the trigger text.
 			const slMatch = data.trigger.match(/SL ₹(\d+(\.\d+)?)/)
 			const t1Match = data.trigger.match(/T1 ₹(\d+(\.\d+)?)/)
-			
-			if (slMatch) stopLoss = Number(slMatch[1])
-			else stopLoss = isLong ? entry * 0.9 : entry * 1.1
-
-			if (t1Match) target1 = Number(t1Match[1])
-			else target1 = isLong ? entry * 1.2 : entry * 0.8
+			stopLoss = slMatch ? Number(slMatch[1]) : isLong ? entry * 0.9 : entry * 1.1
+			target1 = t1Match ? Number(t1Match[1]) : isLong ? entry * 1.2 : entry * 0.8
+			target2 = target1
 		}
 
-		// Capital-Constrained Position Sizing
+		// Capital-constrained position sizing
 		const { positionTracker } = await import('../core/positionTracker.js')
-		const capitalBase = ENV.PAPER_CAPITAL_BASE // default ₹1,00,000
-		const maxSingleName = capitalBase * 0.10 // 10%
-		const riskAmount = capitalBase * 0.01 // 1% risk per trade
-		
-		const stopDistance = Math.abs(entry - stopLoss) || (entry * 0.01)
-		let qty = Math.floor(riskAmount / stopDistance)
-		if (qty < 1) qty = 1
-
-		// Apply Max Single Name Constraint
-		if (qty * entry > maxSingleName) {
-			qty = Math.floor(maxSingleName / entry)
+		const sizing = computeSizing({
+			entry,
+			stopLoss,
+			capitalBase: ENV.PAPER_CAPITAL_BASE,
+			currentNotional: positionTracker.getCurrentNotional(),
+			behavior: ENV.CAPITAL_CONSTRAINT_BEHAVIOR,
+		})
+		if (sizing.capitalGated) {
+			console.warn(
+				`[PositionSizing] ${data.symbol}: capital-gated — qty ${sizing.qty} → ${sizing.actualSize}${sizing.skip ? ' (skipped)' : ' (reduced)'}`,
+			)
 		}
 
-		// Evaluate Concurrent Capital Cap
-		const currentNotional = positionTracker.getCurrentNotional()
-		const availableHeadroom = capitalBase - currentNotional
-		let telegramQty = qty
-		let sizeNote = ''
-		let capitalGated = false
-		let skipAlert = false
-		
-		if (qty * entry > availableHeadroom) {
-			capitalGated = true
-			if (ENV.CAPITAL_CONSTRAINT_BEHAVIOR === 'SKIP') {
-				console.warn(`[PositionSizing] ⏭️ Skipped alert for ${data.symbol}: Reached capital cap (Available: ₹${availableHeadroom.toFixed(0)}, Required: ₹${(qty * entry).toFixed(0)})`)
-				skipAlert = true
-			} else { // REDUCE
-				telegramQty = Math.floor(availableHeadroom / entry)
-				sizeNote = `\n⚠️ *Size reduced to fit ₹1L capital cap*`
-				if (telegramQty < 1) {
-					console.warn(`[PositionSizing] ⏭️ Skipped alert for ${data.symbol}: Capital exhausted.`)
-					skipAlert = true
-				}
-			}
-		}
+		const gated = decision?.passed ?? false
 
+		// Record EVERY trade that reaches this point, before any alert decision.
 		await positionTracker.registerTrade({
 			id: `trade_${Date.now()}_${data.symbol}`,
 			symbol: data.symbol,
@@ -181,35 +154,57 @@ export const sendTelegramAlert = async (data: AlertPayload): Promise<void> => {
 			target: target1, // We track Target 1 for the PnL hit
 			timestamp: Date.now(),
 			detectorName: data.detectorName || 'UNKNOWN',
-			size: qty, // Full unconstrained size for historical significance testing
+			size: sizing.qty, // Full unconstrained size for historical significance testing
 			regimeClass: data.regimeClass || decision?.regime || 'UNIVERSAL',
-			gated: decision?.passed || false,
-			capitalGated,
-			actualSize: skipAlert ? 0 : telegramQty,
-			durationClass: data.durationClass || 'INTRADAY'
+			gated,
+			capitalGated: sizing.capitalGated,
+			actualSize: sizing.actualSize,
+			durationClass,
 		})
 
-		if (skipAlert) {
-			// No longer sending Telegram alerts for capital-constrained skips.
-			// The data is still recorded in Postgres as capitalGated = true.
+		// ── ALERT POLICY (Telegram only — never affects what is recorded) ──────
+		const block = dispatchBlockReason({
+			gated,
+			skip: sizing.skip,
+			actualSize: sizing.actualSize,
+			isOption: isOptions,
+		})
+		if (block) {
+			console.log(`🔕 [${data.side}] ${data.symbol} recorded, not alerted (${block})`)
 			return
 		}
 
-		// Prevent sending Telegram alerts for trades that failed the filter, even in shadow mode.
-		// They are already registered in the DB for background analysis.
-		if (decision && !decision.passed) {
+		const { redisClient } = await import('../config/redis.js')
+		const slotArgs = {
+			day: getISTDateString(),
+			detector: data.detectorName || 'UNKNOWN',
+			symbol: data.symbol,
+		}
+		const slot = await reserveAlertSlot(redisClient, { ...slotArgs, maxPerDay: MAX_ALERTS_PER_DAY })
+		if (slot.action === 'DUPLICATE') {
+			console.log(`🔕 [${data.side}] ${data.symbol} recorded, not alerted (already alerted today for ${slotArgs.detector})`)
+			return
+		}
+		if (slot.action === 'CAP_REACHED') {
+			console.log(`🔕 [${data.side}] ${data.symbol} recorded, not alerted (daily cap ${MAX_ALERTS_PER_DAY} reached)`)
+			if (slot.notifyCap && ENV.TELEGRAM_ADMIN_ID) {
+				bot.telegram
+					.sendMessage(
+						ENV.TELEGRAM_ADMIN_ID,
+						`ℹ️ Daily alert cap (${MAX_ALERTS_PER_DAY}) reached. Further signals today are recorded but not sent.`,
+					)
+					.catch((e) => console.error('[TelegramWorker] cap notice failed:', e))
+			}
 			return
 		}
 
-		const scoreNote = decision
-			? `\n\n🧮 *Confirmation Score: ${decision.score}/100*${decision.shadowMode && !decision.passed ? ' ⚠️ SHADOW — below threshold' : ''}\n• Regime: ${decision.regime} (H=${decision.entropy.toFixed(2)})\n• Bayesian P(win): ${(decision.posterior * 100).toFixed(0)}%\n• EV: ₹${decision.ev.toFixed(0)} | Half-Kelly: ${(decision.kellyHalf * 100).toFixed(1)}%\n• ${decision.positionNote}${sizeNote}`
-			: `\n\n🧮 *Size:* ${telegramQty} shares${sizeNote}`
+		const scoreLines = decision
+			? `\n\n🧮 *Confirmation Score: ${decision.score}/100*\n• Regime: ${decision.regime} (H=${decision.entropy.toFixed(2)})\n• Bayesian P(win): ${(decision.posterior * 100).toFixed(0)}%\n• EV: ₹${decision.ev.toFixed(0)}`
+			: ''
 
-		let message = ''
-
+		let message: string
 		if (isOptions) {
 			const directionEmoji = isLong ? '📈' : '📉'
-
 			message = `
 🚨 *NIFTY SNIPER SETUP* 🚨
 
@@ -217,57 +212,40 @@ ${directionEmoji} *Action:* BUY ${data.symbol}
 📊 *Index Level:* ₹${data.price}
 
 *⚡ The Edge:*
-• ${data.trigger.replace(/\|/g, '\n• ')}${scoreNote}
+• ${data.trigger.replace(/\|/g, '\n• ')}${scoreLines}
 
 ⏳ *Horizon:* Intraday Scalp
 ⚠️ _Options decay fast. Stick to the Stop Loss._
             `.trim()
 		} else {
-			const entry = data.price
-
-			const stopLoss = isLong
-				? Number((data.vwap * 0.998).toFixed(2))
-				: Number((data.vwap * 1.002).toFixed(2))
-
-			const risk = Math.abs(entry - stopLoss)
-
-			const target1 = isLong
-				? Number((entry + risk * 1.5).toFixed(2))
-				: Number((entry - risk * 1.5).toFixed(2))
-
-			const target2 = isLong
-				? Number((entry + risk * 2.5).toFixed(2))
-				: Number((entry - risk * 2.5).toFixed(2))
-
-			const actionLabel = isLong ? '🟢 BUY LONG' : '🔴 SELL SHORT'
-			const volumeStr =
-				data.volumeSpikeRatio > 1.2
-					? `\n• Volume: ${data.volumeSpikeRatio}x Institutional Surge 🔥`
-					: ''
-
-			message = `
-⚡ *NEW TRADE ALERT* ⚡
-
-${actionLabel}
-📌 *Asset:* ${data.symbol}
-
-*📊 The Edge:*
-• Strategy: ${data.trigger}${volumeStr}
-
-*🎯 Execution Plan:*
-• *Entry:* ₹${entry}
-• *Target 1:* ₹${target1}
-• *Target 2:* ₹${target2}
-• *Stop Loss:* ₹${stopLoss}${scoreNote}
-
-⏳ *Horizon:* Intraday Only
-⚖️ _Capital preservation first. Respect the levels._
-            `.trim()
+			message = buildEquityMessage({
+				symbol: data.symbol,
+				side: data.side,
+				trigger: data.trigger,
+				volumeSpikeRatio: data.volumeSpikeRatio,
+				entry,
+				stopLoss,
+				target1,
+				target2,
+				qty: sizing.actualSize,
+				durationClass,
+				scoreLines,
+			})
 		}
 
-		await bot.telegram.sendMessage(ENV.TELEGRAM_CHANNEL_ID, message, {
-			parse_mode: 'Markdown',
-		})
+		try {
+			await bot.telegram.sendMessage(ENV.TELEGRAM_CHANNEL_ID, message, { parse_mode: 'Markdown' })
+		} catch (mdErr) {
+			// Unescaped Markdown (e.g. `_` in a symbol) makes Telegram reject the
+			// message. Retry as plain text rather than lose the alert.
+			console.warn('[TelegramWorker] Markdown send failed, retrying as plain text:', mdErr)
+			try {
+				await bot.telegram.sendMessage(ENV.TELEGRAM_CHANNEL_ID, message.replace(/[*_`]/g, ''))
+			} catch (plainErr) {
+				await releaseAlertSlot(redisClient, slotArgs).catch(() => {})
+				throw plainErr
+			}
+		}
 
 		console.log(
 			`✅ [${data.side}] Alert dispatched for ${data.symbol}${decision ? ` (score ${decision.score}/100)` : ''}`,

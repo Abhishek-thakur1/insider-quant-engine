@@ -9,7 +9,7 @@ import { buildOptionUniverse, updateOptionTick, hasATMShifted } from '../utils/o
 import { seedHistoricalVwap, fetchAndSeedSymbol, getTodayString } from './vwapSeeder.js'
 import { feedTick } from '../utils/candleAggregator.js'
 import { AnomalyScanner } from './anomalyScanner.js'
-import { Telegraf } from 'telegraf'
+import { isMarketHours } from '../utils/marketHours.js'
 
 // [NEW] Regime detector feed
 import { pushNiftyReturn } from '../utils/regimeDetector.js'
@@ -135,7 +135,6 @@ export const startLiveEngine = async () => {
 	await warnIfVwapMissing(activeUniverse)
 
 	const accessToken = fs.readFileSync(TOKEN_PATH, 'utf8').trim()
-	const bot = new Telegraf(ENV.TELEGRAM_BOT_TOKEN)
 
 	// Anomaly Scanner for Dynamic Promotion
 	const anomalyScanner = new AnomalyScanner()
@@ -153,14 +152,10 @@ export const startLiveEngine = async () => {
 			new VolatilityContraction(symbol),
 		])
 
-		// Cleanup any stale state from prior days
-		await Promise.all([
-			redisClient.del(`cooldown:v2:momentum:${symbol}`),
-			redisClient.del(`v2:session_open:${symbol}`),
-			redisClient.del(`v2:cooldown:vcp:${symbol}`),
-			redisClient.del(`v2:cooldown:gapgo:${symbol}`),
-			redisClient.del(`v2:vcp_history:${symbol}`),
-		])
+		// Cooldown / session-open keys carry TTLs and are deliberately NOT deleted:
+		// after a restart a symbol is promoted again, and wiping its cooldown let
+		// the same setup re-alert. Only the TTL-less VCP history is reset.
+		await redisClient.del(`v2:vcp_history:${symbol}`)
 
 		// bot.telegram.sendMessage(ENV.TELEGRAM_CHANNEL_ID, `🚀 *DYNAMIC PROMOTION*\nSymbol: \`${symbol}\`\nReason: ${reason}\nStatus: Full detectors engaged.`, { parse_mode: 'Markdown' }).catch(console.error)
 	}
@@ -174,24 +169,21 @@ export const startLiveEngine = async () => {
 				new VolatilityContraction(symbol),
 			])
 
-			// Full boot cleanup — all detector state reset for new session
-			await Promise.all([
-				redisClient.del(`cooldown:v2:momentum:${symbol}`),
-				redisClient.del(`v2:session_open:${symbol}`),
-				redisClient.del(`v2:cooldown:vcp:${symbol}`),
-				redisClient.del(`v2:cooldown:gapgo:${symbol}`),
-				redisClient.del(`v2:vcp_history:${symbol}`),
-			])
+			// Cooldown and session-open keys all have TTLs (≤ 8 h), so yesterday's
+			// have expired by morning. They are NOT deleted at boot: a mid-session
+			// restart (watchdog exit → Docker restart) used to wipe every cooldown
+			// and let the same setups re-alert. Only TTL-less state is reset.
+			await redisClient.del(`v2:vcp_history:${symbol}`)
 		}),
 	)
 
 	// Clear regime data from previous session so today starts fresh
+	// Nifty cooldown keys (cooldown:v2:nifty_pulse, cooldown:v2:vwap_reclaim,
+	// cooldown:v2:nifty_ore, cooldown:oi_sweep, cooldown:delta_squeeze) are TTL'd
+	// and intentionally survive restarts — see the per-symbol note above.
+	// alert:sent:{day}:* / alert:count:{day} (alertPolicy) are date-keyed and
+	// must never be cleared here either.
 	await Promise.all([
-		redisClient.del('cooldown:v2:nifty_pulse'),
-		redisClient.del('cooldown:v2:vwap_reclaim'),
-		redisClient.del('cooldown:v2:nifty_ore'),
-		redisClient.del('cooldown:oi_sweep'),
-		redisClient.del('cooldown:delta_squeeze'),
 		redisClient.del('market:nifty:bias'),
 		redisClient.del('regime:nifty:returns_1min'),
 		redisClient.del('regime:nifty:current'),
@@ -335,6 +327,13 @@ export const startLiveEngine = async () => {
 
 	const watchdog = setInterval(() => {
 		if (isShuttingDown) return
+		// Outside 09:15–15:30 IST (pre-open lull after the 09:00 boot, post-close)
+		// silence is normal. Keep the clock fresh so the first in-session check
+		// measures from the open, not from the last pre-open tick.
+		if (!isMarketHours()) {
+			lastTickTime = Date.now()
+			return
+		}
 		if (Date.now() - lastTickTime > WATCHDOG_TIMEOUT_MS) {
 			console.error('[Watchdog] ⚠️ No ticks received for 30 seconds! Zombie connection detected.')
 			console.error('[Watchdog] 🔄 In-process reconnect is unreliable with the Fyers SDK singleton — exiting for clean Docker restart...')

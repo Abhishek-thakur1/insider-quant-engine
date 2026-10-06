@@ -1116,6 +1116,12 @@ version live in `backtest/core/symbolClass.ts`, with a test pinning the five aff
 | `v2:cooldown:gapgo:{sym}` | flag | 28 800 s | GapAndGoMomentum | itself |
 | `orb:{15\|30}min:{high\|low}:{sym}` | price | 8 h | **`orbDetector` (dormant)** | nothing in the live path (was NiftyLiquiditySweep, now archived) |
 | `HTF_TREND:{sym}` | `BULLISH\|BEARISH` | — | **nothing** | `BaseDetector.isDailyTrendAligned` |
+| `alert:sent:{IST-date}:{detector}:{symbol}` | timestamp (SET NX) | 36 h | `alertPolicy.reserveAlertSlot` | itself — one Telegram alert per detector+symbol per day. Nifty option symbols dedup on `NIFTY`. **Never cleared at boot.** |
+| `alert:count:{IST-date}` | counter | 36 h | `alertPolicy.reserveAlertSlot` | itself — daily cap. **Never cleared at boot.** |
+
+> **2026-10-06:** cooldown keys (`cooldown:*`, `v2:cooldown:*`, `v2:session_open:*`) are **no
+> longer deleted at boot or on anomaly promotion**. They are TTL'd (≤ 8 h), so yesterday's have
+> expired by morning; deleting them let every watchdog restart re-arm the same setups.
 | `session_open:{sym}` | price | 8 h | Multitimeframebreakout (dormant) | itself |
 | `armed:vcp:{sym}`, `memory:vcp:*`, `baseline:vcp:*` | flag / lists | 8 h / none | vcpDetector (dormant) | itself |
 
@@ -1310,6 +1316,28 @@ Do not decide these unilaterally:
 
 If you change behaviour, update `AGENTS.md` in the same commit. A stale brief is worse than no
 brief, because the next agent will trust it.
+
+## 11.7 Telegram alert policy (2026-10-06)
+
+Code: `src/workers/alertPolicy.ts` (pure, tested in `tests/alertPolicy.test.ts`), called from
+`telegramWorker.ts`. **Alert policy affects Telegram only — recording to Postgres is unchanged and
+happens before any alert decision.**
+
+| Rule | Behaviour |
+|---|---|
+| Gated only | Only `decision.passed === true` is sent. A filter **error** records the trade as ungated and sends nothing (this replaces the old "fail open = send unfiltered"). |
+| Capital | Full skip (`actualSize = 0`) → never sent. REDUCE → normal alert with the reduced qty; no capital wording anywhere in the channel. |
+| Dedup | One alert per detector + symbol per IST day (`alert:sent:*`, survives restarts). |
+| Daily cap | `TELEGRAM_MAX_ALERTS_PER_DAY` (default **20** — a noise-control choice, not validated). First overflow sends one notice to `TELEGRAM_ADMIN_ID`; then silence. |
+| Levels | SL/T1/T2/qty in the message are the same values written to Postgres (equity SL is still VWAP ± 0.2 %, not the detector's candle SL — open item). |
+| Watchdog | Exits on a silent socket only during 09:15–15:30 IST (`utils/marketHours.ts`). |
+
+`StockMomentumBreakoutDetector` now emits `durationClass: 'INTRADAY'` (was `SWING`) until a durable
+multi-day position store exists. Rows before this change are labelled SWING — see the data
+provenance work in progress.
+
+Not yet done (planned): `signals` table, versioned DB migrations replacing the `quant_api` boot
+migration, Nifty expiry from the symbol master, a real-path SHORT test, docs rewrite.
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
