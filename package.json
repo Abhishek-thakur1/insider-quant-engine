@@ -9,7 +9,8 @@
     "format": "prettier --write \"src/**/*.ts\" \"backtest/**/*.ts\" \"tests/**/*.ts\"",
     "lint": "eslint \"src/**/*.ts\" \"backtest/**/*.ts\" \"tests/**/*.ts\"",
     "check": "npm run format && npm run lint && npm run test",
-    "typecheck": "tsc --noEmit --types node"
+    "typecheck": "tsc --noEmit --types node",
+    "migrate": "tsx src/db/migrate.ts"
   },
   "keywords": [],
   "author": "",

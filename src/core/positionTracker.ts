@@ -1,6 +1,7 @@
 import { redisClient } from '../config/redis.js'
 import { pool } from '../config/db.js'
 import type { TickData } from './types.js'
+import { insertStatusFor, isOrphanedAtBoot, istDate } from './positionStatus.js'
 
 export interface OpenPosition {
 	id: string
@@ -31,22 +32,49 @@ class PositionTracker {
 	private lastPnlPublishTime = new Map<string, number>()
 	private isInitialized = false
 
-	// Load open positions from Redis on boot
+	// Load open positions from Redis on boot. trades:open is NOT cleared at boot
+	// (websocket.ts), so SWING positions carry over between sessions. INTRADAY
+	// leftovers from a prior day are marked ORPHANED instead of being closed at
+	// today's price.
 	public async init() {
 		if (this.isInitialized) return
 		try {
 			const keys = await redisClient.hKeys('trades:open')
+			let loaded = 0
+			let orphaned = 0
 			for (const key of keys) {
 				const data = await redisClient.hGet('trades:open', key)
-				if (data) {
-					const pos = JSON.parse(data) as OpenPosition
-					this.addToMemory(pos)
+				if (!data) continue
+				const pos = JSON.parse(data) as OpenPosition
+				if (isOrphanedAtBoot(pos, Date.now())) {
+					await this.markOrphaned(pos)
+					orphaned++
+					continue
 				}
+				this.addToMemory(pos)
+				loaded++
 			}
-			console.log(`[PositionTracker] 🔄 Loaded ${keys.length} open positions from Redis.`)
+			console.log(`[PositionTracker] 🔄 Loaded ${loaded} open positions from Redis (${orphaned} prior-day INTRADAY marked ORPHANED).`)
 			this.isInitialized = true
 		} catch (err) {
 			console.error('[PositionTracker] ❌ Init error:', err)
+		}
+	}
+
+	private async markOrphaned(pos: OpenPosition) {
+		try {
+			await pool.query(
+				`UPDATE paper_trades
+				 SET status = 'ORPHANED',
+				     data_quality = CASE WHEN 'orphaned' = ANY(data_quality) THEN data_quality ELSE array_append(data_quality, 'orphaned') END
+				 WHERE symbol = $1 AND status IN ('OPEN', 'SKIPPED') AND entry_time = to_timestamp($2 / 1000.0)`,
+				[pos.symbol, pos.timestamp],
+			)
+			await redisClient.hDel('trades:open', pos.id)
+			console.warn(`[PositionTracker] 👻 ${pos.symbol} ${pos.side} from ${istDate(pos.timestamp)} was never closed — marked ORPHANED (no exit recorded).`)
+		} catch (err) {
+			// Leave it in Redis so the next boot retries; don't track it in memory.
+			console.error(`[PositionTracker] ❌ Failed to mark ${pos.symbol} ORPHANED:`, err)
 		}
 	}
 
@@ -70,13 +98,15 @@ class PositionTracker {
 		// Track in memory for ultra-fast tick checking
 		this.addToMemory(pos)
 
-		// Insert into Postgres
+		// Insert into Postgres. Capital-skipped signals (actual size 0) go in as
+		// SKIPPED, not OPEN — they are not positions (see positionStatus.ts).
+		const { status, dataQuality } = insertStatusFor(pos)
 		try {
 			await pool.query(
 				`INSERT INTO paper_trades (
-					symbol, detector, direction, entry_price, entry_time, stop_price, target_price, status, regime_class, gated, qty, capital_gated, actual_size, duration_class
-				) VALUES ($1, $2, $3, $4, to_timestamp($5 / 1000.0), $6, $7, 'OPEN', $8, $9, $10, $11, $12, $13)`,
-				[pos.symbol, pos.detectorName, pos.side, pos.entryPrice, pos.timestamp, pos.stopLoss, pos.target, pos.regimeClass || null, pos.gated || false, pos.size, pos.capitalGated || false, pos.actualSize ?? pos.size, pos.durationClass || 'INTRADAY']
+					symbol, detector, direction, entry_price, entry_time, stop_price, target_price, status, regime_class, gated, qty, capital_gated, actual_size, duration_class, data_quality
+				) VALUES ($1, $2, $3, $4, to_timestamp($5 / 1000.0), $6, $7, $14, $8, $9, $10, $11, $12, $13, $15)`,
+				[pos.symbol, pos.detectorName, pos.side, pos.entryPrice, pos.timestamp, pos.stopLoss, pos.target, pos.regimeClass || null, pos.gated || false, pos.size, pos.capitalGated || false, pos.actualSize ?? pos.size, pos.durationClass || 'INTRADAY', status, dataQuality]
 			)
 		} catch (dbErr) {
 			console.error('[PositionTracker] ❌ Postgres insert error:', dbErr)
@@ -102,17 +132,14 @@ class PositionTracker {
 		const m = nowIST.getUTCHours() * 60 + nowIST.getUTCMinutes()
 		const isAfter315 = m >= 15 * 60 + 15
 
-		const todayStr = nowIST.toISOString().split('T')[0]
-
 		for (const pos of positions) {
 			let isClosed = false
 			let exitReason: 'STOP_LOSS' | 'TARGET' | 'TIME' | null = null
 
-			const posDate = new Date(pos.timestamp + 5.5 * 3600 * 1000).toISOString().split('T')[0]
-			const isStale = posDate !== todayStr
-
-			// Force close INTRADAY positions at or after 3:15 PM, or if they leaked into the next day
-			if ((isAfter315 || isStale) && (!pos.durationClass || pos.durationClass === 'INTRADAY')) {
+			// Force close INTRADAY positions at or after 3:15 PM. Prior-day INTRADAY
+			// leftovers never reach here: init() marks them ORPHANED instead of
+			// closing them at the next session's price.
+			if (isAfter315 && (!pos.durationClass || pos.durationClass === 'INTRADAY')) {
 				isClosed = true
 				exitReason = 'TIME'
 			} else if (pos.side === 'LONG') {
@@ -173,8 +200,9 @@ class PositionTracker {
 
 					await pool.query(
 						`UPDATE paper_trades 
-						 SET exit_price = $1, exit_time = to_timestamp($2 / 1000.0), realized_pnl = $3, status = 'CLOSED', r_multiple = $4, exit_reason = $5
-						 WHERE symbol = $6 AND status = 'OPEN' AND entry_time = to_timestamp($7 / 1000.0)`,
+						 SET exit_price = $1, exit_time = to_timestamp($2 / 1000.0), realized_pnl = $3, r_multiple = $4, exit_reason = $5,
+						     status = CASE WHEN status = 'SKIPPED' THEN 'SKIPPED' ELSE 'CLOSED' END
+						 WHERE symbol = $6 AND status IN ('OPEN', 'SKIPPED') AND entry_time = to_timestamp($7 / 1000.0)`,
 						[closedPos.exitPrice, closedPos.exitTimestamp, closedPos.pnl, r_multiple, exitReason, pos.symbol, pos.timestamp]
 					)
 				} catch (dbErr) {

@@ -103,6 +103,8 @@ const tickEmitter = new EventEmitter()
 tickEmitter.setMaxListeners(200)
 
 import { positionTracker } from '../core/positionTracker.js'
+import { pool } from '../config/db.js'
+import { schemaProblem } from '../db/migrate.js'
 
 // High-Conviction Nifty Singleton Detectors
 const oiSweepDetector = new OiLiquiditySweepDetector()
@@ -125,6 +127,10 @@ export const startLiveEngine = async () => {
 
 	await bootRedis()
 	await seedHistoricalVwap()
+	// Read-only. registerTrade writes data_quality (migration 0002), so a
+	// pending migration means trade inserts will fail — warn loudly, don't block.
+	const schemaIssue = await schemaProblem(pool)
+	if (schemaIssue) console.error(`[Engine] ❌ Database schema not current: ${schemaIssue}`)
 	await positionTracker.init()
 
 	const watchlist: string[] = JSON.parse(fs.readFileSync(WATCHLIST_PATH, 'utf8'))
@@ -183,13 +189,15 @@ export const startLiveEngine = async () => {
 	// and intentionally survive restarts — see the per-symbol note above.
 	// alert:sent:{day}:* / alert:count:{day} (alertPolicy) are date-keyed and
 	// must never be cleared here either.
+	// trades:open is NOT cleared: positionTracker.init() (above) already loaded
+	// it, and deleting it orphaned every position still open at the next boot.
+	// SWING positions now carry over; prior-day INTRADAY ones are marked ORPHANED.
 	await Promise.all([
 		redisClient.del('market:nifty:bias'),
 		redisClient.del('regime:nifty:returns_1min'),
 		redisClient.del('regime:nifty:current'),
 		redisClient.del('jsfilter:decisions'),
 		redisClient.del('jsfilter:stats'),   // per-session fired/blocked tallies — reset daily
-		redisClient.del('trades:open'),
 		redisClient.del('pnl:daily'),
 	])
 

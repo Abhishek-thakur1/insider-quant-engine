@@ -1129,7 +1129,13 @@ Boot cleanup in `websocket.ts` deletes, per symbol: `cooldown:v2:momentum:*`, `v
 `v2:cooldown:vcp:*`, `v2:cooldown:gapgo:*`, `v2:vcp_history:*`; and globally:
 `cooldown:v2:nifty_pulse`, `cooldown:v2:vwap_reclaim`, `cooldown:v2:nifty_ore`, `cooldown:oi_sweep`,
 `cooldown:delta_squeeze`, `market:nifty:bias`, `regime:nifty:returns_1min`, `regime:nifty:current`,
-`jsfilter:decisions`, `jsfilter:stats`, `trades:open`, `pnl:daily`.
+`jsfilter:decisions`, `jsfilter:stats`, `pnl:daily`.
+
+> **2026-10-18:** `trades:open` is **no longer deleted at boot**. The delete ran *after*
+> `positionTracker.init()` had loaded it, so every position still open at the next boot was lost
+> from Redis and left `OPEN` in Postgres forever (the ghost rows). Now `init()` keeps same-day and
+> SWING positions, and marks prior-day INTRADAY ones `ORPHANED` (§14) instead of closing them at the
+> next session's price. No live detector emits SWING today, so in practice everything is INTRADAY.
 
 It does **not** clear `vwap:*` (correct — the seeder owns those), `orb:*`, `HTF_TREND:*`, or the
 in-memory `optionTickStore` / `candleAggregator` / `bosStreak` (irrelevant on a fresh process, but
@@ -1336,8 +1342,27 @@ happens before any alert decision.**
 multi-day position store exists. Rows before this change are labelled SWING — see the data
 provenance work in progress.
 
-Not yet done (planned): `signals` table, versioned DB migrations replacing the `quant_api` boot
-migration, Nifty expiry from the symbol master, a real-path SHORT test, docs rewrite.
+Not yet done (planned): `signals` table, Nifty expiry from the symbol master, a real-path SHORT
+test, docs rewrite. (Versioned migrations: done 2026-10-18, see §11.8 and §14.)
+
+## 11.8 Versioned migrations and ghost rows (2026-10-18)
+
+| Change | Where |
+|---|---|
+| The `quant_api` boot block that rewrote `qty` / `r_multiple` / `actual_size` / `duration_class` / `realized_pnl` and closed prior-day OPEN rows at a fake ₹0 / 0R `EOD_EXPIRED` on **every start** is gone. Boot now only *reads* `schema_migrations` and warns. Restarting `quant_api` no longer touches data. | `src/api/server.ts` |
+| Versioned, one-time migrations: `db/migrations/NNNN_name.sql`, run explicitly with `npm run migrate` (`-- --dry-run` to list). Advisory lock, one transaction per file, checksum check on applied files (CRLF-insensitive). **Never edit an applied migration — add a new one.** | `src/db/migrate.ts`, `tests/migrate.test.ts` |
+| `0001_baseline` — schema half of the old block only (idempotent). No data backfills. | `db/migrations/` |
+| `0002_data_quality` — `data_quality TEXT[]` flags column (§14). | `db/migrations/` |
+| `0003_flag_and_resolve_ghosts` — sets flags and moves ghost rows to `ORPHANED` / `SKIPPED`. Never writes exit/PnL/R. **Must run on deploy day, before the engine boots again** (after that, prior-day SWING rows are legitimately tracked). | `db/migrations/` |
+| Engine boot no longer deletes `trades:open` (§7). Prior-day INTRADAY positions are marked `ORPHANED` at boot; the old "stale → close at next day's price" branch in `processTick` is removed. | `src/ingestion/websocket.ts`, `src/core/positionTracker.ts` |
+| Capital-skipped signals (actual size 0) are inserted as `SKIPPED` with flag `capital_skipped`, not `OPEN`. Still tracked, so exit and R are recorded, but they never become `CLOSED`. | `src/core/positionStatus.ts`, `tests/positionStatus.test.ts` |
+| Engine and API boot log a warning when migrations are pending. `registerTrade` writes `data_quality`, so **run `npm run migrate` before the engine's next boot** or inserts fail (logged, not fatal). | |
+
+**Deploy order (owner, outside market hours):** `pg_dump` → pull + rebuild → `docker compose run --rm quant_api npm run migrate -- --dry-run` → `docker compose run --rm quant_api npm run migrate` → restart services.
+
+**Rollback:** restore the `pg_dump`. Partial manual reversal: `UPDATE paper_trades SET status='OPEN' WHERE status IN ('ORPHANED','SKIPPED') AND exit_price IS NULL; ALTER TABLE paper_trades DROP COLUMN data_quality; DROP TABLE schema_migrations;` then redeploy the previous commit. This brings back the boot rewrite.
+
+Verified locally against a throwaway `postgres:15-alpine` (prod-like fixture rows and a fresh `init.sql` DB): all three apply, a rerun is a no-op, outcome columns are byte-identical before/after, and the tracker's new INSERT / close / orphan SQL behaves as specified. **Not yet run on EC2.**
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
@@ -1368,7 +1393,7 @@ Because it completely ignored concurrent capital contention, historical rupee Pn
 
 ## 14. Paper-trade Postgres schema (paper_trades) — full column reference
 
-Maintained by db/init.sql (static) and the runtime ALTER TABLE block in src/api/server.ts (idempotent, runs on every API container start).
+Maintained by `db/init.sql` (initial table) plus the versioned migrations in `db/migrations/`, applied with `npm run migrate` (§11.8). Nothing alters the schema at service boot any more.
 
 | Column | Type | Written by | Notes |
 |---|---|---|---|
@@ -1376,84 +1401,88 @@ Maintained by db/init.sql (static) and the runtime ALTER TABLE block in src/api/
 | symbol | TEXT | positionTracker.registerTrade | |
 | detector | TEXT | positionTracker.registerTrade | e.g. "Stock Momentum Breakout" |
 | direction | TEXT | positionTracker.registerTrade | LONG or SHORT |
-| ntry_price | NUMERIC | positionTracker.registerTrade | |
-| ntry_time | TIMESTAMPTZ | positionTracker.registerTrade | Used by positionTracker UPDATE WHERE clause |
+| entry_price | NUMERIC | positionTracker.registerTrade | |
+| entry_time | TIMESTAMPTZ | positionTracker.registerTrade | Used by positionTracker UPDATE WHERE clause |
 | stop_price | NUMERIC | positionTracker.registerTrade | |
-| 	arget_price | NUMERIC | positionTracker.registerTrade | |
-| xit_price | NUMERIC NULL | positionTracker.processTick | NULL while OPEN |
-| xit_time | TIMESTAMPTZ NULL | positionTracker.processTick | NULL while OPEN; **primary filter for history/heatmap queries** |
-| xit_reason | TEXT NULL | positionTracker.processTick | STOP_LOSS, TARGET, or EOD_EXPIRED |
-| status | TEXT | both | OPEN or CLOSED |
-| ealized_pnl | NUMERIC NULL | positionTracker.processTick | NULL while OPEN |
-| egime_class | TEXT NULL | positionTracker.registerTrade | Regime at entry time |
+| target_price | NUMERIC | positionTracker.registerTrade | |
+| exit_price | NUMERIC NULL | positionTracker.processTick | NULL while OPEN |
+| exit_time | TIMESTAMPTZ NULL | positionTracker.processTick | NULL while OPEN; **primary filter for history/heatmap queries** |
+| exit_reason | TEXT NULL | positionTracker.processTick | STOP_LOSS, TARGET, TIME. Historical `EOD_EXPIRED` rows are fake closes from the removed boot sweep (flag `synthetic_close`). |
+| status | TEXT | positionTracker / migration 0003 | `OPEN`, `CLOSED`, `SKIPPED` (capital-skipped signal, actual size 0; tracked for R, never a position), `ORPHANED` (no process tracks it; exit/PnL/R left NULL — the real outcome is unknown). The API reads only `OPEN` / `CLOSED`. |
+| realized_pnl | NUMERIC NULL | positionTracker.processTick | NULL while OPEN |
+| regime_class | TEXT NULL | positionTracker.registerTrade | Regime at entry time |
 | gated | BOOLEAN | positionTracker.registerTrade | Whether JaneStreetFilter passed |
-| qty | NUMERIC(10,2) | migration / egisterTrade | Unconstrained theoretical size |
+| qty | NUMERIC(10,2) | migration / registerTrade | Unconstrained theoretical size |
 | capital_gated | BOOLEAN | positionTracker.registerTrade | True if size was zeroed by capital constraint |
-| ctual_size | NUMERIC(10,2) | migration / egisterTrade | Real executed size (may be 0 if cap-gated) |
-| _multiple | NUMERIC(10,2) NULL | positionTracker.processTick | (exit-entry)/|entry-sl|; NULL if sl==entry; clamped away from Infinity/NaN |
+| actual_size | NUMERIC(10,2) | migration / registerTrade | Real executed size (may be 0 if cap-gated) |
+| r_multiple | NUMERIC(10,2) NULL | positionTracker.processTick | (exit-entry)/|entry-sl|; NULL if sl==entry; clamped away from Infinity/NaN |
 | duration_class | TEXT NULL | positionTracker.registerTrade | INTRADAY or SWING; derived from detector at signal time |
+| data_quality | TEXT[] NOT NULL DEFAULT '{}' | migration 0003 / registerTrade / positionTracker.init | Provenance flags. Empty = no known problem (not "verified"). Flags are only added, never cleared to make a row look clean. See the flag table below. |
 | created_at | TIMESTAMPTZ | Postgres | DEFAULT now() |
 
 **Indexes on paper_trades:**
 
 | Index | Column(s) | Notes |
 |---|---|---|
-| idx_trades_entry_time | ntry_time | Used by positionTracker UPDATE WHERE |
-| idx_trades_exit_time | xit_time DESC | Primary filter for history/heatmap (exit-date bucketing) |
+| idx_trades_entry_time | entry_time | Used by positionTracker UPDATE WHERE |
+| idx_trades_exit_time | exit_time DESC | Primary filter for history/heatmap (exit-date bucketing) |
 | idx_trades_status | status | WHERE status = 'OPEN' / 'CLOSED' scans |
 | idx_trades_symbol | symbol | positionTracker UPDATE WHERE |
 | idx_trades_detector | detector | Per-detector history filter |
-| idx_trades_open | ntry_time DESC WHERE status='OPEN' | Fast scan of live positions; partial index |
+| idx_trades_open | entry_time DESC WHERE status='OPEN' | Fast scan of live positions; partial index |
 
-**Dangling-OPEN cleanup:** On every API container start, server.ts runs:
-`sql
-UPDATE paper_trades
-SET status='CLOSED', exit_price=entry_price, exit_time=now(), realized_pnl=0,
-    exit_reason='EOD_EXPIRED', r_multiple=0
-WHERE status='OPEN' AND entry_time::date < CURRENT_DATE
-`
-This closes any position that was still OPEN from a prior day (engine stopped at 15:30 before the position hit SL/target).
+**data_quality flags** (set by migration 0003 unless noted; evidence in `docs/DATA_PROVENANCE.md`):
 
-**duration_class classification** — sourced from the detector at signal time, hardcoded in egisterTrade:
+| Flag | Meaning | Use the row for |
+|---|---|---|
+| `synthetic_close` | `exit_reason = 'EOD_EXPIRED'`: ₹0 / 0R close invented by the removed boot sweep, dated on an API restart | Signal occurrence only |
+| `orphaned` | Was left `OPEN` with no process tracking it (migration 0003, or `positionTracker.init()` at boot) | Signal occurrence only |
+| `capital_skipped` | `actual_size = 0` (migration 0003, or `registerTrade`). PnL is ₹0 by construction | R only, and only if it closed |
+| `index_option_proxy` | Nifty `… CE/PE` row priced at index level | Nothing price-based |
+| `pre_sizing_approx` | Entry before 2026-09-14: size/PnL are per-trade backfill approximations (§13) | R, not rupee PnL |
+| `duration_unverified` | Entry before 469a568 (2026-10-05 21:32 IST): `duration_class` is a default or an in-place script relabel | Anything except duration splits |
+
+**No boot-time cleanup.** The old "dangling-OPEN cleanup" (close prior-day OPEN rows at `exit_price = entry_price`, ₹0, 0R, `EOD_EXPIRED`) was removed on 2026-10-18. It invented outcomes, and it hit SWING rows too.
+
+**duration_class classification** — sourced from the detector at signal time, hardcoded in registerTrade:
 - StockMomentumBreakoutDetector → SWING (set at line ~358 of the detector; also hardcodes durationClass: 'SWING' on AlertPayload which permanently bypasses bayesianEngine time-of-day restriction — see §3.9)
 - All Nifty detectors, GapAndGoMomentum, VolatilityContraction → INTRADAY (default)
-- Backfill: migration classifies existing rows using ILIKE '%Momentum%' / ILIKE '%VCP%'
+- Backfill (historical, removed 2026-10-18): the old boot block classified existing rows using ILIKE '%Momentum%' / ILIKE '%VCP%'. Such rows carry `duration_unverified`.
 
 ---
 
 ## 11.6 What changed in the full-audit session (Sept 24, 2026)
 
-Commit 0d51fc on 2. All changes are additive / fixes only — no new detectors, no threshold changes.
+Commit f0d51fc on v2. All changes are additive / fixes only — no new detectors, no threshold changes.
 
 ### Engine (src/)
 
 | File | Change |
 |---|---|
-| db/init.sql | Added duration_class TEXT, xit_reason TEXT columns; added idx_trades_exit_time, idx_trades_status, idx_trades_symbol, idx_trades_open indexes |
-| src/api/server.ts | Migration block: adds duration_class, xit_reason columns; creates the 4 new indexes; backfills duration_class for existing rows; closes dangling OPEN rows from prior days (EOD_EXPIRED); exposes durationClass and xitReason in all REST responses; null-safe xitTimestamp in history endpoint |
-| src/core/positionTracker.ts | Added durationClass to OpenPosition interface; writes duration_class in egisterTrade INSERT; fixed _multiple division-by-zero (guard denominator !== 0, clamp Infinity/NaN to null); writes xit_reason in processTick UPDATE; fixed unrealized PnL to use ctualSize (was using raw size) |
+| db/init.sql | Added duration_class TEXT, exit_reason TEXT columns; added idx_trades_exit_time, idx_trades_status, idx_trades_symbol, idx_trades_open indexes |
+| src/api/server.ts | Migration block: adds duration_class, exit_reason columns; creates the 4 new indexes; backfills duration_class for existing rows; closes dangling OPEN rows from prior days (EOD_EXPIRED); exposes durationClass and exitReason in all REST responses; null-safe exitTimestamp in history endpoint |
+| src/core/positionTracker.ts | Added durationClass to OpenPosition interface; writes duration_class in registerTrade INSERT; fixed r_multiple division-by-zero (guard denominator !== 0, clamp Infinity/NaN to null); writes exit_reason in processTick UPDATE; fixed unrealized PnL to use actualSize (was using raw size) |
 | src/ingestion/websocket.ts | Added jsfilter:stats to boot-cleanup Promise.all — was accumulating across sessions |
 | src/detectors/v2/stockMomentumBreakoutDetector.ts | Removed emergency SHORT pause guard (lines 310–314). Investigation confirmed _fire() was always geometrically correct for SHORT. Added explanatory comment pointing to test file. |
 | src/workers/telegramWorker.ts | Fixed TELEGRAM_CHANNEL_ID → ENV.TELEGRAM_CHANNEL_ID (pre-existing bare reference; caused type error, would error at runtime on skip-alert path) |
-| 	ests/shortDirectionGeometry.test.ts | **New file.** 13 tests asserting SHORT levels satisfy 	arget < entry < stop and LONG levels satisfy stop < entry < target across StockMomentumBreakout, NiftyORE, NiftyTrendPulse, and the processTick exit-check conditionals. |
+| tests/shortDirectionGeometry.test.ts | **New file.** 13 tests asserting SHORT levels satisfy target < entry < stop and LONG levels satisfy stop < entry < target across StockMomentumBreakout, NiftyORE, NiftyTrendPulse, and the processTick exit-check conditionals. |
 
 ### What was investigated and confirmed **not** a bug
-- _fire() SHORT geometry: sl = candle.high * 1.0015 (above entry ✓), 	1 = entry - risk * 1.5 (below entry ✓), isk = Math.abs(entry - sl) (safe ✓). Historical SHORT trades: none found with 	arget_price > entry_price or stop_price < entry_price.
+- _fire() SHORT geometry: sl = candle.high * 1.0015 (above entry ✓), t1 = entry - risk * 1.5 (below entry ✓), risk = Math.abs(entry - sl) (safe ✓). Historical SHORT trades: none found with target_price > entry_price or stop_price < entry_price.
 - (Number(r.qty) || 100) fallback in server.ts: intentional stub for pre-sizing-era rows. Documented.
-- The four ₹0-PnL trades: confirmed capitalGated: true, ctualSize: 0, PnL = (exit - entry) * 0 = 0. Not a bug.
+- The four ₹0-PnL trades: confirmed capitalGated: true, actualSize: 0, PnL = (exit - entry) * 0 = 0. Not a bug.
 
-### Dashboard (insider-quant-dashboard, commit eec74d on main)
+### Dashboard (insider-quant-dashboard, commit eeec74d on main)
 
 Full rewrite of App.tsx:
 
 | Bug | Fix |
 |---|---|
 | "Trade History" nav view showed only chart, no trades | Dedicated currentView === 'history' section renders full trade list, split by INTRADAY/SWING |
-| Detector dropdown emptied after filtering | Added separate llDetectors fetch from unfiltered history; dropdown never collapses |
-| ormat(new Date(t.exitTimestamp), 'HH:mm') crash on null exitTimestamp | safeDate() guard; chart data filters null exitTimestamp before mapping |
+| Detector dropdown emptied after filtering | Added separate allDetectors fetch from unfiltered history; dropdown never collapses |
+| format(new Date(t.exitTimestamp), 'HH:mm') crash on null exitTimestamp | safeDate() guard; chart data filters null exitTimestamp before mapping |
 | cumulative += t.pnl → NaN when pnl is null | cumulative += t.pnl ?? 0 |
-| SHORT modal: target fallback was ntryPrice * 1.05 (long-shaped) | Direction-aware: SHORT target = ntryPrice * 0.95, stop = ntryPrice * 1.05 |
-| Search bar was uncontrolled, no filtering | Controlled searchQuery state; filters ilteredHistory by symbol and detector name |
+| SHORT modal: target fallback was entryPrice * 1.05 (long-shaped) | Direction-aware: SHORT target = entryPrice * 0.95, stop = entryPrice * 1.05 |
+| Search bar was uncontrolled, no filtering | Controlled searchQuery state; filters filteredHistory by symbol and detector name |
 | No INTRADAY/SWING split anywhere | PnL card shows combined total + INTRADAY/SWING breakdown sub-cards; Trade History view groups by duration_class; Performance view has INTRADAY/SWING split panel; Stats computed per-class |
-| xitTimestamp in server.ts was 
-ew Date(null).getTime() = 0 | .exit_time ? new Date(r.exit_time).getTime() : null |
+| exitTimestamp in server.ts was new Date(null).getTime() = 0 | r.exit_time ? new Date(r.exit_time).getTime() : null |

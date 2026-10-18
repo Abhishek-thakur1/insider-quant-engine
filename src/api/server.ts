@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import { redisClient, bootRedis } from '../config/redis.js'
 import { pool } from '../config/db.js'
+import { schemaProblem } from '../db/migrate.js'
 
 const fastify = Fastify({ logger: true })
 
@@ -189,90 +190,15 @@ const startServer = async () => {
 	await bootRedis()
 	await bootSubscriber()
 
-	// ── Auto-Migration & Schema Updates ──
-	try {
-		console.log('[API Server] 🔄 Checking and backfilling paper_trades schema...')
-
-		// Column additions (idempotent)
-		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS r_multiple NUMERIC(10,2)`)
-		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS qty NUMERIC(10,2)`)
-		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS capital_gated BOOLEAN DEFAULT FALSE`)
-		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS actual_size NUMERIC(10,2)`)
-		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS duration_class TEXT`)
-		await pool.query(`ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS exit_reason TEXT`)
-
-		// Indexes (idempotent via IF NOT EXISTS)
-		await pool.query(`CREATE INDEX IF NOT EXISTS idx_trades_entry_time ON paper_trades (entry_time)`)
-		await pool.query(`CREATE INDEX IF NOT EXISTS idx_trades_exit_time  ON paper_trades (exit_time DESC)`)
-		await pool.query(`CREATE INDEX IF NOT EXISTS idx_trades_status     ON paper_trades (status)`)
-		await pool.query(`CREATE INDEX IF NOT EXISTS idx_trades_symbol     ON paper_trades (symbol)`)
-		await pool.query(`CREATE INDEX IF NOT EXISTS idx_trades_open       ON paper_trades (entry_time DESC) WHERE status = 'OPEN'`)
-
-		// Backfill qty and r_multiple for pre-sizing-era trades
-		const backfillRes = await pool.query(`
-			UPDATE paper_trades
-			SET 
-				qty = CASE 
-					WHEN stop_price IS NOT NULL AND stop_price != entry_price THEN 
-						LEAST(
-							GREATEST(1, FLOOR(10000.0 / entry_price)),
-							GREATEST(1, FLOOR(1000.0 / ABS(entry_price - stop_price)))
-						)
-					ELSE 100 
-				END,
-				r_multiple = CASE 
-					WHEN exit_price IS NOT NULL AND stop_price IS NOT NULL AND stop_price != entry_price THEN
-						CASE 
-							WHEN direction = 'LONG' THEN (exit_price - entry_price) / (entry_price - stop_price)
-							WHEN direction = 'SHORT' THEN (entry_price - exit_price) / (stop_price - entry_price)
-						END
-					ELSE NULL
-				END
-			WHERE r_multiple IS NULL OR qty IS NULL OR qty = 0;
-		`)
-
-		await pool.query(`UPDATE paper_trades SET actual_size = qty WHERE actual_size IS NULL;`)
-
-		// Backfill duration_class for existing trades based on known detector names
-		await pool.query(`
-			UPDATE paper_trades 
-			SET duration_class = CASE
-				WHEN detector ILIKE '%Momentum%' OR detector ILIKE '%VCP%' OR detector ILIKE '%Volatility_Contraction%' THEN 'SWING'
-				ELSE 'INTRADAY'
-			END
-			WHERE duration_class IS NULL
-		`)
-
-		// Backfill PnL using actual_size
-		const pnlRes = await pool.query(`
-			UPDATE paper_trades
-			SET realized_pnl = CASE
-				WHEN exit_price IS NOT NULL AND direction = 'LONG' THEN (exit_price - entry_price) * actual_size
-				WHEN exit_price IS NOT NULL AND direction = 'SHORT' THEN (entry_price - exit_price) * actual_size
-				ELSE realized_pnl
-			END
-			WHERE exit_price IS NOT NULL;
-		`)
-
-		// Mark stale OPEN trades (opened on a prior day) as expired breakeven closes
-		// so they don't dangle in Postgres forever with NULL exit columns.
-		// These were positions the engine held overnight but the exit condition
-		// was never met and the engine stopped (15:30 shutdown) before closing them.
-		const staleRes = await pool.query(`
-			UPDATE paper_trades
-			SET 
-				status = 'CLOSED',
-				exit_price = entry_price,
-				exit_time = now(),
-				realized_pnl = 0,
-				exit_reason = 'EOD_EXPIRED',
-				r_multiple = 0
-			WHERE status = 'OPEN' AND entry_time::date < CURRENT_DATE
-		`)
-
-		console.log(`[API Server] ✅ Migration complete. Backfilled ${backfillRes.rowCount} R/size, adjusted PnL for ${pnlRes.rowCount} trades, expired ${staleRes.rowCount} stale OPEN rows.`)
-	} catch (err) {
-		console.error('[API Server] ❌ Migration failed:', err)
+	// ── Schema check (read-only) ──
+	// Migrations are versioned and run explicitly with `npm run migrate`
+	// (src/db/migrate.ts). This boot path never mutates the database, so
+	// restarting quant_api is safe. It only warns when the schema is behind.
+	const schemaIssue = await schemaProblem(pool)
+	if (schemaIssue) {
+		console.warn(`[API Server] ⚠️  Database schema not current: ${schemaIssue}`)
+	} else {
+		console.log('[API Server] ✅ Database schema is current.')
 	}
 
 	try {
