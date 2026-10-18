@@ -51,6 +51,69 @@ Do this outside market hours (09:00–15:30 IST).
    - Add `--renew-anon-volumes` when dependencies change (`/app/node_modules` is an anonymous volume).
 6. The next morning, check `docker logs quant_engine 2>&1 | grep -E "PositionTracker|schema"`.
 
+## Planned deploy: `signals` table (migration 0004) — NOT DEPLOYED
+
+Status: on branch `feature/signals-table`, awaiting owner review. **Not merged to `v2`, not deployed.** Run this only after the owner approves the merge, and after Monday's check of the `bb7fb46` engine boot. Do it outside market hours (09:00–15:30 IST).
+
+**Preconditions (paste the output of each):**
+```bash
+docker logs quant_engine 2>&1 | grep -E "PositionTracker|schema|Postgres insert error"   # bb7fb46 boot healthy, no insert errors
+docker exec quant_postgres psql -U postgres -d insider_quant -c "SELECT version FROM schema_migrations ORDER BY 1;"   # expect 0001–0003
+```
+
+**Steps:**
+```bash
+cd ~/insider-quant-engine
+
+# 1. Backup + check the archive is readable
+SHA=$(git rev-parse --short HEAD)
+docker exec quant_postgres pg_dump -U postgres -d insider_quant -F c -f /tmp/pre_signals_$SHA.dump
+docker cp quant_postgres:/tmp/pre_signals_$SHA.dump ~/pre_signals_$SHA.dump && ls -lh ~/pre_signals_$SHA.dump
+docker run --rm -v ~/pre_signals_$SHA.dump:/d:ro postgres:15-alpine pg_restore -l /d | grep -E "TABLE|SEQUENCE"
+
+# 2. Pull the merged v2, then rebuild BOTH images (quant_api's schema check reads migration files from its own image)
+git pull origin v2 && git log --oneline -1
+docker compose build quant_api quant_engine
+
+# 3. Migrate: dry run must list ONLY 0004_signals
+docker compose run --rm --no-deps quant_api npm run migrate -- --dry-run
+docker compose run --rm --no-deps quant_api npm run migrate
+
+# 4. API now, engine at the 09:00 cron
+docker compose up -d --no-deps --force-recreate quant_api
+docker logs quant_api --tail 20                        # expect "✅ Database schema is current."
+docker compose stop quant_engine && docker compose create --force-recreate quant_engine
+docker ps -a --filter name=quant_engine --format '{{.Names}} {{.Status}}'   # expect "Created"
+```
+
+**Verify after the first full session.** Paste all of this:
+```bash
+Q='docker exec quant_postgres psql -U postgres -d insider_quant -c'
+$Q "SELECT trade_date, count(*) fires, count(*) FILTER (WHERE filter_result='PASSED') passed,
+           count(*) FILTER (WHERE rejected_at='REGIME') rej_regime, count(*) FILTER (WHERE rejected_at='EV') rej_ev,
+           count(*) FILTER (WHERE rejected_at='SCORE') rej_score, count(*) FILTER (WHERE filter_result='ERROR') filter_err,
+           count(trade_id) traded, count(*) FILTER (WHERE alert_sent) alerted
+    FROM signals GROUP BY 1 ORDER BY 1;"
+$Q "SELECT alert_suppressed_reason, count(*) FROM signals WHERE trade_date = current_date GROUP BY 1 ORDER BY 2 DESC;"
+# every paper trade today has a signal → expect 0
+$Q "SELECT count(*) AS trades_without_signal FROM paper_trades p
+    WHERE (p.entry_time AT TIME ZONE 'Asia/Kolkata')::date = (now() AT TIME ZONE 'Asia/Kolkata')::date
+      AND NOT EXISTS (SELECT 1 FROM signals s WHERE s.trade_id = p.id);"
+$Q "SELECT pg_size_pretty(pg_total_relation_size('signals')) AS signals_size, count(*) AS rows FROM signals;"
+docker logs quant_engine 2>&1 | grep -c "Alert dispatched"          # must equal today's "alerted"
+docker logs quant_engine 2>&1 | grep -E "[SignalLog]"            # expect the session-totals line; drops=0, no DROPPED lines
+docker exec quant_redis redis-cli HGETALL jsfilter:stats            # fired+blocked should equal passed+rejected (before next boot)
+```
+
+**What counts as evidence:**
+- `trades_without_signal = 0`;
+- `alerted` equals the `Alert dispatched` count;
+- `[SignalLog] session totals …` shows `failed_dropped=0 queue_cap_dropped=0`.
+
+`unique_skipped` should be 0. If it isn't, record it: it means a detector fired twice in the same millisecond. Note the measured row count and size, which replace the volume estimate.
+
+**Rollback:** run `$Q "DROP TABLE signals; DELETE FROM schema_migrations WHERE version='0004';"`, then redeploy the previous commit with the same rebuild/recreate steps. Old code ignores a missing table. The full fallback is restoring `~/pre_signals_$SHA.dump` (see Restore).
+
 ## Database migrations
 
 - The migration files live in `db/migrations/NNNN_name.sql`. The runner is `src/db/migrate.ts` (see AGENTS.md §11.8 and §14).
