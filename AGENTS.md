@@ -1449,12 +1449,17 @@ never retried `-360`. "High alpha" here = persistent outperformance vs the bench
 | Tiers + hysteresis + cap: CORE → held (yesterday's names with RS ≥ 70 and close > EMA50) → new Tier 1 → new Tier 2, to 100. | `screen.ts` |
 | Job: Fyers masters (universe = `-EQ` + INE ISIN; F&O flag from futures), incremental daily candle cache, shared limiter (≤ 4 starts per rolling second), `-360` retried 1/2/4 s. **Budget breach or missing benchmark → previous watchlist kept untouched**, `failed_<date>.json`, admin Telegram. Writes `universe_stats.json` (keeps the legacy fields `anomalyScanner` reads), `watchlist_meta.json`, `history/<date>.json.gz`, then `watchlist.json`. | `scripts/screener_eod.ts`, `src/screener/{job,fetchDaily,candleStore,masters}.ts` |
 | Engine reads only: `/app/data/*` via `resolveScreenerFile` (baked-in fallback), promotion source per symbol from meta. **No screening and no history calls at boot.** | `src/screener/paths.ts`, `websocket.ts`, `vwapSeeder.ts`, `anomalyScanner.ts` |
-| `signals.promotion_source` gains `SCREENER_LEADER` / `SCREENER_SETUP` (migration 0005). | `db/migrations/0005_screener_sources.sql`, `src/core/symbolSource.ts` |
+| `signals.promotion_source` gains `SCREENER_LEADER` / `SCREENER_SETUP` (migration **0006**; 0005 is reserved for Part D). Requires 0004 and raises if the signals table is missing. | `db/migrations/0006_screener_sources.sql`, `src/core/symbolSource.ts` |
 | Backtest: point-in-time universes (old / new / random×3), per-session universe replay, 5-minute default, multi-day ledger opt-in, day-block bootstrap comparison with the approved go-live rule. | `backtest/universes.ts`, `backtest/compare.ts`, `backtest/run.ts` |
 
-**Behaviour change to know about:** Layer B (`anomalyScanner`) only scans symbols present in
-`universe_stats.json`. It saw ~323 before (the old screener's losses); it will see the whole
-liquid universe now. Its thresholds are unchanged.
+**Layer B is held at its old size.** `anomalyScanner` only scans the symbols in its stats file.
+Under the old screener that was ~323 (whatever survived its API losses on 2026-10-19). v2's
+`universe_stats.json` covers every scanned symbol, so Layer B now reads a separate, **capped**
+`anomaly_universe.json`: the top `layerB.maxSymbols` = 323 by 30-bar turnover, among names that
+traded on the as-of date with turnover ≥ ₹1 cr (its own floor). Fallback: a legacy
+`universe_stats.json` in the working dir (rollback), else Layer B off. Membership changes (now
+the most liquid, not whatever survived), size doesn't. Widening needs evidence: a shadow count of
+would-be promotions outside the cap (proposed, not built). Thresholds unchanged.
 
 **Not live until the evidence step passes** (owner's rule; `backtest/output/universe-comparison.md`).
 Runbook: `docs/RUNBOOK.md` → "EOD screener". Two stale boot banners remain in `websocket.ts`

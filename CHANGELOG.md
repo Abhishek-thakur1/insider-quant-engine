@@ -18,8 +18,9 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
   - incremental candle cache;
   - a failure budget: a partial scan keeps the previous watchlist.
 - **The engine only reads the watchlist.** No screening at boot.
+- **Layer B scan set capped** at its old size: `anomaly_universe.json`, the top 323 by turnover (`layerB.maxSymbols`). Widening waits for evidence.
 - **Fyers token purge** moved from 15:30 to 17:15, and is now a local `rm` on the scheduler's own volume mount. The old `docker run -v quant_token_store` most likely never reached the real volume.
-- **Migration 0005:** `signals.promotion_source` accepts `SCREENER_LEADER` / `SCREENER_SETUP`.
+- **Migration 0006** (0005 is reserved for Part D): `signals.promotion_source` accepts `SCREENER_LEADER` / `SCREENER_SETUP`. It requires 0004 and refuses to run without it.
 - **Backtest:**
   - point-in-time universe comparison (old / new / 3 random controls) with day-block bootstrap CIs and the go-live rule agreed in advance;
   - 5-minute bars by default;
