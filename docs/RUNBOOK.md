@@ -255,15 +255,14 @@ If the token volume isn't literally `quant_token_store`, the old 15:30 purge nev
 
 | Branch | Contains | Migration | State |
 |---|---|---|---|
-| `v2` @ `3d34de7` | the signals table (PR #8) | 0004 | merged, **not deployed** |
-| `fix/session-robustness` | v2 + watchdog/holiday/seeder/filter evidence | (0004) | pushed, unmerged |
+| `v2` @ `046ba43` | signals table (PR #8) + session robustness (PR #7) | 0004 | merged, **not deployed** |
 | Part D (not built) | Nifty index-level tracking | **0005** (reserved) | — |
 | `feature/screener-v2` | session-robustness + screener v2 | **0006** | pushed, unmerged, **not live** |
 
 **The order:**
 
 1. **Session robustness, which also deploys the signals table.**
-   - Merge `fix/session-robustness` → `v2` (PR), then deploy `v2`.
+   - Merged into `v2` (PR #7, `046ba43`). Next: deploy `v2`.
    - Migration: **0004**. The dry run must list only `0004_signals`.
    - Procedure: the "Planned deploy: `signals` table" and "Planned deploy: session robustness" sections, in one window.
 2. **Part D.**
@@ -286,7 +285,7 @@ If the token volume isn't literally `quant_token_store`, the old 15:30 purge nev
   - watchdog trips ≤ 1;
   - `[JSFilter]` lines present;
   - the step's own checks in its section pass.
-- **Never deploy `v2` at `3d34de7` without running 0004.** The signals code would log a failed insert for every signal (no trade or alert is lost, but nothing is recorded).
+- **Never deploy `v2` (`3d34de7` or later) without running 0004.** The signals code would log a failed insert for every signal (no trade or alert is lost, but nothing is recorded).
 
 ## Screener v2 evidence run (backtest) — owner's PC, Windows / PowerShell
 
