@@ -2,7 +2,17 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## Unreleased — `feature/screener-v2` (not merged, not deployed, not live)
+## Unreleased — `fix/fyers-quota` (not merged, not deployed)
+
+- **Fyers quota discipline** (AGENTS.md §11.12). Every Data-API call (screener, VWAP seeder, anomaly promotions, backtest fetch) goes through one gate:
+  - pacing of 4/s and 40/min (Fyers Standard: 5/s, 50/min);
+  - a daily ledger with per-job allocations (Redis on EC2, a file on the PC);
+  - a hard stop on "5,000 requests/day";
+  - a cooldown on Cloudflare 1015, stopping after the 2nd throttle in a day.
+- **Screener:** a lenient quote pre-filter (50 symbols per request) fetches history only for plausible names. A quota stop is INCOMPLETE (exit 4): the old list is kept and the next run resumes.
+- **Backtest fetch:** a nightly allocation of 1,500 with exact multi-night resume. It is blocked 08:45–15:45 and 16:25–18:00 IST on trading days.
+
+## `feature/screener-v2` — merged (PR #9) and deployed 2026-10-20 (`508ab01`); screener job disabled after the quota incident
 
 **Screener v2: trend leaders and a high-alpha universe** (AGENTS.md §11.11)
 - **Replaces Layer A.** The old screener (turnover plus ADR, run at engine boot) silently dropped about 85% of symbols on 2026-10-19 and never retried `-360`.
