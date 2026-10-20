@@ -92,7 +92,9 @@ class PositionTracker {
 		return this.getOpenPositions().reduce((sum, pos) => sum + (pos.entryPrice * (pos.actualSize ?? pos.size)), 0)
 	}
 
-	public async registerTrade(pos: OpenPosition) {
+	// Returns the paper_trades.id of the inserted row (null if the insert failed),
+	// so the signals log can link the signal to its trade.
+	public async registerTrade(pos: OpenPosition): Promise<number | null> {
 		// Save to Redis for persistence and API access
 		await redisClient.hSet('trades:open', pos.id, JSON.stringify(pos))
 		// Track in memory for ultra-fast tick checking
@@ -101,13 +103,16 @@ class PositionTracker {
 		// Insert into Postgres. Capital-skipped signals (actual size 0) go in as
 		// SKIPPED, not OPEN — they are not positions (see positionStatus.ts).
 		const { status, dataQuality } = insertStatusFor(pos)
+		let tradeId: number | null = null
 		try {
-			await pool.query(
+			const ins = await pool.query(
 				`INSERT INTO paper_trades (
 					symbol, detector, direction, entry_price, entry_time, stop_price, target_price, status, regime_class, gated, qty, capital_gated, actual_size, duration_class, data_quality
-				) VALUES ($1, $2, $3, $4, to_timestamp($5 / 1000.0), $6, $7, $14, $8, $9, $10, $11, $12, $13, $15)`,
+				) VALUES ($1, $2, $3, $4, to_timestamp($5 / 1000.0), $6, $7, $14, $8, $9, $10, $11, $12, $13, $15)
+				RETURNING id`,
 				[pos.symbol, pos.detectorName, pos.side, pos.entryPrice, pos.timestamp, pos.stopLoss, pos.target, pos.regimeClass || null, pos.gated || false, pos.size, pos.capitalGated || false, pos.actualSize ?? pos.size, pos.durationClass || 'INTRADAY', status, dataQuality]
 			)
+			tradeId = (ins.rows[0]?.id as number | undefined) ?? null
 		} catch (dbErr) {
 			console.error('[PositionTracker] ❌ Postgres insert error:', dbErr)
 		}
@@ -119,6 +124,7 @@ class PositionTracker {
 		})).catch(() => {})
 
 		console.log(`[PositionTracker] 📝 Registered new ${pos.side} position for ${pos.symbol} at ₹${pos.entryPrice}`)
+		return tradeId
 	}
 
 	public async processTick(symbol: string, tick: TickData) {

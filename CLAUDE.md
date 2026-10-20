@@ -37,8 +37,11 @@ A signal detection and alerting engine for NSE intraday, on the Fyers API, outpu
    non-guessing path through the REGIME hard gate. Omitting it already caused two real
    misclassifications (§6.9).
 5. **Never block the synchronous socket handler.** All I/O belongs behind `tickEmitter`.
-6. **Preserve the filter's fail-open behaviour** in `telegramWorker` — a bug in the confirmation
-   layer must not silently kill the alert pipeline.
+6. **Fail open for recording, closed for alerting** (alert policy since 2026-10-06, `c83cd23`).
+   A filter error must never drop the signal: it is recorded as an ungated paper trade, logged to
+   `signals` with `filter_result = 'ERROR'`, and **not** sent to Telegram (gated-only). The body
+   lives in `src/workers/alertPipeline.ts`; keep the signals hook observation-only. Any change
+   there must keep `tests/alertPipeline.test.ts` and `tests/legacyWorkerParity.test.ts` green.
 7. **Never fabricate a performance number.** Nothing in this repo has been measured. Every `L=`
    ratio, score weight and win-rate comment is an assumption. Say "untracked", not an estimate.
 8. **Never touch `main`.** Work is on `v2`.

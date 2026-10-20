@@ -95,12 +95,15 @@ test('within capital: full size, not capital-gated', () => {
 })
 
 test('the worker source no longer contains any capital-constraint Telegram text', () => {
-	const live = fs
-		.readFileSync(new URL('../src/workers/telegramWorker.ts', import.meta.url), 'utf8')
-		.split(/\r?\n/)
-		.filter((l) => !l.trim().startsWith('//'))
-		.join('\n')
-	assert.doesNotMatch(live, /Size reduced to fit|Trade Skipped|capital constraint \(/i)
+	// The worker body lives in alertPipeline.ts since the signals hook (2026-10-18).
+	for (const file of ['../src/workers/telegramWorker.ts', '../src/workers/alertPipeline.ts']) {
+		const live = fs
+			.readFileSync(new URL(file, import.meta.url), 'utf8')
+			.split(/\r?\n/)
+			.filter((l) => !l.trim().startsWith('//'))
+			.join('\n')
+		assert.doesNotMatch(live, /Size reduced to fit|Trade Skipped|capital constraint \(/i, file)
+	}
 })
 
 // ── Gated-only ──────────────────────────────────────────────────────────────
