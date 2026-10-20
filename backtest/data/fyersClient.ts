@@ -10,9 +10,8 @@
 //     for 1-minute than for daily, so the two use different chunk sizes.
 //   - Resumable. Every chunk is merged into the cache as it lands, so an
 //     interrupted overnight run continues instead of restarting.
-//   - Rate limited with the same token-bucket shape as the live seeder,
-//     including the deliberately-refed interval (an unrefed timer lets Node
-//     exit mid-drain in a standalone run) and a close() in a finally.
+//   - Rate limited by the live sliding-window limiter (<= 4 starts per rolling
+//     second) with the live rate-limit detection (-360, 429, Cloudflare 1015).
 // ============================================================
 
 import fyers from 'fyers-api-v3'
@@ -23,6 +22,7 @@ import { DATA } from '../config.js'
 import { isPlaceholder } from '../core/bootEnv.js'
 import { ensureDirs, loadSeries, saveSeries, type Bar } from './store.js'
 import { istDateStringOf, realNow } from '../core/clock.js'
+import { createSlidingWindowLimiter, isRateLimitError, retryDelayMs } from '../../src/utils/rateLimit.js'
 
 const fyersApi = new fyers.fyersModel({ path: './', enableLogging: false })
 
@@ -65,38 +65,9 @@ export const authenticate = (): { ok: true } | { ok: false; reason: string } => 
 	return { ok: true }
 }
 
-// ── token bucket (same shape as the live seeder) ───────────────────────────
-const createRateLimiter = (maxPerSecond: number) => {
-	const queue: (() => void)[] = []
-	let tokens = maxPerSecond
-	const timer = setInterval(() => {
-		tokens = maxPerSecond
-		while (tokens > 0 && queue.length > 0) {
-			tokens--
-			queue.shift()!()
-		}
-	}, 1000)
-
-	const limit = <T>(fn: () => Promise<T>): Promise<T> =>
-		new Promise((resolve, reject) => {
-			const run = () => fn().then(resolve).catch(reject)
-			if (tokens > 0) {
-				tokens--
-				run()
-			} else queue.push(run)
-		})
-
-	return { limit, close: () => clearInterval(timer) }
-}
-
-const isRateLimitError = (error: unknown): boolean => {
-	const e = error as { response?: { status?: number; data?: unknown }; message?: string }
-	return (
-		e?.response?.status === 429 ||
-		/(rate|request).?limit/i.test(e?.message ?? '') ||
-		/(rate|request).?limit/i.test(JSON.stringify(e?.response?.data ?? ''))
-	)
-}
+// Rate limiting and rate-limit detection are the live modules (src/utils/rateLimit.ts):
+// the old token bucket here let simultaneous retries burst past Fyers' 5/s, and its
+// regex missed Fyers' -360 "plan limit" body. Tested in tests/seederRateLimit.test.ts.
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -126,9 +97,8 @@ const fetchChunk = async (
 		cont_flag: '1',
 	})
 
-	if (response.s !== 'ok') {
-		throw new Error(`Fyers status=${response.s} ${response.message ?? ''}`)
-	}
+	if (response.s === 'no_data') return []
+	if (response.s !== 'ok') throw response // keeps code -360 visible to isRateLimitError
 	if (!response.candles || response.candles.length === 0) return []
 	return toBars(response.candles as unknown[][])
 }
@@ -189,15 +159,14 @@ export const fetchSymbol = async (
 				chunksFetched++
 				break
 			} catch (error) {
-				if (isRateLimitError(error)) {
-					const maxAttempts = 20;
-					if (attempt < maxAttempts) {
-						const backoff = Math.min(60000, 1000 * Math.pow(2, attempt + 1))
-						console.warn(`[fetch] rate limited on ${symbol} ${resolution}, retry in ${backoff}ms (attempt ${attempt + 1}/${maxAttempts})`)
-						await new Promise((r) => setTimeout(r, backoff))
-						attempt++
-						continue
-					}
+				// A long fetch is resumable, so after a few retries it is better to
+				// record the failure and move on than to stall the whole run.
+				if (isRateLimitError(error) && attempt < DATA.maxRetries) {
+					const backoff = retryDelayMs(attempt, error)
+					console.warn(`[fetch] rate limited on ${symbol} ${resolution}, retry in ${backoff}ms (attempt ${attempt + 1}/${DATA.maxRetries})`)
+					await new Promise((r) => setTimeout(r, backoff))
+					attempt++
+					continue
 				}
 				return {
 					symbol,
@@ -224,7 +193,7 @@ export const fetchUniverse = async (
 	const auth = authenticate()
 	if (!auth.ok) throw new Error(auth.reason)
 
-	const { limit, close } = createRateLimiter(DATA.maxRequestsPerSecond)
+	const { limit } = createSlidingWindowLimiter(DATA.maxRequestsPerSecond, 1000)
 	const started = realNow()
 	const summaries: FetchSummary[] = []
 
@@ -241,7 +210,7 @@ export const fetchUniverse = async (
 			}
 		}
 	} finally {
-		close()
+		// sliding-window limiter holds no timer — nothing to close
 	}
 
 	const failed = summaries.filter((s) => s.failed)

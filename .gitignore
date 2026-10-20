@@ -58,3 +58,16 @@ backtest/output/results.json
 backtest/output/backtest-report.html
 backtest/access_token.txt
 backtest/output/trades.json
+
+# Screener v2 universe comparison — large / per-run artifacts (the final
+# backtest/output/universe-comparison.md is committed deliberately)
+backtest/output/universes.json
+backtest/output/universe_master.json
+backtest/output/universe-comparison.json
+backtest/output/trades_*.json
+backtest/output/results_old.json
+backtest/output/results_new.json
+backtest/output/results_random*.json
+backtest/output/backtest-report_old.html
+backtest/output/backtest-report_new.html
+backtest/output/backtest-report_random*.html
