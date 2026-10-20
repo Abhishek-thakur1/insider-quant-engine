@@ -12,8 +12,15 @@
 // screens the last real session. SCREENER_AS_OF=YYYY-MM-DD overrides. The 16:30
 // cron run only fires on trading days (lifecycle.sh checks trading_day.sh).
 //
-// Exit codes: 0 = written; 2 = run not trusted (previous
-// watchlist kept, admin told); 3 = no token / setup error; 1 = crash.
+// Fyers quota: every Data-API call (quotes + history) goes through the shared
+// gate (src/fyers/quota.ts): 4/s and 40/min, the screener's daily allocation in
+// the Redis ledger shared with the engine, hard stop on the daily limit,
+// cooldown + stop on throttling. A quote pre-filter (50 symbols per request)
+// decides which symbols need history at all.
+//
+// Exit codes: 0 = written; 2 = run not trusted (previous watchlist kept, admin
+// told); 4 = stopped by the quota guard (fetched candles kept, next run resumes,
+// previous watchlist kept); 3 = no token / setup error; 1 = crash.
 // ============================================================
 
 import fs from 'node:fs'
@@ -30,6 +37,9 @@ import { fetchDailyUniverse, type HistoryResponse } from '../src/screener/fetchD
 import { runScreenerJob } from '../src/screener/job.js'
 import { CM_URL, FO_URL, parseCashUniverse, parseFnoCashSymbols } from '../src/screener/masters.js'
 import { screenerDataDir } from '../src/screener/paths.js'
+import { fetchQuotesBatched } from '../src/screener/quotes.js'
+import { bootRedis, redisClient } from '../src/config/redis.js'
+import { createQuotaGate, loadQuotaConfig, RedisLedger } from '../src/fyers/quota.js'
 
 const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt')
 
@@ -78,6 +88,11 @@ const main = async (): Promise<number> => {
 	const getHistory = (symbol: string, from: string, to: string): Promise<HistoryResponse> =>
 		api.getHistory({ symbol, resolution: 'D', date_format: '1', range_from: from, range_to: to, cont_flag: '1' })
 
+	// One gate for the whole run (quotes and history share Fyers' Data-API quota).
+	await bootRedis()
+	const gate = createQuotaGate({ job: 'screener', config: loadQuotaConfig(), ledger: new RedisLedger(redisClient) })
+	const getQuotes = (batch: string[]) => api.getQuotes(batch)
+
 	const store = new CandleStore(path.join(dataDir, 'candles', 'D'))
 	const started = Date.now()
 	const result = await runScreenerJob({
@@ -89,11 +104,16 @@ const main = async (): Promise<number> => {
 		config,
 		configHash: hash,
 		todayIst: today,
-		fetchAll: (symbols) => fetchDailyUniverse(symbols, { getHistory, store, todayIst: today }),
+		fetchQuotes: (symbols) => fetchQuotesBatched(symbols, { getQuotes, gate, log: console }),
+		fetchAll: (symbols) => fetchDailyUniverse(symbols, { getHistory, store, todayIst: today, gate }),
 		notifyAdmin,
 	})
 	const secs = Math.round((Date.now() - started) / 1000)
+	const used = (await new RedisLedger(redisClient).state(getISTDateString())).used
+	console.log(`[Screener] Fyers Data-API requests today (ledger): ${JSON.stringify(used)}`)
+	await redisClient.quit().catch(() => {})
 	if (result.status === 'KEPT_PREVIOUS') return 2
+	if (result.status === 'INCOMPLETE') return 4
 	console.log(`[Screener] ✅ ${result.result.watchlist.length} symbols written in ${secs}s.`)
 	return 0
 }

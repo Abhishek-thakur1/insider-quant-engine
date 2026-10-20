@@ -71,3 +71,6 @@ backtest/output/results_random*.json
 backtest/output/backtest-report_old.html
 backtest/output/backtest-report_new.html
 backtest/output/backtest-report_random*.html
+
+# Owner-PC Fyers quota ledger (backtest fetch)
+backtest/data/quota-ledger.json

@@ -1,0 +1,17 @@
+{
+	"source": "Fyers support, 'What are the FYERS API rate limits for Standard and Prime plans?' — Data APIs (history, quotes, depth, …) on the Standard plan: 5/s, 50/min, 5,000/day. Breaching the per-minute cap more than 3 times in a day blocks the user for the rest of the day (Fyers rate-limits reference). Reset time is not documented; the ledger uses IST calendar days.",
+	"dataApi": {
+		"perSecond": 4,
+		"perMinute": 40,
+		"perDay": 5000
+	},
+	"allocations": {
+		"screener": 2200,
+		"seeder": 300,
+		"anomaly": 200,
+		"backtest": 1500
+	},
+	"maxBreachesPerDay": 2,
+	"cooldownMs": 65000,
+	"maxRetries": 3
+}

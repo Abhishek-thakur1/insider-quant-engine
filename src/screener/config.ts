@@ -38,6 +38,7 @@ export interface ScreenerConfig {
 	}
 	score: { rsWeight: number; residualWeight: number; proximityWeight: number }
 	tiers: { tier1MinRsRank: number; tier2MinRsRank: number; holdMinRsRank: number }
+	prefilter: { minPrice: number; minTradedValueRupees: number; recheckDays: number; note: string }
 	layerB: { maxSymbols: number; minTurnoverRupees: number; note: string }
 	failureBudget: { maxFailedPct: number; maxNoDataPct: number }
 	filters: { marketCap: string; asmGsm: string; seriesNote: string }
@@ -90,6 +91,10 @@ export const validateConfig = (raw: unknown): ScreenerConfig => {
 		if (v > 99) fail(`tiers.${k} must be a percentile 1–99`)
 	}
 	if (c.tiers.holdMinRsRank > c.tiers.tier1MinRsRank) fail('tiers.holdMinRsRank must not exceed tier1MinRsRank (hysteresis)')
+	posNum(c.prefilter?.minPrice, 'prefilter.minPrice')
+	posNum(c.prefilter?.minTradedValueRupees, 'prefilter.minTradedValueRupees')
+	posNum(c.prefilter?.recheckDays, 'prefilter.recheckDays')
+	if (c.prefilter.minTradedValueRupees > c.liquidity.minAvgTurnoverRupees) fail('prefilter.minTradedValueRupees must not exceed liquidity.minAvgTurnoverRupees (the pre-filter must be looser than the screen)')
 	posNum(c.layerB?.maxSymbols, 'layerB.maxSymbols')
 	posNum(c.layerB?.minTurnoverRupees, 'layerB.minTurnoverRupees')
 	posNum(c.failureBudget?.maxFailedPct, 'failureBudget.maxFailedPct')

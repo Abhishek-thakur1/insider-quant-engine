@@ -52,6 +52,12 @@
 		"tier2MinRsRank": 70,
 		"holdMinRsRank": 70
 	},
+	"prefilter": {
+		"minPrice": 20,
+		"minTradedValueRupees": 20000000,
+		"recheckDays": 7,
+		"note": "Lenient quote pre-filter (50 symbols per quote call) before any history call. Always fetched: CORE, yesterday's watchlist and Layer B set, symbols without a quote. Names the full screen rejected as illiquid are re-checked weekly."
+	},
 	"layerB": {
 		"maxSymbols": 323,
 		"minTurnoverRupees": 10000000,

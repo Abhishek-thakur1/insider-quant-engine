@@ -256,3 +256,33 @@ test('before 09:15 IST the seeder makes no API call at all (09:00 boot)', async 
 	}
 	assert.ok(logs.some((l) => l.includes('Before 09:15 IST')), logs.join('\n'))
 })
+
+test('ENGINE GATE: seeder via the quota gate — 40/min pacing, and the daily-limit answer stops the rest', async () => {
+	const { createQuotaGate, loadQuotaConfig, MemoryLedger } = await import('../src/fyers/quota.js')
+	const clock = new VirtualClock(Date.parse('2026-10-21T04:00:00Z')) // 09:30 IST, a restart mid-session
+	const ledger = new MemoryLedger()
+	const gate = createQuotaGate({ job: 'seeder', config: loadQuotaConfig(), ledger, clock, log: quietLog })
+	const starts: number[] = []
+	const fetch = async () => {
+		starts.push(clock.now())
+		const n = starts.length
+		await clock.sleep(100)
+		if (n === 30) throw new Error("API returned status: error - You've reached the Standard plan limit of 5,000 requests/day.")
+		return 'SEEDED' as const
+	}
+	const outcomes = await clock.run(seedSymbols(universe(60), { fetch, isSeeded: async () => false, clock, log: quietLog, gate }))
+	assert.equal(maxInAnyWindow(starts, 60_000) <= 40, true)
+	assert.ok(starts.length <= 33, `requests after the daily limit: ${starts.length}`)
+	assert.ok([...outcomes.values()].filter((o) => o === 'FAILED').length >= 61 - starts.length)
+	assert.equal((await ledger.state('2026-10-21')).exhausted, true)
+	const anomaly = createQuotaGate({ job: 'anomaly', config: loadQuotaConfig(), ledger, clock, log: quietLog })
+	await assert.rejects(clock.run(anomaly.call(async () => 'x')), /daily Data-API limit/)
+})
+
+test('engine wiring: seeder and anomaly promotions use the shared engine gates', () => {
+	const seeder = fs.readFileSync('src/ingestion/vwapSeeder.ts', 'utf8')
+	assert.match(seeder, /gate: engineGate\('seeder'\)/)
+	const ws = fs.readFileSync('src/ingestion/websocket.ts', 'utf8')
+	assert.match(ws, /engineGate\('anomaly'\)\s*\.call\(\(\) => fetchAndSeedSymbol\(symbol, getTodayString\(\)\)\)/)
+	assert.doesNotMatch(ws.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n'), /^\s*fetchAndSeedSymbol\(symbol, getTodayString\(\)\)\.catch/m)
+})

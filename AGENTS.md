@@ -1134,6 +1134,7 @@ version live in `backtest/core/symbolClass.ts`, with a test pinning the five aff
 | `regime:nifty:current` | JSON `RegimeState` | 60 s | `pushNiftyReturn`, `getMarketRegime` | `getMarketRegime` |
 | `jsfilter:decisions` | list, capped at 5000 | none | `persistDecision` | `getRecentDecisions`. Each record has its own `ts`. **Never cleared at boot** (since 2026-10-20). |
 | `jsfilter:stats:{IST-date}` | hash `fired`/`blocked` | 30 d | `persistDecision` | `getFilterStats`. Per-day bucket, so a restart can't reset it. Replaces the un-dated `jsfilter:stats`. |
+| `fyers:quota:{IST-date}` | hash `used:<job>`, `breaches`, `exhausted`, `cooldownUntil` | 3 d | `RedisLedger` (src/fyers/quota.ts) — screener container, engine seeder + anomaly promotions | the quota gate before every Fyers Data-API call. **Never cleared at boot.** (The owner-PC backtest keeps its own `backtest/data/quota-ledger.json`.) |
 | `engine:restarts:{IST-date}` | counter | 2 d | watchdog trip in `websocket.ts` (INCR before exiting) | engine boot (restart backoff), `sessionGuard.decideTrip` (limit 6/day). **Never cleared at boot.** |
 | `cooldown:v2:nifty_pulse` | flag | 1200 s | NiftyTrendPulse | itself |
 | `cooldown:v2:vwap_reclaim` | flag | 1500 s | NiftyVwapReclaim | itself |
@@ -1464,6 +1465,25 @@ would-be promotions outside the cap (proposed, not built). Thresholds unchanged.
 **Not live until the evidence step passes** (owner's rule; `backtest/output/universe-comparison.md`).
 Runbook: `docs/RUNBOOK.md` → "EOD screener". Two stale boot banners remain in `websocket.ts`
 ("9 detectors" — it is 2; "OI Sweep + Value Zone + Delta Hedging" — Value Zone is not wired).
+
+## 11.12 Fyers quota discipline (2026-10-21, branch `fix/fyers-quota`)
+
+**Why.** The first screener run (2026-10-20, EC2) paced at 4/s = 240/min. Fyers' Standard-plan Data APIs
+(history **and** quotes, both `api-t1.fyers.in/data`) allow **5/s, 50/min, 5,000/day**, and more than 3
+per-minute breaches in a day block the user for the rest of the day. Cloudflare throttled the run (1015,
+`retry_after` 30), then Fyers answered "You've reached the Standard plan limit of 5,000 requests/day":
+2,352/2,352 failed. The daily reset time is not documented; the ledger uses IST calendar days.
+
+| Piece | Where |
+|---|---|
+| Limits and per-job daily allocations (screener 2,200 · seeder 300 · anomaly 200 · backtest 1,500 = 4,200 of 5,000), 4/s and **40/min** pacing, max 2 breaches, 65 s cooldown — validated against the documented limits. | `config/fyers_quota.json` |
+| `createQuotaGate(job)`: paces (per-second AND per-minute windows), then reads the ledger right before sending. **Hard stop** on the daily-limit message (day marked exhausted for every job). **Cooldown** on throttling (1015 / 429 / -429 / -360) for every caller sharing the ledger, each a breach; the 2nd breach stops the job for the day. Stops at the job's allocation. Ledgers: Redis on EC2 (`fyers:quota:{day}`, §7), a file on the owner's PC. | `src/fyers/quota.ts` |
+| Engine: one limiter for the process; VWAP seeder (`seeder`) and anomaly promotion seeds (`anomaly`) go through it. | `src/fyers/engineGates.ts`, `vwapSeeder.ts`, `websocket.ts` |
+| Screener: **lenient quote pre-filter** before any history call — ≤ 50 symbols per quote request (2,352 symbols = 48 requests). Always fetched: CORE, yesterday's watchlist and Layer B set, symbols without a usable quote. Skipped: today's quote has price < ₹20 or traded value < ₹2 cr (the screen needs a ₹15 cr 30-day average). Names the full screen rejected as illiquid are re-checked weekly. A quota stop ends the run as **INCOMPLETE** (exit 4): previous watchlist kept, fetched candles kept, the next run resumes. | `src/screener/prefilter.ts`, `quotes.ts`, `job.ts`, `scripts/screener_eod.ts` |
+| Backtest fetch: the same gate with the PC ledger (job `backtest`, 1,500 per IST day); stops at the allocation with "rerun the SAME command on the next allowed evening"; exact coverage-based resume across nights. Blocked 08:45–15:45 and 16:25–18:00 IST on trading days. | `backtest/data/fyersClient.ts`, `backtest/marketWindow.ts` |
+
+The quote pre-filter changes nothing about who can qualify: a skipped name fails a far looser bar than the
+screen's own liquidity rule (`tests/screenerPrefilter.test.ts`, property test).
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 

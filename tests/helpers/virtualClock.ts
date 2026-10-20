@@ -53,6 +53,9 @@ export class VirtualClock implements LimiterClock {
 		const tracked = p.finally(() => {
 			settled = true
 		})
+		// The caller handles the rejection (it gets `tracked` back); this only stops
+		// Node flagging it as unhandled while we spin macrotasks below.
+		tracked.catch(() => {})
 		for (let guard = 0; guard < 100_000; guard++) {
 			for (let i = 0; i < 20; i++) await new Promise<void>((r) => setImmediate(r))
 			if (settled) return tracked

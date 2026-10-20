@@ -199,6 +199,7 @@ Builds tomorrow's watchlist at **16:30 IST on trading days** (`lifecycle.sh run_
 |---|---|---|
 | 0 | Written | nothing |
 | 2 | Run **not trusted** (> 3% failed, > 10% no data, or no benchmark). **Previous watchlist kept.** Admin already got a Telegram message. | Read `failed_<date>.json` (below). Usually rate limits or a token problem; tomorrow's run retries. |
+| 4 | **Stopped by the Fyers quota guard**: the screener allocation (2,200) was used, Fyers said the daily limit was reached, or a 2nd throttle came. **Previous watchlist kept**; candles fetched so far are kept; the next run resumes. Admin told. | Read `incomplete_<date>.json`. The usual cause is a first fill, which can take 2 evenings. Check the ledger: `docker exec quant_redis redis-cli HGETALL fyers:quota:$(TZ=Asia/Kolkata date +%F)`. |
 | 3 | No Fyers token | Today's login was missed; the old list stays. |
 | 1 | Crash | `docker exec quant_scheduler cat /var/log/screener_last.log` |
 
@@ -212,7 +213,11 @@ docker run --rm -v <that volume>:/d alpine sh -c 'ls -la /d; head -c 1500 /d/wat
 
 - **Manual run** (outside 09:00–15:30, and only while today's token exists, i.e. before 17:15): `docker start -a quant_screener; echo "exit $?"`.
 - **As-of date** = the last *completed* session: today after 15:30 on a trading day, otherwise the previous trading day. A manual run on a holiday or before the open therefore screens the last real session (e.g. Tue 2026-10-20, a holiday → as of Mon 19th). Override with `docker compose --profile jobs run --rm -e SCREENER_AS_OF=YYYY-MM-DD quant_screener`. The 16:30 cron run only fires on trading days.
-- **First run** has to fetch about 460 days of daily bars for about 2,350 symbols, roughly 25 minutes. Later runs take about 10 minutes.
+- **Fyers quota** (AGENTS.md §11.12). The Data-API limit is 5/s, 50/min and 5,000/day, shared by every job. The run first spends ~48 quote requests on the pre-filter, then fetches history for the plausible names only, at ≤ 40/min.
+  - A first fill is about 2 requests per name, roughly 1,200–1,600 requests or 30–40 min. It may need 2 evenings (exit 4 the first night).
+  - A normal day is about 1 request per name, roughly 600–800 requests or 15–20 min.
+  - The admin message and `incomplete_<date>.json` say how far it got.
+- **Today's quota use:** `docker exec quant_redis redis-cli HGETALL fyers:quota:$(TZ=Asia/Kolkata date +%F)` (`used:screener`, `used:seeder`, `used:anomaly`, `breaches`, `exhausted`).
 - **Engine side:** the boot log shows `[Engine] 📋 Watchlist: /app/data/watchlist.json (N symbols)`. It warns, and pings admin, if the list is more than 3 trading days old.
 - **Layer B:** the boot log shows `[AnomalyScanner] Scan set: /app/data/anomaly_universe.json` and `across N symbols` with N ≤ 323 (`layerB.maxSymbols`). It no longer reads the full `universe_stats.json`.
 
@@ -292,11 +297,17 @@ If the token volume isn't literally `quant_token_store`, the old 15:30 purge nev
 
 Run it locally: it needs a Fyers token and about 2 GB of disk, and EC2 has about 4 GB free. Nothing touches production state, since the backtest's Redis is in memory and its cache is local files. Thresholds are frozen in `config/screener.json`. The report prints the config hash; if a threshold changes after seeing results, rerun everything under a new label and report both runs.
 
-**When to run.** The Fyers rate limit is per app, so the PC and production share it. The fetch commands refuse to start on trading days during:
+**When to run.** Fyers' Data-API limits (5/s, **50/min**, **5,000/day**) are per app, so the PC and production share them. The fetch commands refuse to start on trading days during:
 - **08:45–15:45 IST:** engine boot and the live session;
-- **16:25–17:05 IST:** the 16:30 screener job, once it's deployed.
+- **16:25–18:00 IST:** the 16:30 screener job.
 
-Good windows are 15:45–16:25 and after 17:05 on a trading day, or any time on a weekend or holiday while the token is still valid. `--allow-market-hours` overrides the guard; don't use it. The `run` and `compare` steps make no API calls and can run at any time.
+Good windows are after 18:00 on a trading day, or a weekend or holiday while the token is valid.
+
+**It takes several evenings.** Every fetch request goes through the quota gate: ≤ 40/min, and at most **1,500 requests per IST day** (the `backtest` allocation in `config/fyers_quota.json`), counted in `backtest\data\quota-ledger.json`.
+- `fetch-daily-all` is about 2,350 symbols × 3 chunks ≈ 7,000 requests, about **5 evenings**.
+- `fetch-intraday` is about 400–800 symbols × 5 chunks ≈ 2,000–4,000 requests, about **2–3 evenings**.
+
+At 40/min one evening's 1,500 takes about 38 minutes. Each evening, rerun the same command. It stops with `⏸️ … used its 1500 Data-API requests … Rerun the SAME command on the next allowed evening`, and resumes exactly where it stopped (tested: three nights = one clean run). A daily-limit answer stops it after one request. `--allow-market-hours` overrides the guard; don't use it. The `run` and `compare` steps make no API calls and can run at any time.
 
 ```powershell
 # ── 0. One-time setup ──────────────────────────────────────────────────────
@@ -338,6 +349,8 @@ Remove-Item Env:BACKTEST_MODE
 npx tsx backtest/run.ts compare
 ```
 
+**Token:** you need that day's token for each evening (step 1).
+
 **If the token expires mid-fetch** (it is single-day):
 - The fetch stops at the first rejected call and prints `⛔ Fyers rejected the token … Everything fetched so far is saved in the cache … rerun the SAME command`.
 - Get the next day's token (step 1) and rerun the same command. Only missing chunks are requested; this is tested in `tests/backtestFetchResume.test.ts`, where the final cache is identical to an uninterrupted run.
@@ -350,3 +363,25 @@ npx tsx backtest/run.ts compare
 - Delete `backtest\access_token.txt`.
 - `powercfg /change standby-timeout-ac 30` (or your previous value).
 - Commit only `backtest/output/universe-comparison.md`. The other outputs are gitignored.
+
+## Planned deploy: Fyers quota discipline (`fix/fyers-quota`) — NOT DEPLOYED
+
+No migration. Outside market hours. **Re-enabling the screener makes live Fyers calls, so the owner decides when** (the first run is ~48 quote requests, then ≤ 40/min history up to 2,200).
+
+1. Save the engine logs. Then `git pull origin v2 && git log --oneline -1` (after the PR is merged).
+2. Build: `docker compose --profile jobs build quant_engine quant_screener quant_scheduler`.
+   - Engine: the gated seeder and anomaly code.
+   - Screener: pre-filter and gate.
+   - Scheduler: the exit-code legend.
+3. `docker compose up -d --no-deps --force-recreate quant_scheduler`.
+4. Engine: `docker compose stop quant_engine && docker compose create --force-recreate quant_engine`.
+5. **Screener, only on the owner's go:**
+   - `docker compose --profile jobs create quant_screener`. This re-enables the 16:30 cron.
+   - It needs that day's token, which is purged at 17:15. So either let the **16:30 cron** run it, or run it by hand between **15:45 and 17:10**: `docker start -a quant_screener; echo "exit $?"`. A run that continues past 17:15 is fine: the token is read at start.
+   - Expect exit **0** (list written) or **4** (allocation used, so the first fill continues the next evening).
+6. Ledger check after any run: `docker exec quant_redis redis-cli HGETALL fyers:quota:$(TZ=Asia/Kolkata date +%F)`.
+   - `used:screener` should be ≤ 2200.
+   - `breaches` should be 0.
+   - `exhausted` should be absent.
+
+**Rollback:** check out the previous SHA, rebuild the same three images, and repeat steps 3–4. Remove `quant_screener` again (`docker rm quant_screener`) if the screener misbehaves.

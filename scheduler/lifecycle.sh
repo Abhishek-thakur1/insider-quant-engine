@@ -70,8 +70,9 @@ case "$ACTION" in
 
   # ── 4:30 PM ───────────────────────────────────────────────────────────────
   # End-of-day screener. Runs after the 16:00 backup. Exit codes from
-  # scripts/screener_eod.ts: 0 written / not a trading day, 2 run not trusted
-  # (previous watchlist kept, admin already told), 3 no token, 1 crash.
+  # scripts/screener_eod.ts: 0 written, 2 run not trusted (previous watchlist
+  # kept, admin already told), 4 stopped by the Fyers quota guard (candles kept,
+  # resumes next run), 3 no token, 1 crash.
   run_screener)
     if ! VERDICT=$(/usr/local/bin/trading_day.sh); then
         log "🏖️  Not a trading day ($VERDICT). Skipping screener."
@@ -81,7 +82,7 @@ case "$ACTION" in
     docker start -a quant_screener > /var/log/screener_last.log 2>&1
     CODE=$?
     tail -40 /var/log/screener_last.log
-    log "quant_screener exited $CODE (0 written · 2 kept previous list · 3 no token · 1 crash)."
+    log "quant_screener exited $CODE (0 written · 2 kept previous list · 4 quota guard stopped it, resumes next run · 3 no token · 1 crash)."
     ;;
 
   # ── 5:15 PM ───────────────────────────────────────────────────────────────

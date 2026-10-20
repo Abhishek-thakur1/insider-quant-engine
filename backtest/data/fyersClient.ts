@@ -18,11 +18,21 @@ import fyers from 'fyers-api-v3'
 import fs from 'fs'
 import path from 'path'
 import { ENV } from '../../src/config/env.js'
-import { DATA } from '../config.js'
+import { DATA, DATA_DIR } from '../config.js'
 import { isPlaceholder } from '../core/bootEnv.js'
 import { addCoverage, ensureDirs, isCovered, loadCoverage, loadSeries, saveSeries, type Bar } from './store.js'
 import { istDateStringOf, realNow } from '../core/clock.js'
-import { createSlidingWindowLimiter, isRateLimitError, retryDelayMs } from '../../src/utils/rateLimit.js'
+import { isRateLimitError, retryDelayMs } from '../../src/utils/rateLimit.js'
+import { createQuotaGate, FileLedger, loadQuotaConfig, QuotaStopError, type QuotaGate } from '../../src/fyers/quota.js'
+
+/**
+ * The owner's PC ledger for the shared Fyers Data-API quota (job "backtest",
+ * config/fyers_quota.json allocation per IST day). It survives across nights,
+ * so a fetch that hits its allocation resumes the next night.
+ */
+export const BACKTEST_LEDGER_FILE = path.join(DATA_DIR, '..', 'quota-ledger.json')
+export const backtestGate = (): QuotaGate =>
+	createQuotaGate({ job: 'backtest', config: loadQuotaConfig(), ledger: new FileLedger(BACKTEST_LEDGER_FILE) })
 
 const fyersApi = new fyers.fyersModel({ path: './', enableLogging: false })
 
@@ -191,6 +201,9 @@ export const fetchSymbol = async (
 				chunksFetched++
 				break
 			} catch (error) {
+				// Quota stops (allocation used, daily limit, throttle limit) end the
+				// whole fetch — never retried here (the gate already handled throttles).
+				if (error instanceof QuotaStopError) throw error
 				if (isAuthError(error)) {
 					throw new TokenExpiredError(`Fyers rejected the token at ${symbol} (${(error as Error).message ?? JSON.stringify(error)})`)
 				}
@@ -223,7 +236,7 @@ export const fetchUniverse = async (
 	resolution: string,
 	fromMs: number,
 	toMs: number,
-	opts: { skipAuth?: boolean } = {},
+	opts: { skipAuth?: boolean; gate?: QuotaGate } = {},
 ): Promise<FetchSummary[]> => {
 	ensureDirs()
 	if (!opts.skipAuth) {
@@ -231,7 +244,10 @@ export const fetchUniverse = async (
 		if (!auth.ok) throw new Error(auth.reason)
 	}
 
-	const { limit } = createSlidingWindowLimiter(DATA.maxRequestsPerSecond, 1000)
+	// Every request through the quota gate: 4/s and 40/min, the backtest's nightly
+	// allocation in the PC ledger, hard stop on the daily limit, cooldown on throttles.
+	const gate = opts.gate ?? backtestGate()
+	const limit = <T>(fn: () => Promise<T>): Promise<T> => gate.call(fn)
 	const started = realNow()
 	const summaries: FetchSummary[] = []
 
@@ -243,6 +259,11 @@ export const fetchUniverse = async (
 			try {
 				summaries.push(await fetchSymbol(symbol, resolution, fromMs, toMs, limit))
 			} catch (err) {
+				if (err instanceof QuotaStopError) {
+					console.error(`\n[fetch] ⏸️ ${err.message}`)
+					console.error(`[fetch] Stopped after ${done}/${symbols.length} symbols at res=${resolution}. Everything fetched so far is saved; usage is in ${BACKTEST_LEDGER_FILE}.`)
+					console.error('[fetch] Rerun the SAME command on the next allowed evening — only missing chunks are requested.')
+				}
 				if (err instanceof TokenExpiredError) {
 					console.error(`\n[fetch] ⛔ ${err.message}`)
 					console.error(`[fetch] Stopped after ${done}/${symbols.length} symbols at res=${resolution}. Everything fetched so far is saved in the cache.`)

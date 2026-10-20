@@ -7,6 +7,8 @@ import type { VwapState } from '../core/types.js'
 import { resolveScreenerFile } from '../screener/paths.js'
 import { getISTMinutes } from '../utils/marketHours.js'
 import { createSlidingWindowLimiter, isRateLimitError, retryDelayMs, type LimiterClock } from '../utils/rateLimit.js'
+import { QuotaStopError, type QuotaGate } from '../fyers/quota.js'
+import { engineGate } from '../fyers/engineGates.js'
 
 const fyersApi = new fyers.fyersModel({ path: './', enableLogging: false })
 
@@ -93,6 +95,8 @@ export interface SeedDeps {
 	maxPerSecond?: number
 	maxRetries?: number
 	rand?: () => number
+	/** Production: the engine's shared Fyers quota gate. Without it: local 4/s limiter + retries (tests). */
+	gate?: QuotaGate
 }
 
 // Fyers Standard plan: 5 req/s. 4 leaves headroom for the anomaly scanner's
@@ -110,9 +114,23 @@ export const seedSymbols = async (
 	const { limit } = createSlidingWindowLimiter(deps.maxPerSecond ?? SEED_MAX_PER_SECOND, 1000, clock)
 	const outcomes = new Map<string, SeedOutcome>()
 
+	let stopped: QuotaStopError | null = null
 	const seedOne = async (symbol: string, equalWeight: boolean): Promise<SeedOutcome> => {
 		// Mid-session restart: keep the live-accumulated VWAP, spend no API call.
 		if (await deps.isSeeded(symbol).catch(() => false)) return 'ALREADY_SEEDED'
+		if (stopped) return 'FAILED'
+		if (deps.gate) {
+			// The gate paces (4/s, 40/min), retries throttles after a cooldown and stops on quota.
+			try {
+				return await deps.gate.call(() => deps.fetch(symbol, equalWeight))
+			} catch (error: unknown) {
+				if (error instanceof QuotaStopError) {
+					if (!stopped) log.error(`[Seeder] ⛔ ${error.message} — remaining symbols not seeded (VWAP builds from live ticks)`)
+					stopped ??= error
+				} else log.error(`[Seeder] ⚠️ Failed: ${symbol}`, error)
+				return 'FAILED'
+			}
+		}
 		for (let attempt = 0; ; attempt++) {
 			try {
 				return await limit(() => deps.fetch(symbol, equalWeight))
@@ -179,6 +197,7 @@ export const seedHistoricalVwap = async (nowMs = Date.now()): Promise<void> => {
 		{
 			fetch: (symbol, equalWeight) => fetchAndSeedSymbol(symbol, todayStr, equalWeight),
 			isSeeded: async (symbol) => (await redisClient.exists(`vwap:${symbol}:${todayStr}`)) === 1,
+			gate: engineGate('seeder'),
 		},
 	)
 
