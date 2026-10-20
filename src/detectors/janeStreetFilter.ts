@@ -47,12 +47,13 @@ import { getLiquidityScore } from '../utils/liquidityMap.js'
 import { getOrderFlowScore } from '../utils/orderFlowProxy.js'
 import type { AlertPayload } from '../workers/telegramWorker.js'
 import type { TradeSide } from '../core/types.js'
+import { parseRiskRewardFromTrigger } from '../utils/triggerLevels.js'
 
 // ─── TUNABLE CONSTANTS ────────────────────────────────────────────────────────
 const MIN_EV_PTS = 0 // Hard gate — never fire on negative expectancy
-const DEFAULT_RR = 1.5 // Fallback R:R if trigger text is unparseable
-const DEFAULT_RISK_PCT = 0.003 // Fallback risk = 0.3% of price if no SL in trigger
-const CONFIRMATION_THRESHOLD = Number(process.env.CONFIRMATION_THRESHOLD) || 78 // fire above this /100
+// DEFAULT_RR / DEFAULT_RISK_PCT moved with the trigger parser to utils/triggerLevels.ts
+// Exported (read-only) so the signals log records the threshold actually in force.
+export const CONFIRMATION_THRESHOLD = Number(process.env.CONFIRMATION_THRESHOLD) || 78 // fire above this /100
 const SHADOW_MODE = process.env.SHADOW_MODE === 'true'
 // Both survive engine restarts (no boot cleanup since 2026-10-20): a watchdog
 // restart used to wipe the day's evidence. Decisions carry their own timestamp;
@@ -112,34 +113,9 @@ const resolveStructureSymbol = (payload: AlertPayload): string => {
 // Every current detector already embeds "SL ₹X ... T1 ₹Y" in the trigger text.
 // This is the ONLY reliable source right now — payload.sl/t1 don't exist on
 // the live AlertPayload type, so we never depend on them being present.
-// Exported for the backtest exit simulator, so it recovers SL/T1 with exactly
-// the same parser the EV gate uses rather than a divergent copy. Additive —
-// no behavioural or configuration change.
-export const parseRiskRewardFromTrigger = (
-	trigger: string,
-	price: number,
-): { risk: number; reward: number; rr: number; parsed: boolean } => {
-	const slMatch = trigger.match(/SL[:\s]*₹?([\d,]+(?:\.\d+)?)/i)
-	const t1Match = trigger.match(/T1[:\s]*₹?([\d,]+(?:\.\d+)?)/i)
-
-	if (slMatch && t1Match) {
-		const sl = parseFloat(slMatch[1]!.replace(/,/g, ''))
-		const t1 = parseFloat(t1Match[1]!.replace(/,/g, ''))
-
-		if (sl > 0 && t1 > 0 && price > 0) {
-			const risk = Math.abs(price - sl)
-			const reward = Math.abs(price - t1)
-
-			if (risk > 0 && reward > 0 && risk < price * 0.1 && reward < price * 0.2) {
-				return { risk, reward, rr: reward / risk, parsed: true }
-			}
-		}
-	}
-
-	const defaultRisk = price * DEFAULT_RISK_PCT
-	const defaultReward = defaultRisk * DEFAULT_RR
-	return { risk: defaultRisk, reward: defaultReward, rr: DEFAULT_RR, parsed: false }
-}
+// Moved verbatim to utils/triggerLevels.ts (now also returns the raw sl/t1) and
+// re-exported here so the backtest exit simulator's import keeps working.
+export { parseRiskRewardFromTrigger } from '../utils/triggerLevels.js'
 
 const computeEV = (pWin: number, reward: number, risk: number, price: number): number => {
 	const slippage = price * 0.0005 // 5 bps flat slippage instead of ₹2.0 absolute

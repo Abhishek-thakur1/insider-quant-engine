@@ -1360,8 +1360,8 @@ happens before any alert decision.**
 multi-day position store exists. Rows before this change are labelled SWING — see the data
 provenance work in progress.
 
-Not yet done (planned): `signals` table, Nifty expiry from the symbol master, a real-path SHORT
-test, docs rewrite. (Versioned migrations: done 2026-10-18, see §11.8 and §14.)
+Not yet done (planned): Nifty expiry from the symbol master, a real-path SHORT
+test, docs rewrite. (Versioned migrations: done 2026-10-18, see §11.8 and §14. `signals` table: §11.9 and §14b.)
 
 ## 11.8 Versioned migrations and ghost rows (2026-10-18)
 
@@ -1381,6 +1381,29 @@ test, docs rewrite. (Versioned migrations: done 2026-10-18, see §11.8 and §14.
 **Rollback:** restore the `pg_dump`. Partial manual reversal: `UPDATE paper_trades SET status='OPEN' WHERE status IN ('ORPHANED','SKIPPED') AND exit_price IS NULL; ALTER TABLE paper_trades DROP COLUMN data_quality; DROP TABLE schema_migrations;` then redeploy the previous commit. This brings back the boot rewrite.
 
 Verified locally against a throwaway `postgres:15-alpine` (prod-like fixture rows and a fresh `init.sql` DB): all three apply, a rerun is a no-op, outcome columns are byte-identical before/after, and the tracker's new INSERT / close / orphan SQL behaves as specified. **Not yet run on EC2.**
+
+## 11.9 `signals` table (2026-10-18, branch `feature/signals-table`)
+
+One row per detector fire, i.e. per `sendTelegramAlert()` call. A fire a detector suppresses with its own cooldown never reaches the worker and isn't logged. Rejected signals were only kept in Redis `jsfilter:decisions` (capped, cleared at boot); now every fire is in Postgres. Column reference: §14b.
+
+| Change | Where |
+|---|---|
+| The body of `sendTelegramAlert` moved **unchanged in behaviour** into an env-free `runAlertPipeline(data, deps, obs)` with injected I/O. `telegramWorker.ts` keeps `AlertPayload`, the backtest seam, and the `sendTelegramAlert` signature, and wires the live deps. | `src/workers/alertPipeline.ts`, `src/workers/telegramWorker.ts` |
+| **The hook is observation only.** The pipeline writes facts into an optional draft through `note()`, which swallows every error, and never reads it back. `tests/alertPipeline.test.ts` runs 15 outcome scenarios with no draft, a draft, and a draft that throws on every access, and asserts identical side effects (filter calls, trades, Redis ops, sends, admin notices, console output) plus a golden outcome. A planted "skip send when observed" bug fails 5 of them. | `tests/alertPipeline.test.ts` |
+| **Executed old-vs-new parity.** `tests/legacyWorkerParity.test.ts` runs the actual pre-hook `sendTelegramAlert` (commit `437665b`, vendored byte-identical at `tests/fixtures/telegramWorker.pre-signals.txt`, checked against git) side by side with the current `telegramWorker.ts`, with only I/O imports redirected to fakes (`tests/helpers/legacyHarness.ts`). All 15 scenarios must produce identical side effects, and the new worker must log exactly one signals row per fire. It caught one real difference, now fixed: the first version snapshotted `ENV.PAPER_CAPITAL_BASE` / `CAPITAL_CONSTRAINT_BEHAVIOR` / `TELEGRAM_ADMIN_ID` at import, whereas the old worker read them per call (no live impact, since `ENV` is constant, but no longer equivalent). `liveDeps.config` now uses getters. | `tests/legacyWorkerParity.test.ts` |
+| Writer: in-memory queue → one multi-row `INSERT … ON CONFLICT DO NOTHING` every 1 s or at 100 rows. A failed batch is retried row by row; a row that still fails is logged as `[SignalLog] DROPPED {json}`. The queue is capped at 5,000 (oldest dropped). `enqueue()` never awaits and never throws. Flushed from the engine's SIGTERM handler. | `src/db/signalLog.ts` |
+| Counters, logged per event and as session totals at shutdown: `unique_skipped` (UNIQUE conflict), `queue_cap_dropped`, `failed_dropped`, `batch_retries`. | `src/db/signalLog.ts` |
+| Pure column mapping (gate columns, capital outcome, suppression reason, data_quality flags). | `src/db/signalRecord.ts` |
+| Promotion source registry, filled at boot (`core_watchlist.json` → CORE, rest of `watchlist.json` → SCREENER) and on anomaly promotion (ANOMALY); Nifty symbols → INDEX. | `src/core/symbolSource.ts`, `src/ingestion/websocket.ts` |
+| `registerTrade` returns the inserted `paper_trades.id` (`RETURNING id`), or null on failure. | `src/core/positionTracker.ts` |
+| `parseRiskRewardFromTrigger` moved verbatim to `src/utils/triggerLevels.ts` (re-exported from the filter) and additionally returns the raw `sl`/`t1`. `CONFIRMATION_THRESHOLD` is now exported. **No gate, threshold, detector or sizing logic changed.** | `src/utils/triggerLevels.ts`, `src/detectors/janeStreetFilter.ts` |
+| Migration `0004_signals`: additive, creates `signals` + 4 indexes + FK to `paper_trades(id) ON DELETE SET NULL`. Reverse: `DROP TABLE signals; DELETE FROM schema_migrations WHERE version='0004';` | `db/migrations/0004_signals.sql` |
+
+**Owner decisions (2026-10-18):** one row per fire (re-fires after cooldown are separate rows; their alert shows `DUPLICATE`); trigger-parsed levels only for rejected signals; real FK; **no retention job yet**. Keep everything and revisit once volume is measured. Estimated ceiling about 2,000–2,500 rows per trading day, about 1.5 KB each. This is an estimate, not a measurement.
+
+**Deploy:** rebuild `quant_api` and `quant_engine`. The API must be rebuilt too, because its read-only schema check reads migration files from its own image. Run `migrate` before the engine's next boot. RUNBOOK has the steps.
+
+Verified locally only (throwaway `postgres:15-alpine` + `redis:7-alpine`): 0004 applies on top of 0001–0003 alone, rerun is a no-op, `paper_trades` byte-identical, real `registerTrade` returns the id and the signal joins to it, UNIQUE conflict counted, FK-violating row dropped alone and logged, `alert_sent`/reason CHECK enforced, `ON DELETE SET NULL` works, reversal SQL works. **Not yet deployed.**
 
 ## 11.10 Session robustness (2026-10-20, branch `fix/session-robustness`)
 
@@ -1479,6 +1502,32 @@ Maintained by `db/init.sql` (initial table) plus the versioned migrations in `db
 - StockMomentumBreakoutDetector → SWING (set at line ~358 of the detector; also hardcodes durationClass: 'SWING' on AlertPayload which permanently bypasses bayesianEngine time-of-day restriction — see §3.9)
 - All Nifty detectors, GapAndGoMomentum, VolatilityContraction → INTRADAY (default)
 - Backfill (historical, removed 2026-10-18): the old boot block classified existing rows using ILIKE '%Momentum%' / ILIKE '%VCP%'. Such rows carry `duration_unverified`.
+
+---
+
+## 14b. `signals` — one row per detector fire
+
+Written by `src/db/signalLog.ts` from the draft `alertPipeline.ts` fills (§11.9). **NULL in a gate column means the stage never ran**, never that it passed. Only REGIME and EV can reject; Bayesian and Kelly are score components; the score threshold is the third rejection point.
+
+| Column(s) | Meaning |
+|---|---|
+| `signal_id` (UUID PK), `fired_at` (UTC), `trade_date` (IST day) | Identity. `UNIQUE (detector, symbol, direction, fired_at)` guards against logging the same fire twice. |
+| `symbol`, `detector`, `direction`, `price`, `trigger`, `duration_class`, `regime_class` | The fire as the detector sent it. `regime_class` is the detector's declaration. |
+| `trigger_sl`, `trigger_t1`, `levels_parsed` | Levels parsed from the trigger, i.e. what the EV gate saw. `levels_parsed = false` → the gate used the default R:R (flag `levels_default_rr`). |
+| `entry_price`, `stop_price`, `target_price` | Levels the paper trade tracks (equity SL = VWAP ± 0.2 %). NULL if the signal never reached sizing. |
+| `regime_result`, `regime_reason`, `market_regime`, `entropy` | Regime hard gate. |
+| `bayesian_posterior`, `bayesian_points`, `bayesian_reason` | Score component. |
+| `ev_result`, `ev_value`, `ev_reason` | EV hard gate. |
+| `kelly_half`, `kelly_points`, `kelly_reason` | Score component (only computed when EV passes). |
+| `score`, `score_threshold`, `score_result` | `score_threshold` = `CONFIRMATION_THRESHOLD` in force when the signal fired. |
+| `filter_result` (PASSED/REJECTED/ERROR), `rejected_at` (REGIME/EV/SCORE), `shadow_mode`, `breakdown` (JSONB, every component) | Filter summary. |
+| `capital_outcome` (TRADED/REDUCED/SKIPPED_CAPITAL), `qty`, `actual_size` | Sizing. NULL = never sized (rejected before sizing). |
+| `promotion_source` | CORE / SCREENER / ANOMALY / INDEX / UNKNOWN. |
+| `alert_sent`, `alert_suppressed_reason` | FILTER_REJECTED, FILTER_ERROR, NOT_GATED, CAPITAL_SKIP, ZERO_SIZE, DUPLICATE, CAP_REACHED, SEND_FAILED, WORKER_ERROR. A CHECK enforces `alert_sent ⇔ reason IS NULL`. |
+| `trade_id` | FK → `paper_trades.id`, `ON DELETE SET NULL`. Set when the signal became a paper-trade row. |
+| `data_quality` | `index_option_proxy`, `levels_default_rr`, `regime_guessed` (regime class inferred from name/trigger, not declared). |
+
+Indexes: `(fired_at DESC)`, `(trade_date, detector)`, `(symbol, trade_date)`, partial `(trade_id) WHERE trade_id IS NOT NULL`. No retention job (owner decision 2026-10-18).
 
 ---
 

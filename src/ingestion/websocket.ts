@@ -113,6 +113,8 @@ tickEmitter.setMaxListeners(200)
 import { positionTracker } from '../core/positionTracker.js'
 import { pool } from '../config/db.js'
 import { schemaProblem } from '../db/migrate.js'
+import { signalLog } from '../db/signalLog.js'
+import { registerWatchlistSources, setSymbolSource } from '../core/symbolSource.js'
 
 // High-Conviction Nifty Singleton Detectors
 const oiSweepDetector = new OiLiquiditySweepDetector()
@@ -163,6 +165,17 @@ export const startLiveEngine = async () => {
 	const activeUniverse = [...watchlist]
 	const activeUniverseSet = new Set<string>(activeUniverse)
 
+	// Promotion source for the signals log (observation only). watchlist.json is
+	// core_watchlist.json + the screener's Layer A (dailyScreener.ts).
+	try {
+		const corePath = path.resolve(process.cwd(), 'core_watchlist.json')
+		const core: string[] = fs.existsSync(corePath) ? JSON.parse(fs.readFileSync(corePath, 'utf8')) : []
+		registerWatchlistSources(watchlist, core)
+	} catch (err) {
+		console.warn('[Engine] ⚠️ Could not read core_watchlist.json — signals will log promotion_source SCREENER/UNKNOWN:', err)
+		registerWatchlistSources(watchlist, [])
+	}
+
 	await warnIfVwapMissing(activeUniverse)
 
 	const accessToken = fs.readFileSync(TOKEN_PATH, 'utf8').trim()
@@ -174,6 +187,7 @@ export const startLiveEngine = async () => {
 		console.log(`[Scanner] 🚀 Anomaly detected! Promoting ${symbol} to active universe. Reason: ${reason}`)
 		activeUniverseSet.add(symbol)
 		activeUniverse.push(symbol)
+		setSymbolSource(symbol, 'ANOMALY')
 
 		// Seed VWAP dynamically (runs async)
 		fetchAndSeedSymbol(symbol, getTodayString()).catch(e => console.error(`[Scanner] ❌ VWAP seed failed for ${symbol}:`, e))
@@ -387,6 +401,8 @@ export const startLiveEngine = async () => {
 		await notifyAdmin(`🚨 quant_engine ${summary}`)
 		anomalyScanner.stop()
 		try { skt.close() } catch {}
+		// Same flush as the SIGTERM path: don't lose the last second of signals rows.
+		await signalLog.shutdown(2000)
 		try { await redisClient.quit() } catch {}
 		process.exit(trip.exitCode)
 	}
@@ -471,6 +487,8 @@ export const startLiveEngine = async () => {
 			skt.close()
 		} catch {}
 		await new Promise((resolve) => setTimeout(resolve, 3000))
+		// Flush signals logged in the last second (bounded; never throws).
+		await signalLog.shutdown(2000)
 		try {
 			await redisClient.quit()
 		} catch {}
