@@ -156,3 +156,18 @@ test('Oct 20 replay: a socket silent all session now costs at most 6 restarts, n
 	assert.deepEqual(exits, [1, 1, 1, 1, 1, 1, 0])
 	assert.ok(t < ist('2026-10-20', 10, 0), 'stands down well before 10:00')
 })
+
+test('lastCompletedSession: the screener screens the last session whose daily bar is complete', async () => {
+	const { lastCompletedSession } = await import('../src/core/sessionGuard.js')
+	// Tue 2026-10-20 (Dussehra) 20:53 — the manual run tonight → Mon 19th
+	assert.equal(lastCompletedSession(ist('2026-10-20', 20, 53), holidays), '2026-10-19')
+	// Wed 21st 08:15, before the open → still Mon 19th (the 20th is a holiday)
+	assert.equal(lastCompletedSession(ist('2026-10-21', 8, 15), holidays), '2026-10-19')
+	// Wed 21st 15:29 → not complete yet; 15:30 and the 16:30 cron run → the 21st
+	assert.equal(lastCompletedSession(ist('2026-10-21', 15, 29), holidays), '2026-10-19')
+	assert.equal(lastCompletedSession(ist('2026-10-21', 15, 30), holidays), '2026-10-21')
+	assert.equal(lastCompletedSession(ist('2026-10-21', 16, 30), holidays), '2026-10-21')
+	// Saturday / Monday morning → Friday
+	assert.equal(lastCompletedSession(ist('2026-10-24', 11, 0), holidays), '2026-10-23')
+	assert.equal(lastCompletedSession(ist('2026-10-26', 8, 0), holidays), '2026-10-23')
+})
