@@ -179,6 +179,7 @@ export const screenAsOf = (input: ScreenInput): ScreenResult => {
 			continue
 		}
 		const lastBar = bars[bars.length - 1]!
+		const stale = istDay(lastBar.t) !== asOf // suspended / not traded on the as-of date
 		rec.close = lastBar.c
 		rec.turnover = avgTurnover(bars, c.liquidity.turnoverLookbackBars)
 		rec.advShares = avgVolume(bars, c.liquidity.turnoverLookbackBars) ?? 0
@@ -189,6 +190,7 @@ export const screenAsOf = (input: ScreenInput): ScreenResult => {
 		if (!rec.liquid)
 			reasons.push(rec.close < c.liquidity.minPrice ? `price ₹${rec.close} < ₹${c.liquidity.minPrice}` : `turnover ${cr(rec.turnover)} < ${cr(c.liquidity.minAvgTurnoverRupees)}`)
 		if (rec.circuitLocked) reasons.push('circuit-locked on as-of date (zero-range bar)')
+		if (stale) reasons.push(`no bar on ${asOf} (last ${istDay(lastBar.t)}) — suspended or stale`)
 		if (bars.length < Math.max(c.history.minBars, maxRs + 1)) {
 			insufficient++
 			reasons.push(`history ${bars.length} bars < ${Math.max(c.history.minBars, maxRs + 1)}`)
@@ -239,7 +241,7 @@ export const screenAsOf = (input: ScreenInput): ScreenResult => {
 		rec.rsRaw = rs
 		rec.residual = resid.score
 		rec.beta = resid.beta
-		if (rec.liquid && !rec.circuitLocked) {
+		if (rec.liquid && !rec.circuitLocked && !stale) {
 			rec.eligible = true
 			rsRaw.set(symbol, rs)
 			residRaw.set(symbol, resid.score)

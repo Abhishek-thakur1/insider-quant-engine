@@ -197,3 +197,14 @@ test('GOLDEN: funnel output for a fixed 30-symbol market', () => {
 	if (process.env.UPDATE_GOLDEN === '1') fs.writeFileSync(golden, text + '\n')
 	assert.equal(text + '\n', fs.readFileSync(golden, 'utf8').replace(/\r\n/g, '\n'))
 })
+
+test('a symbol with no bar ON the as-of date (suspended / stale) is excluded with a reason', () => {
+	const s = market()
+	s.set('NSE:S095-EQ', s.get('NSE:S095-EQ')!.slice(0, -3)) // last 3 sessions missing
+	const r = screenAsOf(input(s))
+	const rec = r.records['NSE:S095-EQ']!
+	assert.equal(rec.eligible, false)
+	const why = rec.reasons.join(' ')
+	assert.ok(why.includes(`no bar on ${AS_OF} (last `) && why.includes(') — suspended or stale'), why)
+	assert.ok(!r.watchlist.includes('NSE:S095-EQ'))
+})
