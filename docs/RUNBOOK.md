@@ -377,8 +377,7 @@ No migration. Outside market hours. **Re-enabling the screener makes live Fyers 
 4. Engine: `docker compose stop quant_engine && docker compose create --force-recreate quant_engine`.
 5. **Screener, only on the owner's go:**
    - `docker compose --profile jobs create quant_screener`. This re-enables the 16:30 cron.
-   - For a deliberate first run, use an evening after 18:00 with that day's token (before 17:15 the token still exists; after the 17:15 purge it doesn't, so log in first).
-   - Run `docker start -a quant_screener; echo "exit $?"`.
+   - It needs that day's token, which is purged at 17:15. So either let the **16:30 cron** run it, or run it by hand between **15:45 and 17:10**: `docker start -a quant_screener; echo "exit $?"`. A run that continues past 17:15 is fine: the token is read at start.
    - Expect exit **0** (list written) or **4** (allocation used, so the first fill continues the next evening).
 6. Ledger check after any run: `docker exec quant_redis redis-cli HGETALL fyers:quota:$(TZ=Asia/Kolkata date +%F)`.
    - `used:screener` should be ≤ 2200.
