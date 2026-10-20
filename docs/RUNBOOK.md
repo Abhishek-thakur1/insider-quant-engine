@@ -197,7 +197,7 @@ Builds tomorrow's watchlist at **16:30 IST on trading days** (`lifecycle.sh run_
 
 | Exit | Meaning | What to do |
 |---|---|---|
-| 0 | Written (or not a trading day) | nothing |
+| 0 | Written | nothing |
 | 2 | Run **not trusted** (> 3% failed, > 10% no data, or no benchmark). **Previous watchlist kept.** Admin already got a Telegram message. | Read `failed_<date>.json` (below). Usually rate limits or a token problem; tomorrow's run retries. |
 | 3 | No Fyers token | Today's login was missed; the old list stays. |
 | 1 | Crash | `docker exec quant_scheduler cat /var/log/screener_last.log` |
@@ -211,6 +211,7 @@ docker run --rm -v <that volume>:/d alpine sh -c 'ls -la /d; head -c 1500 /d/wat
 ```
 
 - **Manual run** (outside 09:00–15:30, and only while today's token exists, i.e. before 17:15): `docker start -a quant_screener; echo "exit $?"`.
+- **As-of date** = the last *completed* session: today after 15:30 on a trading day, otherwise the previous trading day. A manual run on a holiday or before the open therefore screens the last real session (e.g. Tue 2026-10-20, a holiday → as of Mon 19th). Override with `docker compose --profile jobs run --rm -e SCREENER_AS_OF=YYYY-MM-DD quant_screener`. The 16:30 cron run only fires on trading days.
 - **First run** has to fetch about 460 days of daily bars for about 2,350 symbols, roughly 25 minutes. Later runs take about 10 minutes.
 - **Engine side:** the boot log shows `[Engine] 📋 Watchlist: /app/data/watchlist.json (N symbols)`. It warns, and pings admin, if the list is more than 3 trading days old.
 - **Layer B:** the boot log shows `[AnomalyScanner] Scan set: /app/data/anomaly_universe.json` and `across N symbols` with N ≤ 323 (`layerB.maxSymbols`). It no longer reads the full `universe_stats.json`.

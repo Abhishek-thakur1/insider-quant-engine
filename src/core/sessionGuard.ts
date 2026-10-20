@@ -111,3 +111,22 @@ export const restartBackoffMs = (restartsToday: number): number => {
 
 export const restartCounterKey = (nowMs: number): string => `engine:restarts:${getISTDateString(nowMs)}`
 export const RESTART_COUNTER_TTL_SECS = 2 * 24 * 3600
+
+/**
+ * The last NSE session whose daily bar is complete at `nowMs`: today if it is a
+ * trading day and the 15:30 close has passed, otherwise the previous trading day.
+ * The EOD screener screens "as of" this date, so a manual run on a holiday or
+ * before the open uses the last real session instead of a day with no bars
+ * (which would mark every symbol stale).
+ */
+export const lastCompletedSession = (nowMs: number, holidays: Set<string>): string => {
+	const today = getISTDateString(nowMs)
+	if (tradingDayVerdict(today, holidays).trading && getISTMinutes(nowMs) >= SESSION_CLOSE_MIN) return today
+	let t = Date.parse(`${today}T00:00:00Z`)
+	for (let i = 0; i < 30; i++) {
+		t -= 86_400_000
+		const d = new Date(t).toISOString().slice(0, 10)
+		if (tradingDayVerdict(d, holidays).trading) return d
+	}
+	throw new Error(`no trading day in the 30 days before ${today} — holiday calendar broken?`)
+}

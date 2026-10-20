@@ -7,7 +7,12 @@
 // READS watchlist.json at boot — the engine never screens and never calls the
 // history API for screening).
 //
-// Exit codes: 0 = written, or not a trading day; 2 = run not trusted (previous
+// As-of date: the last COMPLETED session (today after 15:30 on a trading day,
+// else the previous trading day), so a manual run on a holiday or before the open
+// screens the last real session. SCREENER_AS_OF=YYYY-MM-DD overrides. The 16:30
+// cron run only fires on trading days (lifecycle.sh checks trading_day.sh).
+//
+// Exit codes: 0 = written; 2 = run not trusted (previous
 // watchlist kept, admin told); 3 = no token / setup error; 1 = crash.
 // ============================================================
 
@@ -16,7 +21,7 @@ import path from 'node:path'
 import axios from 'axios'
 import fyers from 'fyers-api-v3'
 import { ENV } from '../src/config/env.js'
-import { exitIfNotTradingDay } from '../src/core/tradingDayGate.js'
+import { calendarMissingYear, lastCompletedSession, loadHolidays } from '../src/core/sessionGuard.js'
 import { getISTDateString } from '../src/utils/marketHours.js'
 import { notifyAdmin } from '../src/utils/adminNotify.js'
 import { loadConfig } from '../src/screener/config.js'
@@ -32,11 +37,16 @@ const download = async (url: string): Promise<string> =>
 	(await axios.get<string>(url, { responseType: 'text', timeout: 60_000 })).data
 
 const main = async (): Promise<number> => {
-	exitIfNotTradingDay('Screener') // exit 0 on weekends / NSE holidays
-	const today = getISTDateString()
+	const holidays = loadHolidays() ?? new Set<string>()
+	const now = Date.now()
+	const today = process.env.SCREENER_AS_OF || lastCompletedSession(now, holidays)
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) throw new Error(`bad SCREENER_AS_OF "${today}" (want YYYY-MM-DD)`)
+	if (calendarMissingYear(holidays, getISTDateString(now))) {
+		await notifyAdmin(`⚠️ Screener: NSE holiday calendar has no ${getISTDateString(now).slice(0, 4)} entries — as-of date may be wrong`)
+	}
 	const { config, hash } = loadConfig()
 	const dataDir = screenerDataDir()
-	console.log(`[Screener] 🔍 EOD screen for ${today} (config ${hash}) → ${dataDir}`)
+	console.log(`[Screener] 🔍 EOD screen as of ${today} (last completed session; now ${getISTDateString(now)}) · config ${hash} → ${dataDir}`)
 
 	if (!fs.existsSync(TOKEN_PATH)) {
 		const msg = `⚠️ Screener ${today}: no Fyers token at ${TOKEN_PATH} — previous watchlist kept.`
