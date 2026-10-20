@@ -28,9 +28,19 @@ await import('../backtest/core/bootEnv.js')
 const client = await import('../backtest/data/fyersClient.js')
 const store = await import('../backtest/data/store.js')
 const { marketWindowViolation } = await import('../backtest/marketWindow.js')
+const quota = await import('../src/fyers/quota.js')
 process.chdir(repoRoot)
 
 const DAY = 86_400_000
+// Fast gate for tests: no pacing delays, generous allocation, in-memory ledger.
+const FAST: Parameters<typeof quota.createQuotaGate>[0]['config'] = {
+	dataApi: { perSecond: 10_000, perMinute: 1_000_000, perDay: 5000 },
+	allocations: { screener: 0, seeder: 0, anomaly: 0, backtest: 5000 },
+	maxBreachesPerDay: 2,
+	cooldownMs: 65_000,
+	maxRetries: 3,
+}
+const fastGate = () => quota.createQuotaGate({ job: 'backtest', config: FAST, ledger: new quota.MemoryLedger(), log: { warn: () => {}, error: () => {} } })
 const FROM = Date.parse('2024-01-01T00:00:00Z')
 const TO = Date.parse('2026-03-01T00:00:00Z') // ~790 days → 3 daily chunks of 365
 const SYMBOLS = ['NSE:A-EQ', 'NSE:B-EQ', 'NSE:C-EQ', 'NSE:D-EQ', 'NSE:E-EQ']
@@ -92,7 +102,7 @@ test('TOKEN EXPIRY then RESUME: run 1 stops at the expiry with progress saved; r
 	fs.rmSync(path.join(work, 'backtest'), { recursive: true, force: true })
 	const clean = fakeFyers()
 	client.__setHistoryFnForTests(clean.fn)
-	await inWork(() => quiet(() => client.fetchUniverse(SYMBOLS, 'D', FROM, TO, { skipAuth: true })))
+	await inWork(() => quiet(() => client.fetchUniverse(SYMBOLS, 'D', FROM, TO, { skipAuth: true, gate: fastGate() })))
 	const reference = snapshot()
 	const totalCalls = clean.calls.length
 	assert.equal(totalCalls, 15, '5 symbols × 3 chunks')
@@ -102,7 +112,7 @@ test('TOKEN EXPIRY then RESUME: run 1 stops at the expiry with progress saved; r
 	const r1 = fakeFyers(7)
 	client.__setHistoryFnForTests(r1.fn)
 	await assert.rejects(
-		inWork(() => quiet(() => client.fetchUniverse(SYMBOLS, 'D', FROM, TO, { skipAuth: true }))),
+		inWork(() => quiet(() => client.fetchUniverse(SYMBOLS, 'D', FROM, TO, { skipAuth: true, gate: fastGate() }))),
 		(e: unknown) => e instanceof client.TokenExpiredError,
 	)
 	assert.equal(r1.calls.length, 8, 'stopped at the first rejected call — no cascade over the remaining symbols')
@@ -116,7 +126,7 @@ test('TOKEN EXPIRY then RESUME: run 1 stops at the expiry with progress saved; r
 	// Run 2: fresh token, same command.
 	const r2 = fakeFyers()
 	client.__setHistoryFnForTests(r2.fn)
-	await inWork(() => quiet(() => client.fetchUniverse(SYMBOLS, 'D', FROM, TO, { skipAuth: true })))
+	await inWork(() => quiet(() => client.fetchUniverse(SYMBOLS, 'D', FROM, TO, { skipAuth: true, gate: fastGate() })))
 	assert.equal(r2.calls.length, totalCalls - 7, `only the 8 missing chunks: ${r2.calls.join(' | ')}`)
 	assert.ok(!r2.calls.some((c) => c.startsWith('NSE:A-EQ') || c.startsWith('NSE:B-EQ')), 'completed symbols not refetched')
 	assert.deepEqual(snapshot(), reference, 'final cache identical to an uninterrupted run')
@@ -124,9 +134,64 @@ test('TOKEN EXPIRY then RESUME: run 1 stops at the expiry with progress saved; r
 	// Run 3, same window: nothing left to fetch — including the pre-listing chunk of E that returned no bars.
 	const r3 = fakeFyers()
 	client.__setHistoryFnForTests(r3.fn)
-	await inWork(() => quiet(() => client.fetchUniverse(SYMBOLS, 'D', FROM, TO, { skipAuth: true })))
+	await inWork(() => quiet(() => client.fetchUniverse(SYMBOLS, 'D', FROM, TO, { skipAuth: true, gate: fastGate() })))
 	assert.deepEqual(r3.calls, [])
 	assert.ok(fs.existsSync(path.join(cacheDir, 'NSE_E-EQ.coverage.json')))
+	client.__setHistoryFnForTests(null)
+})
+
+test('MULTI-NIGHT: the nightly allocation stops night 1; the PC ledger file persists; night 2 continues; result = one clean run', async () => {
+	fs.rmSync(path.join(work, 'backtest'), { recursive: true, force: true })
+	const clean = fakeFyers()
+	client.__setHistoryFnForTests(clean.fn)
+	await inWork(() => quiet(() => client.fetchUniverse(SYMBOLS, 'D', FROM, TO, { skipAuth: true, gate: fastGate() })))
+	const reference = snapshot()
+
+	fs.rmSync(path.join(work, 'backtest'), { recursive: true, force: true })
+	const ledgerFile = path.join(work, 'quota-ledger.json')
+	fs.rmSync(ledgerFile, { force: true })
+	let now = Date.parse('2026-10-21T13:00:00Z') // night 1, 18:30 IST
+	const nightly = { ...FAST, allocations: { ...FAST.allocations, backtest: 6 } }
+	const gateFor = () =>
+		quota.createQuotaGate({ job: 'backtest', config: nightly, ledger: new quota.FileLedger(ledgerFile), clock: { now: () => now, sleep: async () => {} }, log: { warn: () => {}, error: () => {} } })
+
+	const n1 = fakeFyers()
+	client.__setHistoryFnForTests(n1.fn)
+	await assert.rejects(inWork(() => quiet(() => client.fetchUniverse(SYMBOLS, 'D', FROM, TO, { skipAuth: true, gate: gateFor() }))), (e: unknown) => e instanceof quota.AllocationExhaustedError)
+	assert.equal(n1.calls.length, 6, 'night 1 sends exactly its allocation')
+	assert.ok((quiet as unknown as { last: string[] }).last.join(' ').includes('Rerun the SAME command on the next allowed evening'))
+
+	now = Date.parse('2026-10-22T13:00:00Z') // night 2 — new IST day, same ledger file
+	const n2 = fakeFyers()
+	client.__setHistoryFnForTests(n2.fn)
+	await assert.rejects(inWork(() => quiet(() => client.fetchUniverse(SYMBOLS, 'D', FROM, TO, { skipAuth: true, gate: gateFor() }))), quota.AllocationExhaustedError)
+	assert.equal(n2.calls.length, 6)
+	assert.equal(new Set([...n1.calls, ...n2.calls]).size, 12, 'night 2 requested nothing night 1 already had')
+
+	now = Date.parse('2026-10-23T13:00:00Z') // night 3 finishes (3 chunks left)
+	const n3 = fakeFyers()
+	client.__setHistoryFnForTests(n3.fn)
+	await inWork(() => quiet(() => client.fetchUniverse(SYMBOLS, 'D', FROM, TO, { skipAuth: true, gate: gateFor() })))
+	assert.equal(n3.calls.length, 3)
+	assert.deepEqual(snapshot(), reference, 'three nights = one clean run')
+	const ledger = JSON.parse(fs.readFileSync(ledgerFile, 'utf8'))
+	assert.deepEqual(Object.fromEntries(Object.entries(ledger).map(([d, st]) => [d, (st as { used: { backtest: number } }).used.backtest])), {
+		'2026-10-21': 6,
+		'2026-10-22': 6,
+		'2026-10-23': 3,
+	})
+	client.__setHistoryFnForTests(null)
+})
+
+test('a quota stop is never retried as a rate limit (the daily-limit text contains "plan limit")', async () => {
+	fs.rmSync(path.join(work, 'backtest'), { recursive: true, force: true })
+	let calls = 0
+	client.__setHistoryFnForTests(async () => {
+		calls++
+		throw { code: -360, message: "You've reached the Standard plan limit of 5,000 requests/day.", s: 'error' }
+	})
+	await assert.rejects(inWork(() => quiet(() => client.fetchUniverse(SYMBOLS, 'D', FROM, TO, { skipAuth: true, gate: fastGate() }))), quota.DailyQuotaExhaustedError)
+	assert.equal(calls, 1, 'one request, then a hard stop')
 	client.__setHistoryFnForTests(null)
 })
 
@@ -137,13 +202,14 @@ test('coverage union: shifted chunk edges on a later run are still recognised as
 	assert.equal(store.isCovered(merged, 15, 35), false)
 })
 
-test('market-hours guard: blocked 08:45–15:45 and 16:25–17:05 IST on trading days only', () => {
+test('market-hours guard: blocked 08:45–15:45 and 16:25–18:00 IST on trading days only', () => {
 	const ist = (day: string, h: number, m: number) => Date.parse(`${day}T00:00:00Z`) + (h * 60 + m) * 60e3 - IST
 	const holidays = new Set(['2026-11-10'])
 	assert.match(marketWindowViolation(ist('2026-10-21', 10, 0), holidays)!, /blocked 08:45–15:45 IST \(engine boot and live session\)/)
-	assert.match(marketWindowViolation(ist('2026-10-21', 16, 30), holidays)!, /blocked 16:25–17:05 IST \(the 16:30 EOD screener job\)/)
+	assert.match(marketWindowViolation(ist('2026-10-21', 16, 30), holidays)!, /blocked 16:25–18:00 IST \(the 16:30 EOD screener job\)/)
+	assert.match(marketWindowViolation(ist('2026-10-21', 17, 30), holidays)!, /16:25–18:00/)
 	assert.equal(marketWindowViolation(ist('2026-10-21', 16, 0), holidays), null, 'between session and screener')
-	assert.equal(marketWindowViolation(ist('2026-10-21', 17, 5), holidays), null)
+	assert.equal(marketWindowViolation(ist('2026-10-21', 18, 0), holidays), null)
 	assert.match(marketWindowViolation(ist('2026-10-21', 8, 45), holidays)!, /08:45 IST/)
 	assert.equal(marketWindowViolation(ist('2026-10-21', 8, 44), holidays), null)
 	assert.equal(marketWindowViolation(ist('2026-10-21', 15, 45), holidays), null)
