@@ -1,0 +1,64 @@
+{
+	"version": 1,
+	"benchmark": "NSE:NIFTY500-INDEX",
+	"watchlistCap": 100,
+	"liquidity": {
+		"minAvgTurnoverRupees": 150000000,
+		"turnoverLookbackBars": 30,
+		"minPrice": 20
+	},
+	"history": {
+		"minBars": 120
+	},
+	"relativeStrength": {
+		"lookbacks": [21, 63, 126],
+		"weights": [0.2, 0.4, 0.4]
+	},
+	"residualMomentum": {
+		"lookbackBars": 126
+	},
+	"proximity": {
+		"highLookbackBars": 252,
+		"maxBelowHighPct": 25
+	},
+	"trend": {
+		"emaPeriods": [10, 20, 50],
+		"sma": 50,
+		"smaRisingLookbackBars": 10,
+		"emaWindowBars": 300
+	},
+	"tradability": {
+		"minAdrPct": 4.5,
+		"adrLookbackBars": 20,
+		"volumeShortBars": 20,
+		"volumeLongBars": 100,
+		"minVolumeRatio": 0.5
+	},
+	"tags": {
+		"tightRangeBars": 10,
+		"tightMaxRangeAdrMultiple": 1.5,
+		"tightVolumeBars": 10,
+		"tightVolumeBaseBars": 50,
+		"tightMaxVolumeRatio": 0.75,
+		"surgeVolumeMultiple": 2.0
+	},
+	"score": {
+		"rsWeight": 0.5,
+		"residualWeight": 0.3,
+		"proximityWeight": 0.2
+	},
+	"tiers": {
+		"tier1MinRsRank": 85,
+		"tier2MinRsRank": 70,
+		"holdMinRsRank": 70
+	},
+	"failureBudget": {
+		"maxFailedPct": 3,
+		"maxNoDataPct": 10
+	},
+	"filters": {
+		"marketCap": "not applied — Fyers provides no fundamentals",
+		"asmGsm": "not applied — no machine-readable source in Fyers; owner decision 2026-10-20",
+		"seriesNote": "universe is -EQ only with INE ISINs, so BE/BZ (incl. trade-for-trade) are excluded at source"
+	}
+}

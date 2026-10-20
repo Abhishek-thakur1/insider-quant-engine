@@ -1,0 +1,24 @@
+[Screener] Funnel as of 2026-03-24 (config e493214d5ae8, benchmark NSE:NIFTY500-INDEX)
+  scanned                                30
+  fetched OK                             29
+  failed (after retries)                  1
+  no data                                 0
+  insufficient history                    0
+  after liquidity + price + circuit      29
+  after trend structure                  16
+  after RS rank cutoff                    5
+  tier 1 (leaders)                        5
+  tier 2 (setups)                         0
+  held by hysteresis                      1
+  core (always listed)                    1
+  final watchlist                         7
+  note: market cap: not applied — Fyers provides no fundamentals
+  note: ASM/GSM: not applied — no machine-readable source in Fyers; owner decision 2026-10-20
+  note: series: universe is -EQ only with INE ISINs, so BE/BZ (incl. trade-for-trade) are excluded at source
+[Screener] Top 20 by score:
+   1. NSE:S097-EQ            score  96.9  SCREENER_LEADER RS 99.0  resid 99.0   2.9% off high  ADR 5.5%
+   2. NSE:S095-EQ            score  89.9  SCREENER_LEADER RS 95.5  resid 81.5   2.9% off high  ADR 5.5%
+   3. NSE:S096-EQ            score  88.2  SCREENER_LEADER RS 92.0  resid 95.5   2.9% off high  ADR 5.5%
+   4. NSE:S093-EQ            score  85.7  SCREENER_LEADER RS 85.0  resid 85.0   2.9% off high  ADR 5.5%
+   5. NSE:S094-EQ            score  85.4  SCREENER_LEADER RS 88.5  resid 78.0   2.9% off high  ADR 5.5%
+   6. NSE:S088-EQ            score  77.3  SCREENER_LEADER RS 74.5  resid 74.5   2.9% off high  ADR 5.5%  held
