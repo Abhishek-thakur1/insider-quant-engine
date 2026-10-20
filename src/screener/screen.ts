@@ -107,6 +107,8 @@ export interface Funnel {
 	core: number
 	final: number
 	capped: number
+	/** Symbols the quote pre-filter decided not to fetch (job with fetchQuotes only). */
+	prefilterSkipped?: number
 }
 
 export interface ScreenResult {

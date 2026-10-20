@@ -307,6 +307,8 @@ export const createQuotaGate = (opts: {
 				attempt-- // waiting out a cooldown is not an attempt
 				continue
 			}
+			// Check before counting, so callers queued past the allocation don't inflate it.
+			if ((st.used[job] ?? 0) >= alloc) throw new AllocationExhaustedError(`${job} used its ${alloc} Data-API requests for ${day} — resume on the next run`)
 			// Counted before the call: Fyers counts every request, failed ones included.
 			const used = await ledger.add(day, job, 1)
 			if (used > alloc) throw new AllocationExhaustedError(`${job} used its ${alloc} Data-API requests for ${day} — resume on the next run`)

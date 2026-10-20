@@ -14,6 +14,7 @@ export const formatFunnel = (r: ScreenResult, topN = 20): string => {
 	const lines = [
 		`[Screener] Funnel as of ${r.asOf} (config ${r.configHash}, benchmark ${r.benchmark})`,
 		row('scanned', f.scanned),
+		...(f.prefilterSkipped !== undefined ? [row('skipped by quote pre-filter', f.prefilterSkipped)] : []),
 		row('fetched OK', f.fetchedOk),
 		row('failed (after retries)', f.failed),
 		row('no data', f.noData),

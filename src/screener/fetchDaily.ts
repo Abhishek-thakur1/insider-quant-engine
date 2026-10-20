@@ -15,6 +15,7 @@ import { createSlidingWindowLimiter, isRateLimitError, retryDelayMs, type Limite
 import type { CandleStore } from './candleStore.js'
 import { istDay, type DailyBar } from './indicators.js'
 import type { FetchOutcome } from './screen.js'
+import { QuotaStopError, type QuotaGate } from '../fyers/quota.js'
 
 export const FETCH_MAX_PER_SECOND = 4
 export const FETCH_MAX_RETRIES = 3
@@ -37,6 +38,8 @@ export interface FetchDeps {
 	clock?: LimiterClock
 	log?: Pick<Console, 'warn' | 'error'>
 	rand?: () => number
+	/** The shared Fyers quota gate (production). Without it: local 4/s limiter + retries (tests). */
+	gate?: QuotaGate
 }
 
 export interface FetchReport {
@@ -44,6 +47,8 @@ export interface FetchReport {
 	errors: Map<string, string>
 	requests: number
 	retries: number
+	/** Set when the quota gate stopped the run (allocation, daily limit, throttle limit). Symbols not reached have no outcome. */
+	stopped: QuotaStopError | null
 }
 
 const toBars = (candles: number[][]): DailyBar[] =>
@@ -72,16 +77,24 @@ export const fetchDailyUniverse = async (symbols: string[], deps: FetchDeps): Pr
 	const clock = deps.clock ?? { now: () => Date.now(), sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)) }
 	const log = deps.log ?? console
 	const { limit } = createSlidingWindowLimiter(FETCH_MAX_PER_SECOND, 1000, clock)
-	const report: FetchReport = { outcomes: new Map(), errors: new Map(), requests: 0, retries: 0 }
+	const report: FetchReport = { outcomes: new Map(), errors: new Map(), requests: 0, retries: 0, stopped: null }
+	const started = clock.now()
+	let done = 0
+
+	const getChecked = async (symbol: string, from: string, to: string): Promise<HistoryResponse> => {
+		report.requests++
+		const res = await deps.getHistory(symbol, from, to)
+		// Fyers sometimes resolves (rather than rejects) with an error body.
+		if (res.s !== 'ok' && res.s !== 'no_data') throw res
+		return res
+	}
 
 	const request = async (symbol: string, from: string, to: string): Promise<HistoryResponse> => {
+		// Production: the shared quota gate paces (4/s, 40/min), counts, cools down and stops.
+		if (deps.gate) return deps.gate.call(() => getChecked(symbol, from, to))
 		for (let attempt = 0; ; attempt++) {
 			try {
-				report.requests++
-				const res = await limit(() => deps.getHistory(symbol, from, to))
-				// Fyers sometimes resolves (rather than rejects) with an error body.
-				if (res.s !== 'ok' && res.s !== 'no_data') throw res
-				return res
+				return await limit(() => getChecked(symbol, from, to))
 			} catch (err) {
 				if (isRateLimitError(err) && attempt < FETCH_MAX_RETRIES) {
 					report.retries++
@@ -95,30 +108,42 @@ export const fetchDailyUniverse = async (symbols: string[], deps: FetchDeps): Pr
 
 	await Promise.all(
 		symbols.map(async (symbol) => {
+			if (report.stopped) return // a quota stop ends the run; saved candles stay
 			const cached = deps.store.load(symbol)
 			const ranges = plannedRanges(cached, deps.todayIst)
 			if (ranges.length === 0) {
 				report.outcomes.set(symbol, 'OK')
-				return
-			}
-			try {
-				let got = 0
-				for (const [from, to] of ranges) {
-					const res = await request(symbol, from, to)
-					if (res.s === 'ok' && res.candles && res.candles.length > 0) {
-						deps.store.merge(symbol, toBars(res.candles))
-						got += res.candles.length
+			} else {
+				try {
+					let got = 0
+					for (const [from, to] of ranges) {
+						if (report.stopped) return
+						const res = await request(symbol, from, to)
+						if (res.s === 'ok' && res.candles && res.candles.length > 0) {
+							deps.store.merge(symbol, toBars(res.candles)) // saved per chunk: a stop never loses fetched bars
+							got += res.candles.length
+						}
 					}
+					report.outcomes.set(symbol, got > 0 || cached.length > 0 ? 'OK' : 'NO_DATA')
+				} catch (err) {
+					if (err instanceof QuotaStopError) {
+						report.stopped ??= err
+						return
+					}
+					report.outcomes.set(symbol, 'FAILED')
+					const msg = (err as { message?: string })?.message ?? JSON.stringify(err)
+					report.errors.set(symbol, msg)
+					log.error(`[Screener] ⚠️ ${symbol} failed after retries: ${msg}`)
 				}
-				report.outcomes.set(symbol, got > 0 || cached.length > 0 ? 'OK' : 'NO_DATA')
-			} catch (err) {
-				report.outcomes.set(symbol, 'FAILED')
-				const msg = (err as { message?: string })?.message ?? JSON.stringify(err)
-				report.errors.set(symbol, msg)
-				log.error(`[Screener] ⚠️ ${symbol} failed after retries: ${msg}`)
+			}
+			done++
+			if (done % 100 === 0) {
+				const failed = [...report.outcomes.values()].filter((o) => o === 'FAILED').length
+				log.warn(`[Screener] … ${done}/${symbols.length} symbols, ${report.requests} requests, ${failed} failed, ${Math.round((clock.now() - started) / 1000)} s`)
 			}
 		}),
 	)
+	if (report.stopped) log.error(`[Screener] ⛔ Fetch stopped after ${done}/${symbols.length} symbols: ${report.stopped.message}`)
 	return report
 }
 
