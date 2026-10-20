@@ -190,3 +190,77 @@ Merge to `v2` only on the owner's say-so. Outside market hours, ideally the even
 8. **On a holiday** (next one is 2026-11-10): `docker exec quant_scheduler tail -20 /var/log/scheduler.log` should show "Not a trading day" for auth, market messages, liveness and the engine. `docker inspect -f '{{.RestartCount}}' quant_engine` should not increase.
 
 **Rollback:** `git checkout <previous SHA>`, then repeat steps 4–6. The new Redis keys (`engine:restarts:*`, `jsfilter:stats:*`) expire on their own and are harmless to the old code.
+
+## EOD screener (`quant_screener`) — runbook
+
+Builds tomorrow's watchlist at **16:30 IST on trading days** (`lifecycle.sh run_screener` → `docker start -a quant_screener`). The engine only reads the result at its next boot. Details: AGENTS.md §11.11.
+
+| Exit | Meaning | What to do |
+|---|---|---|
+| 0 | Written (or not a trading day) | nothing |
+| 2 | Run **not trusted** (> 3% failed, > 10% no data, or no benchmark). **Previous watchlist kept.** Admin already got a Telegram message. | Read `failed_<date>.json` (below). Usually rate limits or a token problem; tomorrow's run retries. |
+| 3 | No Fyers token | Today's login was missed; the old list stays. |
+| 1 | Crash | `docker exec quant_scheduler cat /var/log/screener_last.log` |
+
+Read-only checks:
+```bash
+docker exec quant_scheduler grep -E "quant_screener|screener" /var/log/scheduler.log | tail -5
+docker exec quant_scheduler tail -40 /var/log/screener_last.log            # funnel + top 20
+docker volume ls | grep screener_data                                      # real volume name
+docker run --rm -v <that volume>:/d alpine sh -c 'ls -la /d; head -c 1500 /d/watchlist_meta.json'
+```
+
+- **Manual run** (outside 09:00–15:30, and only while today's token exists, i.e. before 17:15): `docker start -a quant_screener; echo "exit $?"`.
+- **First run** has to fetch about 460 days of daily bars for about 2,350 symbols, roughly 25 minutes. Later runs take about 10 minutes.
+- **Engine side:** the boot log shows `[Engine] 📋 Watchlist: /app/data/watchlist.json (N symbols)`. It warns, and pings admin, if the list is more than 3 trading days old.
+
+## Planned deploy: screener v2 (`feature/screener-v2`) — NOT DEPLOYED, NOT LIVE
+
+**Preconditions:**
+- `fix/session-robustness` is deployed.
+- `signals` (0004) is applied.
+- The evidence report (`backtest/output/universe-comparison.md`) says PASS, and the owner approves going live.
+
+Outside market hours.
+
+1. Save the engine logs, then back up (`pg_dump`, see Backup). Migration 0005 runs in this window.
+2. `git pull origin v2 && git log --oneline -3`.
+3. Build: `docker compose --profile jobs build quant_engine quant_screener quant_scheduler quant_api`. The API is included because its schema check reads migration files from its own image.
+4. Migrate: `docker compose run --rm --no-deps quant_api npm run migrate -- --dry-run`. It should list only `0005_screener_sources`. Then run it without `--dry-run`.
+5. API: `docker compose up -d --no-deps --force-recreate quant_api`.
+6. Scheduler: `docker compose up -d --no-deps --force-recreate quant_scheduler`, then `docker exec quant_scheduler grep -E "run_screener|purge_token" /etc/crontabs/root`.
+7. Create the job container (it isn't started): `docker compose --profile jobs create quant_screener`.
+8. Engine: `docker compose stop quant_engine && docker compose create --force-recreate quant_engine`. **Never `up -d` the engine off-hours.**
+9. **That evening**, after 16:30: check the scheduler log and `screener_last.log` (above). The funnel prints `scanned → … → final watchlist`.
+10. **After 17:15:** `docker exec quant_scheduler ls -la /app/token` should be empty, which shows the purge reaches the real volume.
+11. **Next morning:** `docker logs quant_engine 2>&1 | grep -E "Watchlist:|screener"`.
+
+Verify the old purge bug without changing anything:
+```bash
+docker volume ls | grep token
+docker inspect -f '{{range .Mounts}}{{.Name}} {{end}}' quant_scheduler
+```
+If the token volume isn't literally `quant_token_store`, the old 15:30 purge never touched it.
+
+**Rollback:**
+- Check out the previous SHA and rebuild.
+- `docker compose up -d --no-deps --force-recreate quant_scheduler`, then recreate the engine as in step 8.
+- With the old compose command the engine runs `dailyScreener.ts` at boot again.
+- 0005 can stay applied. It only widens a CHECK.
+
+## Screener v2 evidence run (backtest) — owner's machine
+
+This needs a Fyers token and about 2 GB of disk. EC2 has about 4 GB free, so run it locally. Nothing here touches live state; the backtest Redis is in-memory.
+
+```bash
+export FYERS_TOKEN_PATH=/path/to/access_token.txt     # today's token; .env must hold FYERS_APP_ID / FYERS_SECRET_ID
+npx tsx backtest/run.ts fetch-daily-all --days 365     # daily bars, ~2,350 symbols + NIFTY50 + NIFTY500 (≈ 30–40 min)
+npx tsx backtest/run.ts universes --days 365           # point-in-time lists → backtest/output/universes.json
+npx tsx backtest/run.ts fetch-intraday                 # 5-minute bars for every listed symbol (resumable)
+for L in old new random1 random2 random3; do
+  BACKTEST_MODE=true npx tsx backtest/run.ts run --universe-list $L --label $L
+done
+npx tsx backtest/run.ts compare                        # → backtest/output/universe-comparison.md
+```
+
+Thresholds are frozen in `config/screener.json`, and the config hash is printed in the report. If one is changed after seeing results, rerun everything under a new label and report both runs.

@@ -51,6 +51,10 @@
 └─────┬──────┘ └──────┬───────┘   └────────────────┘
       │               │
       └──── shared named volume `token_store` @ /app/token/access_token.txt
+
+quant_screener  (job, compose profile "jobs", restart:no) — started by the scheduler at
+16:30 on trading days; writes volume `screener_data` @ /app/data, which quant_engine
+mounts and only READS (watchlist.json, watchlist_meta.json, universe_stats.json).
 ```
 
 `quant_engine`'s compose `command` is a shell `until [ -f /app/token/access_token.txt ]` poll loop
@@ -61,13 +65,25 @@ the token exists and it will wait.
 
 | Time | Action | Script |
 |---|---|---|
-| 07:45 | `docker start quant_auth` → sends the Telegram login link | `lifecycle.sh start_auth` |
-| 09:07 | Random "market open" message to the channel | `market_message.sh open` |
-| 09:15 | `docker start quant_engine` | `lifecycle.sh start_engine` |
-| 15:17 | Random "market close" message | `market_message.sh close` |
-| 15:30 | `docker stop quant_engine`, stop `quant_auth`, **purge the token** via a one-shot alpine container | `lifecycle.sh stop_engine` |
+Every entry checks `scheduler/trading_day.sh` first and does nothing on weekends / NSE holidays.
 
-The token is deliberately destroyed daily — Fyers access tokens are single-day.
+| Time | Action | Script |
+|---|---|---|
+| 07:45 | `docker start quant_auth` → sends the Telegram login link | `lifecycle.sh start_auth` |
+| 09:00 | `docker start quant_engine` (waits for the token; reads the watchlist; no screening) | `lifecycle.sh start_engine` |
+| 09:07 | Random "market open" message to the channel | `market_message.sh open` |
+| 09:10 | Token freshness check → admin alert if missing/stale | `liveness.sh` |
+| 15:17 | Random "market close" message | `market_message.sh close` |
+| 15:30 | `docker stop quant_engine`, stop `quant_auth` | `lifecycle.sh stop_engine` |
+| 16:00 | `pg_dump` (S3 upload currently broken — see RUNBOOK) | `db_backup.sh` |
+| 16:30 | **EOD screener** → tomorrow's watchlist (§11.11) | `lifecycle.sh run_screener` |
+| 17:15 | **Purge the token** (`rm` on the scheduler's own `token_store` mount) | `lifecycle.sh purge_token` |
+
+The token is deliberately destroyed daily — Fyers access tokens are single-day. Until 2026-10-20
+the purge ran at 15:30 as `docker run -v quant_token_store …`, which only reaches the compose
+volume if the project is named "quant"; Oct 14's liveness found a *stale* token (not a missing
+one), so it most likely never worked. It moved to 17:15 because the 16:30 screener needs the token;
+nothing reads the token between 15:30 and 17:15.
 
 ### 1.3 Auth flow (`src/config/auth.ts`)
 
@@ -87,7 +103,9 @@ instead. So *starting the container = sending the ping.*
 
 ### 1.4 Engine boot sequence (`startLiveEngine()`)
 
-1. Assert `/app/token/access_token.txt` and `./watchlist.json` exist, else `process.exit(1)`.
+1. Assert `/app/token/access_token.txt` and the watchlist exist, else `process.exit(1)`. The
+   watchlist is `/app/data/watchlist.json` (screener v2, §11.11), falling back to the baked-in
+   `./watchlist.json`; a list > 3 trading days old (or a job that never ran) is warned about.
 2. `bootRedis()`.
 3. `seedHistoricalVwap()` — see §3.2.
 4. `activeUniverse = watchlist.slice(0, 100)` (`watchlist.json` currently holds 90 symbols, so all
@@ -1417,6 +1435,30 @@ Verified locally only (throwaway `postgres:15-alpine` + `redis:7-alpine`): 0004 
 | **Filter evidence:** one `[JSFilter] ✗ … rejected at <gate> — <reason>` console line per rejection (score rejections in shadow mode previously printed nothing); decisions survive restarts; stats per IST day. Logging only — no gate changed. | `src/detectors/janeStreetFilter.ts` |
 
 Tests: `tests/sessionGuard.test.ts`, `tests/seederRateLimit.test.ts`, `tests/filterEvidence.test.ts`. **Not deployed.** Deploy steps: `docs/RUNBOOK.md` → "Planned deploy: session robustness".
+
+## 11.11 Screener v2 — trend leaders, end-of-day job (2026-10-20, branch `feature/screener-v2`)
+
+Replaces Layer A (`dailyScreener.ts`, turnover + ADR only, run at engine boot). The old screener
+silently dropped every non-ok response — **323 of 2,158 symbols** got stats on 2026-10-19 — and
+never retried `-360`. "High alpha" here = persistent outperformance vs the benchmark, not volatility.
+
+| Piece | Where |
+|---|---|
+| All thresholds, validated, hashed into every output: Nifty 500 benchmark, cap 100, liquidity ₹15 cr / ₹20, ≥ 120 bars, Tier 1 RS ≥ 85 and ≤ 25% below the 52w high, Tier 2 / hold RS ≥ 70, failure budget 3% failed / 10% no-data. Market cap and ASM/GSM: **not applied** (stated in every output). | `config/screener.json`, `src/screener/config.ts` |
+| Point-in-time screen: every series is cut at the as-of date first. RS rank = percentile of 0.2·excess₂₁ + 0.4·excess₆₃ + 0.4·excess₁₂₆ vs the benchmark (date-aligned). Residual momentum = t-stat of alpha from OLS of daily log returns on the benchmark over 126 bars (high beta alone scores ~0). Score = 0.5·RS + 0.3·residual + 0.2·proximity rank. Trend = close > EMA10 > EMA20 > EMA50 (fixed 300-bar EMA window, so live == backtest) and SMA50 rising. Tags: tight, volume surge. Excluded with a reason: illiquid, cheap, short history, circuit-locked, no bar on the as-of date. | `src/screener/indicators.ts`, `screen.ts` |
+| Tiers + hysteresis + cap: CORE → held (yesterday's names with RS ≥ 70 and close > EMA50) → new Tier 1 → new Tier 2, to 100. | `screen.ts` |
+| Job: Fyers masters (universe = `-EQ` + INE ISIN; F&O flag from futures), incremental daily candle cache, shared limiter (≤ 4 starts per rolling second), `-360` retried 1/2/4 s. **Budget breach or missing benchmark → previous watchlist kept untouched**, `failed_<date>.json`, admin Telegram. Writes `universe_stats.json` (keeps the legacy fields `anomalyScanner` reads), `watchlist_meta.json`, `history/<date>.json.gz`, then `watchlist.json`. | `scripts/screener_eod.ts`, `src/screener/{job,fetchDaily,candleStore,masters}.ts` |
+| Engine reads only: `/app/data/*` via `resolveScreenerFile` (baked-in fallback), promotion source per symbol from meta. **No screening and no history calls at boot.** | `src/screener/paths.ts`, `websocket.ts`, `vwapSeeder.ts`, `anomalyScanner.ts` |
+| `signals.promotion_source` gains `SCREENER_LEADER` / `SCREENER_SETUP` (migration 0005). | `db/migrations/0005_screener_sources.sql`, `src/core/symbolSource.ts` |
+| Backtest: point-in-time universes (old / new / random×3), per-session universe replay, 5-minute default, multi-day ledger opt-in, day-block bootstrap comparison with the approved go-live rule. | `backtest/universes.ts`, `backtest/compare.ts`, `backtest/run.ts` |
+
+**Behaviour change to know about:** Layer B (`anomalyScanner`) only scans symbols present in
+`universe_stats.json`. It saw ~323 before (the old screener's losses); it will see the whole
+liquid universe now. Its thresholds are unchanged.
+
+**Not live until the evidence step passes** (owner's rule; `backtest/output/universe-comparison.md`).
+Runbook: `docs/RUNBOOK.md` → "EOD screener". Two stale boot banners remain in `websocket.ts`
+("9 detectors" — it is 2; "OI Sweep + Value Zone + Delta Hedging" — Value Zone is not wired).
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 

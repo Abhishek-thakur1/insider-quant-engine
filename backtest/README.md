@@ -10,6 +10,24 @@ Lives entirely under `backtest/`. Nothing here runs in production.
 
 ## Status
 
+> **Updated 2026-10-20.** The harness *has* since been run on market data elsewhere. Two outputs
+> are committed, and they disagree:
+> - `output/results_5m.json`: 365 sessions, 2025-03-17 → 2026-09-04, 91 symbols. Stock Momentum
+>   Breakout gated: 1,804 trades, **−0.110R**, PF 0.79.
+> - `output/results.json`: 1,285 sessions. **Do not use.** It was made with the multi-day
+>   ledger (`sim/multiday.ts`). That ledger records every same-day exit as 0 minutes
+>   (`daysHeld × 375`) and measures R against an intraday stop held for days, which produces a
+>   137R "best trade". The ledger is now opt-in (`--multiday`). Live SMB is INTRADAY.
+>
+> A figure of "−0.027R over 5,771 trades" from an external report is **unverified**. It is in
+> neither file.
+>
+> The intraday resolution now defaults to **5-minute** (`BACKTEST_RES=1` for 1-minute). For the
+> screener v2 universe comparison (`universes` → `run --universe-list` → `compare`), see
+> `docs/RUNBOOK.md` → "Screener v2 evidence run".
+>
+> The original status follows.
+
 **The harness is complete and self-verified. It has not been run on market data.**
 
 This machine has no `.env`, no Fyers access token, no Redis and no Docker, so no historical
