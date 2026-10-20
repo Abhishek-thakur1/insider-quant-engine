@@ -43,6 +43,7 @@ import { buildUniverses, unionOf, type UniverseSet } from './universes.js'
 import { compareUniverses, renderMarkdown, type TradeLite } from './compare.js'
 import { loadConfig } from '../src/screener/config.js'
 import { CM_URL, parseCashUniverse } from '../src/screener/masters.js'
+import { marketWindowViolation } from './marketWindow.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const RESULTS_JSON = path.join(OUTPUT_DIR, 'results.json')
@@ -461,6 +462,15 @@ const main = async (): Promise<void> => {
 	const lb = flag('--label')
 	if (ul) runOpts.universeList = ul
 	if (lb) runOpts.label = lb
+
+	if (['fetch', 'fetch-daily-all', 'fetch-intraday'].includes(cmd ?? '') && !rest.includes('--allow-market-hours')) {
+		const why = marketWindowViolation(Date.now())
+		if (why) {
+			console.error(`[backtest] ⛔ ${why}`)
+			process.exitCode = 2
+			return
+		}
+	}
 
 	switch (cmd) {
 		case 'fetch':

@@ -82,6 +82,42 @@ export const saveSeries = (symbol: string, resolution: string, incoming: Bar[]):
 	return bars.length
 }
 
+// ── Coverage: which time ranges have been fetched successfully ──────────────
+// Lets a resumed fetch skip exactly what it already has, even though chunk edges
+// move with the clock between runs and pre-listing ranges legitimately return no
+// bars. Stored next to the series as <file>.coverage.json, as a merged union.
+const coveragePath = (symbol: string, resolution: string): string =>
+	path.join(DATA_DIR, `res-${resolution}`, `${safeFileName(symbol)}.coverage.json`)
+
+export const loadCoverage = (symbol: string, resolution: string): Array<[number, number]> => {
+	try {
+		return JSON.parse(fs.readFileSync(coveragePath(symbol, resolution), 'utf8')) as Array<[number, number]>
+	} catch {
+		return []
+	}
+}
+
+/** Union of ranges (overlapping or touching ranges merged), ascending. */
+export const mergeRanges = (ranges: Array<[number, number]>): Array<[number, number]> => {
+	const sorted = ranges.slice().sort((a, b) => a[0] - b[0])
+	const out: Array<[number, number]> = []
+	for (const r of sorted) {
+		const last = out[out.length - 1]
+		if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1])
+		else out.push([r[0], r[1]])
+	}
+	return out
+}
+
+export const addCoverage = (symbol: string, resolution: string, fromMs: number, toMs: number): void => {
+	const p = coveragePath(symbol, resolution)
+	fs.mkdirSync(path.dirname(p), { recursive: true })
+	fs.writeFileSync(p, JSON.stringify(mergeRanges([...loadCoverage(symbol, resolution), [fromMs, toMs]])))
+}
+
+export const isCovered = (coverage: Array<[number, number]>, fromMs: number, toMs: number): boolean =>
+	coverage.some(([a, b]) => a <= fromMs && b >= toMs)
+
 /** Bars whose timestamp falls in [fromMs, toMs). */
 export const barsInRange = (bars: Bar[], fromMs: number, toMs: number): Bar[] => {
 	// Bars are sorted, so bound the scan with a binary search on the lower edge.
@@ -104,7 +140,7 @@ export const cacheReport = (): { resolution: string; symbols: number; bars: numb
 		.filter((d) => d.startsWith('res-'))
 		.map((d) => {
 			const dir = path.join(DATA_DIR, d)
-			const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'))
+			const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json') && !f.endsWith('.coverage.json'))
 			let bars = 0
 			for (const f of files) {
 				try {
