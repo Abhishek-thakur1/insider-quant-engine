@@ -116,6 +116,7 @@ import { schemaProblem } from '../db/migrate.js'
 import { signalLog } from '../db/signalLog.js'
 import { registerWatchlistSources, setSymbolSource } from '../core/symbolSource.js'
 import { readMetaSources, resolveScreenerFile, screenerStaleness } from '../screener/paths.js'
+import { engineGate } from '../fyers/engineGates.js'
 
 // High-Conviction Nifty Singleton Detectors
 const oiSweepDetector = new OiLiquiditySweepDetector()
@@ -199,7 +200,10 @@ export const startLiveEngine = async () => {
 		setSymbolSource(symbol, 'ANOMALY')
 
 		// Seed VWAP dynamically (runs async)
-		fetchAndSeedSymbol(symbol, getTodayString()).catch(e => console.error(`[Scanner] ❌ VWAP seed failed for ${symbol}:`, e))
+		// Through the engine's Fyers quota gate (40/min, 'anomaly' allocation, stop on quota).
+		engineGate('anomaly')
+			.call(() => fetchAndSeedSymbol(symbol, getTodayString()))
+			.catch((e) => console.error(`[Scanner] ❌ VWAP seed failed for ${symbol}:`, (e as Error)?.message ?? e))
 
 		strategyRouter.set(symbol, [
 			new StockMomentumBreakoutDetector(symbol),
