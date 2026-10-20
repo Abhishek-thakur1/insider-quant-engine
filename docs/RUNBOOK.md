@@ -165,14 +165,15 @@ The real restore has **not** been exercised. Only the test restore has.
 
 ## Planned deploy: session robustness (`fix/session-robustness`) — NOT DEPLOYED
 
-Merge to `v2` only on the owner's say-so. No migration. Outside market hours, ideally the evening before a trading day.
+Merge to `v2` only on the owner's say-so. Outside market hours, ideally the evening before a trading day.
+
+> **This branch now contains the `signals` table** (v2 merged in at 5b10d1e). If migration 0004 is not yet applied on EC2, do the **"Planned deploy: `signals` table"** section above in the same window: rebuild `quant_api` too, and run `npm run migrate` (dry run first) **before** the engine's next boot. Check with `SELECT version FROM schema_migrations;`.
 
 1. **Save the engine logs first.** A recreate deletes them:
    `docker logs -t quant_engine > ~/engine_$(date +%F_%H%M).log 2>&1 && ls -lh ~/engine_*.log`
-2. Back up (see Backup; manual `pg_dump`). There's no schema change, but it's the standard step.
+2. Back up (see Backup; manual `pg_dump`). Required if 0004 is applied in this window.
 3. `git pull origin v2 && git log --oneline -3`. Note the SHA.
-4. Rebuild both changed images: `docker compose build quant_engine quant_scheduler`.
-   - `quant_api` is unchanged; don't recreate it.
+4. Rebuild the changed images: `docker compose build quant_engine quant_scheduler`, plus `quant_api` if 0004 is being deployed now (see the note above).
 5. Scheduler: `docker compose up -d --no-deps --force-recreate quant_scheduler`, then verify with the real script:
    ```bash
    docker exec quant_scheduler /usr/local/bin/trading_day.sh 2026-11-10; echo "exit $?"   # HOLIDAY, exit 2
