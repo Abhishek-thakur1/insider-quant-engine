@@ -7,6 +7,12 @@
 ACTION=$1
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S %Z')
 
+# No public open/close message on weekends or NSE holidays (Oct 20 2026 sent both).
+if ! VERDICT=$(/usr/local/bin/trading_day.sh); then
+	echo "[$TIMESTAMP][MarketMsg] 🏖️  Not a trading day ($VERDICT). No message sent."
+	exit 0
+fi
+
 if [ -f /app/.env ]; then
 	while IFS='=' read -r key value; do
 		# Skip comments and blank lines

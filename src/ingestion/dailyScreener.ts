@@ -182,6 +182,9 @@ export const runDailyScreen = async () => {
 }
 
 import { fileURLToPath } from 'url'
+import { exitIfNotTradingDay } from '../core/tradingDayGate.js'
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+	// Weekend / NSE holiday: exit 0 before any Fyers call (websocket.ts exits too).
+	exitIfNotTradingDay('Screener')
 	runDailyScreen().catch(console.error)
 }

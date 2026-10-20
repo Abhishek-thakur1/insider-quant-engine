@@ -4,6 +4,8 @@ import path from 'path'
 import { ENV } from '../config/env.js'
 import { redisClient } from '../config/redis.js'
 import type { VwapState } from '../core/types.js'
+import { getISTMinutes } from '../utils/marketHours.js'
+import { createSlidingWindowLimiter, isRateLimitError, retryDelayMs, type LimiterClock } from '../utils/rateLimit.js'
 
 const fyersApi = new fyers.fyersModel({ path: './', enableLogging: false })
 
@@ -29,7 +31,7 @@ export const fetchAndSeedSymbol = async (
 	symbol: string,
 	todayStr: string,
 	equalWeight = false,
-): Promise<void> => {
+): Promise<'SEEDED' | 'NO_DATA'> => {
 	const response = await fyersApi.getHistory({
 		symbol: symbol,
 		resolution: '1',
@@ -65,10 +67,13 @@ export const fetchAndSeedSymbol = async (
 				vwap: cumulativePV / cumulativeVol,
 			}
 			await redisClient.set(`vwap:${symbol}:${todayStr}`, JSON.stringify(state))
+			return 'SEEDED'
 		}
-	} else if (response.s === 'ok' && (!response.candles || response.candles.length === 0)) {
+		return 'NO_DATA' // candles but zero total weight (e.g. all-zero volume)
+	} else if (response.s === 'no_data' || (response.s === 'ok' && (!response.candles || response.candles.length === 0))) {
+		// Fyers answers s:'no_data' before the open or for an inactive symbol — not an error.
 		console.warn(`[Seeder] ⚠️ No candles for ${symbol}. Market may be closed, delayed, or symbol inactive.`)
-		return
+		return 'NO_DATA'
 	} else {
 		throw new Error(
 			`API returned status: ${response.s} - ${response.message || 'No candles found'}`,
@@ -76,50 +81,73 @@ export const fetchAndSeedSymbol = async (
 	}
 }
 
-// ─── Simple token-bucket rate limiter ────────────────────────────────────────
-// Refills `maxPerSecond` tokens every second. Callers queue up if no tokens
-// are available and get drained in FIFO order as tokens refill.
-// IMPORTANT: the interval is intentionally left refed (default) so it keeps
-// the event loop alive between bursts, while items sit in the queue waiting
-// for their turn — an unrefed timer can let Node exit mid-drain in a
-// standalone/cron-triggered run where nothing else is holding the loop open.
-// Callers MUST invoke the returned close() once done to avoid leaking the
-// interval handle across repeated invocations (e.g. scheduled runs).
-const createRateLimiter = (maxPerSecond: number) => {
-	const queue: (() => void)[] = []
-	let tokens = maxPerSecond
+// ─── Seeding core (pure; I/O injected so tests can run it on virtual time) ───
+export type SeedOutcome = 'SEEDED' | 'ALREADY_SEEDED' | 'NO_DATA' | 'FAILED'
 
-	const timer = setInterval(() => {
-		tokens = maxPerSecond
-		while (tokens > 0 && queue.length > 0) {
-			tokens--
-			const next = queue.shift()!
-			next()
+export interface SeedDeps {
+	fetch: (symbol: string, equalWeight: boolean) => Promise<'SEEDED' | 'NO_DATA'>
+	isSeeded: (symbol: string) => Promise<boolean>
+	clock?: LimiterClock
+	log?: Pick<Console, 'warn' | 'error'>
+	maxPerSecond?: number
+	maxRetries?: number
+	rand?: () => number
+}
+
+// Fyers Standard plan: 5 req/s. 4 leaves headroom for the anomaly scanner's
+// promotion seeds, which share the same API key.
+export const SEED_MAX_PER_SECOND = 4
+export const SEED_MAX_RETRIES = 3
+
+export const seedSymbols = async (
+	symbols: { symbol: string; equalWeight: boolean }[],
+	deps: SeedDeps,
+): Promise<Map<string, SeedOutcome>> => {
+	const clock = deps.clock ?? { now: () => Date.now(), sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)) }
+	const log = deps.log ?? console
+	const maxRetries = deps.maxRetries ?? SEED_MAX_RETRIES
+	const { limit } = createSlidingWindowLimiter(deps.maxPerSecond ?? SEED_MAX_PER_SECOND, 1000, clock)
+	const outcomes = new Map<string, SeedOutcome>()
+
+	const seedOne = async (symbol: string, equalWeight: boolean): Promise<SeedOutcome> => {
+		// Mid-session restart: keep the live-accumulated VWAP, spend no API call.
+		if (await deps.isSeeded(symbol).catch(() => false)) return 'ALREADY_SEEDED'
+		for (let attempt = 0; ; attempt++) {
+			try {
+				return await limit(() => deps.fetch(symbol, equalWeight))
+			} catch (error: unknown) {
+				if (isRateLimitError(error) && attempt < maxRetries) {
+					const waitMs = retryDelayMs(attempt, error, deps.rand)
+					log.warn(`[Seeder] ⏳ Rate limited on ${symbol}, retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`)
+					await clock.sleep(waitMs)
+					continue
+				}
+				const data = (error as { response?: { data?: unknown } } | null)?.response?.data
+				log.error(`[Seeder] ⚠️ Failed: ${symbol}`, data ? JSON.stringify(data) : error)
+				return 'FAILED'
+			}
 		}
-	}, 1000)
-
-	const limit = <T>(fn: () => Promise<T>): Promise<T> => {
-		return new Promise((resolve, reject) => {
-			const run = () => {
-				fn().then(resolve).catch(reject)
-			}
-			if (tokens > 0) {
-				tokens--
-				run()
-			} else {
-				queue.push(run)
-			}
-		})
 	}
 
-	const close = () => clearInterval(timer)
-
-	return { limit, close }
+	await Promise.all(
+		symbols.map(async ({ symbol, equalWeight }) => {
+			outcomes.set(symbol, await seedOne(symbol, equalWeight))
+		}),
+	)
+	return outcomes
 }
 
 // ─── MAIN: The Rate-Limited VWAP Seeder ──────────────────────────────────────
-export const seedHistoricalVwap = async (): Promise<void> => {
+export const seedHistoricalVwap = async (nowMs = Date.now()): Promise<void> => {
 	console.log('\n[Seeder] 🌱 Initiating Historical VWAP Sync...')
+
+	// The engine boots at 09:00. Before the 09:15 open there are no intraday
+	// candles: every request returns no_data (Oct 19: 0/26 seeded, 26 calls
+	// spent, several -360s). VWAP then builds from live ticks, as it did anyway.
+	if (getISTMinutes(nowMs) < 9 * 60 + 15) {
+		console.log('[Seeder] ⏭️ Before 09:15 IST — no intraday candles exist yet. Skipping; VWAP builds from live ticks.\n')
+		return
+	}
 
 	if (!fs.existsSync(TOKEN_PATH) || !fs.existsSync(WATCHLIST_PATH)) {
 		console.error('[Seeder] ❌ Missing auth files. Cannot seed VWAP.')
@@ -136,80 +164,33 @@ export const seedHistoricalVwap = async (): Promise<void> => {
 	fyersApi.setAccessToken(accessToken)
 
 	const todayStr = getTodayString()
-	let successCount = 0
-	let failCount = 0
-
 	console.log(
-		`[Seeder] 📥 Downloading intraday data for ${activeUniverse.length} equities + Nifty index...`,
+		`[Seeder] 📥 Downloading intraday data for ${activeUniverse.length} equities + Nifty index (≤ ${SEED_MAX_PER_SECOND} req/s)...`,
 	)
 
-	// ── RATE LIMIT CONFIGURATION ──
-	// Tune MAX_REQ_PER_SEC to Fyers' documented limit for the history/candles
-	// endpoint specifically (it is usually stricter than the general API limit).
-	const MAX_REQ_PER_SEC = 5
-	const MAX_RETRIES = 2
+	const outcomes = await seedSymbols(
+		[
+			...activeUniverse.map((symbol) => ({ symbol, equalWeight: false })),
+			// [FIX] The Nifty index is not in watchlist.json; seed it as an index
+			// (equal weight per minute) so the reference is session-anchored.
+			{ symbol: NIFTY_SYMBOL, equalWeight: true },
+		],
+		{
+			fetch: (symbol, equalWeight) => fetchAndSeedSymbol(symbol, todayStr, equalWeight),
+			isSeeded: async (symbol) => (await redisClient.exists(`vwap:${symbol}:${todayStr}`)) === 1,
+		},
+	)
 
-	const { limit: rateLimited, close: closeRateLimiter } = createRateLimiter(MAX_REQ_PER_SEC)
-
-	const runWithRetry = async (symbol: string, equalWeight = false, attempt = 0): Promise<void> => {
-		try {
-			await rateLimited(() => fetchAndSeedSymbol(symbol, todayStr, equalWeight))
-			successCount++
-		} catch (error: any) {
-			const isCloudflare = error?.error_code === 1015 || error?.status === 429 || error?.cloudflare_error === true
-			const isRateLimit =
-				isCloudflare ||
-				error?.response?.status === 429 ||
-				/rate.?limit/i.test(error?.message || '') ||
-				/rate.?limit/i.test(JSON.stringify(error?.response?.data || '')) ||
-				/rate.?limit/i.test(JSON.stringify(error || ''))
-
-			if (isRateLimit && attempt < MAX_RETRIES) {
-				let backoffMs = 1000 * Math.pow(2, attempt + 1) // 2s, then 4s
-				if (isCloudflare && typeof error?.retry_after === 'number') {
-					backoffMs = (error.retry_after * 1000) + 1000 // e.g. 30s + 1s buffer
-				}
-				
-				console.warn(
-					`[Seeder] ⏳ Rate limited on ${symbol}, retrying in ${backoffMs}ms (attempt ${
-						attempt + 1
-					}/${MAX_RETRIES})`,
-				)
-				await new Promise((resolve) => setTimeout(resolve, backoffMs))
-				return runWithRetry(symbol, equalWeight, attempt + 1)
-			}
-
-			failCount++
-			console.error(`[Seeder] ⚠️ Failed: ${symbol}`)
-			if (error.response?.data) {
-				console.error(`[Fyers]:`, JSON.stringify(error.response.data))
-			} else {
-				console.error(`[Error]:`, error)
-			}
-		}
-	}
-
-	try {
-		await Promise.all([
-			...activeUniverse.map((symbol) => runWithRetry(symbol)),
-			// [FIX] The Nifty index was never seeded — it is not in watchlist.json — so
-			// every Nifty detector's VWAP reference used to start from zero at engine
-			// boot and reset on any mid-session restart. Seed it as an index (equal
-			// weight per minute) so the reference is session-anchored from 09:15.
-			runWithRetry(NIFTY_SYMBOL, true),
-		])
-	} finally {
-		// Always clear the interval, even if something throws unexpectedly,
-		// so the handle never outlives this run.
-		closeRateLimiter()
-	}
-
+	const count = (o: SeedOutcome) => [...outcomes.values()].filter((v) => v === o).length
+	const failed = count('FAILED')
 	console.log(
-		`[Seeder] ✅ Done. ${successCount}/${activeUniverse.length + 1} seeded` +
-			(failCount > 0 ? ` | ⚠️ ${failCount} failed — VWAP filter disabled for those symbols` : '') +
+		`[Seeder] ✅ Done. ${count('SEEDED')} seeded, ${count('ALREADY_SEEDED')} already seeded today, ` +
+			`${count('NO_DATA')} no data, ${failed} failed of ${outcomes.size}` +
+			(failed > 0 ? ' — VWAP filter disabled for the failed symbols' : '') +
 			'\n',
 	)
 }
+
 
 // import fyers from 'fyers-api-v3'
 // import fs from 'fs'

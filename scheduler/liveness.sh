@@ -13,6 +13,12 @@ log() {
     echo "[$TIMESTAMP][Liveness] $1"
 }
 
+# No token is expected on weekends / NSE holidays — no false alarm.
+if ! VERDICT=$(/usr/local/bin/trading_day.sh); then
+    log "🏖️  Not a trading day ($VERDICT). Skipping liveness check."
+    exit 0
+fi
+
 send_telegram_alert() {
     MESSAGE=$1
     if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ADMIN_ID" ]; then
