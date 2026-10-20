@@ -77,20 +77,40 @@ services:
           sleep 10;
         done;
         echo '[Engine] Token found.';
-        echo '[Engine] Running daily screener...';
-        npx tsx src/ingestion/dailyScreener.ts;
-        echo '[Engine] Booting live engine.';
+        echo '[Engine] Booting live engine (watchlist from the 16:30 quant_screener job; no screening at boot).';
         npx tsx src/ingestion/websocket.ts
       "
     restart: 'on-failure'
     volumes:
       - token_store:/app/token
+      - screener_data:/app/data # read-only use: watchlist.json, watchlist_meta.json, universe_stats.json
       - /app/node_modules
     env_file:
       - .env
     depends_on:
       - redis_cache
       - postgres_db
+
+  # ── EOD Screener (job) ────────────────────────────────────────────────────
+  # Not a service: created once, started by the scheduler at 16:30 IST on
+  # trading days (lifecycle.sh run_screener → docker start -a quant_screener).
+  # Writes the watchlist the engine reads at its next boot. The "jobs" profile
+  # keeps a plain `docker compose up` from running it at an arbitrary time.
+  # node --import tsx (not npx) so the exit code reaches the scheduler intact.
+  quant_screener:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: quant_screener
+    profiles: ['jobs']
+    command: node --import tsx scripts/screener_eod.ts
+    restart: 'no'
+    volumes:
+      - token_store:/app/token
+      - screener_data:/app/data
+      - /app/node_modules
+    env_file:
+      - .env
 
   # ── API Server (Dashboard Backend) ────────────────────────────────────────
   quant_api:
@@ -112,6 +132,7 @@ services:
 
 volumes:
   token_store:
+  screener_data:
   scheduler_logs:
   redis_data:
   pg_data:

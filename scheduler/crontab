@@ -18,3 +18,9 @@
 
 # ── Database Backup — 4:00 PM Mon-Fri
 00 16 * * 1-5 /usr/local/bin/db_backup.sh >> /var/log/scheduler.log 2>&1
+
+# ── EOD screener — 4:30 PM Mon-Fri (trading days only; writes tomorrow's watchlist)
+30 16 * * 1-5 /usr/local/bin/lifecycle.sh run_screener >> /var/log/scheduler.log 2>&1
+
+# ── Token purge — 5:15 PM Mon-Fri (after the screener; moved from 3:30 PM)
+15 17 * * 1-5 /usr/local/bin/lifecycle.sh purge_token >> /var/log/scheduler.log 2>&1

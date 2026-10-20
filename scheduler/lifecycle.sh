@@ -6,6 +6,8 @@
 #   start_auth    → 7:45 AM  — boot quant_auth so it can send the Telegram ping
 #   start_engine  → 9:00 AM  — boot quant_engine (token must exist by now)
 #   stop_engine   → 3:30 PM  — graceful shutdown of quant_engine
+#   run_screener  → 4:30 PM  — EOD screener job (writes tomorrow's watchlist)
+#   purge_token   → 5:15 PM  — delete today's Fyers token (after the screener used it)
 #
 # Docker socket is mounted from the host, so `docker` commands here control
 # real sibling containers — not children of this container.
@@ -63,16 +65,43 @@ case "$ACTION" in
     docker stop quant_auth 2>/dev/null || true
     log "🧹 quant_auth cleaned up."
 
-    # Remove stale token so tomorrow's auth starts clean
-    # The token lives in a named Docker volume — use a one-shot container to delete it
-    docker run --rm \
-      -v quant_token_store:/token \
-      alpine:3.19 \
-      sh -c "rm -f /token/access_token.txt && echo '[Scheduler] 🗑️  Stale token purged.'"
+    # The token purge moved to purge_token (17:15): the 16:30 screener needs it.
+    ;;
+
+  # ── 4:30 PM ───────────────────────────────────────────────────────────────
+  # End-of-day screener. Runs after the 16:00 backup. Exit codes from
+  # scripts/screener_eod.ts: 0 written / not a trading day, 2 run not trusted
+  # (previous watchlist kept, admin already told), 3 no token, 1 crash.
+  run_screener)
+    if ! VERDICT=$(/usr/local/bin/trading_day.sh); then
+        log "🏖️  Not a trading day ($VERDICT). Skipping screener."
+        exit 0
+    fi
+    log "🔍 Starting quant_screener..."
+    docker start -a quant_screener > /var/log/screener_last.log 2>&1
+    CODE=$?
+    tail -40 /var/log/screener_last.log
+    log "quant_screener exited $CODE (0 written · 2 kept previous list · 3 no token · 1 crash)."
+    ;;
+
+  # ── 5:15 PM ───────────────────────────────────────────────────────────────
+  # Remove today's token so tomorrow's engine can't boot on a stale one.
+  # This container mounts the compose volume token_store at /app/token, so the
+  # file is deleted directly. (The old one-shot `docker run -v quant_token_store`
+  # named a volume that only matches if the compose project is "quant". Evidence
+  # it never matched: Oct 14 liveness found a *stale* token, not a missing one.
+  # Unverified on the host until `docker volume ls` is checked — this path
+  # doesn't depend on the volume's name either way.)
+  purge_token)
+    if rm -f /app/token/access_token.txt; then
+        log "🗑️  Token purged (/app/token/access_token.txt)."
+    else
+        log "❌ Token purge failed."
+    fi
     ;;
 
   *)
-    log "❌ Unknown action: $ACTION. Valid: start_auth | start_engine | stop_engine"
+    log "❌ Unknown action: $ACTION. Valid: start_auth | start_engine | stop_engine | run_screener | purge_token"
     exit 1
     ;;
 

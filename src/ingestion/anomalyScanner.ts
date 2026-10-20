@@ -1,5 +1,5 @@
 import fs from 'fs'
-import path from 'path'
+import { resolveScreenerFile } from '../screener/paths.js'
 
 interface SymbolStats {
 	advShares: number
@@ -17,7 +17,7 @@ export class AnomalyScanner {
 	public onPromote: (symbol: string, reason: string) => void = () => {}
 
 	constructor() {
-		const statsPath = path.resolve(process.cwd(), 'universe_stats.json')
+		const statsPath = resolveScreenerFile('universe_stats.json')
 		if (fs.existsSync(statsPath)) {
 			this.stats = JSON.parse(fs.readFileSync(statsPath, 'utf8'))
 		} else {
