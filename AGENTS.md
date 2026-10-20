@@ -981,6 +981,18 @@ changed the Nifty weekly-expiry weekday since these were written. **Verify the c
 weekday before trusting option symbol construction** — a wrong expiry produces symbols that simply
 never tick, which silently disables every option-routed detector with no error anywhere.
 
+**Confirmed 2026-10-20** against the public Fyers symbol master (`public.fyers.in/sym_details/NSE_FO.csv`):
+the listed Nifty expiries were 27 Oct (monthly, symbol form `NSE:NIFTY26OCT<strike>CE`), 3 Nov, 9 Nov
+(Monday — 10 Nov is a holiday), 17 Nov and 1 Dec: **Tuesday weeklies**, shifted earlier on holidays.
+On Monday 19 Oct `getNextThursday()` built `NSE:NIFTY26O22<strike>CE/PE`, which does not exist, so the
+30 "Subscribed strikes" never tick. Consequences: `getWallStrikes()` is always empty (Bayesian E2 is
+always "OI wall data unavailable", L=1.0), `OiLiquiditySweepDetector` can never arm, and
+`DeltaHedgingPressureDetector` never receives strike ticks. Separately, the strike regex in
+`websocket.ts` (`/NIFTY\d{4,6}(\d{4,6})(CE|PE)$/`) matches only all-digit symbols (Jan–Sep weeklies)
+and even then mis-parses the strike: `NSE:NIFTY2641423100CE` → strike **3100** (greedy expiry group).
+Oct/Nov/Dec weeklies (`O`/`N`/`D` month codes) and monthlies (`NIFTY26OCT…`) never match. Fix = expiry
+from the symbol master and a symbol parser that uses it (§10, step 4).
+
 ### 6.6 Redis GET/SET on the tick hot path
 
 Per Nifty tick: `updateVwap` (GET+SET) and `updateNiftyBias` (GET+SET). Per equity tick: `updateVwap`
@@ -1102,8 +1114,9 @@ version live in `backtest/core/symbolClass.ts`, with a test pinning the five aff
 | `market:nifty:bias` | `bullish\|bearish\|neutral` | none | `updateNiftyBias` | `getMarketBias` |
 | `regime:nifty:returns_1min` | list of return % | none | `pushNiftyReturn` (mirror) | (mirror only) |
 | `regime:nifty:current` | JSON `RegimeState` | 60 s | `pushNiftyReturn`, `getMarketRegime` | `getMarketRegime` |
-| `jsfilter:decisions` | list, capped at 1000 | none | `persistDecision` | `getRecentDecisions` |
-| `jsfilter:stats` | hash `fired`/`blocked` | none | `persistDecision` | `getFilterStats` |
+| `jsfilter:decisions` | list, capped at 5000 | none | `persistDecision` | `getRecentDecisions`. Each record has its own `ts`. **Never cleared at boot** (since 2026-10-20). |
+| `jsfilter:stats:{IST-date}` | hash `fired`/`blocked` | 30 d | `persistDecision` | `getFilterStats`. Per-day bucket, so a restart can't reset it. Replaces the un-dated `jsfilter:stats`. |
+| `engine:restarts:{IST-date}` | counter | 2 d | watchdog trip in `websocket.ts` (INCR before exiting) | engine boot (restart backoff), `sessionGuard.decideTrip` (limit 6/day). **Never cleared at boot.** |
 | `cooldown:v2:nifty_pulse` | flag | 1200 s | NiftyTrendPulse | itself |
 | `cooldown:v2:vwap_reclaim` | flag | 1500 s | NiftyVwapReclaim | itself |
 | `cooldown:v2:nifty_ore` | flag | 2700 s | NiftyORE | itself |
@@ -1129,7 +1142,12 @@ Boot cleanup in `websocket.ts` deletes, per symbol: `cooldown:v2:momentum:*`, `v
 `v2:cooldown:vcp:*`, `v2:cooldown:gapgo:*`, `v2:vcp_history:*`; and globally:
 `cooldown:v2:nifty_pulse`, `cooldown:v2:vwap_reclaim`, `cooldown:v2:nifty_ore`, `cooldown:oi_sweep`,
 `cooldown:delta_squeeze`, `market:nifty:bias`, `regime:nifty:returns_1min`, `regime:nifty:current`,
-`jsfilter:decisions`, `jsfilter:stats`, `pnl:daily`.
+`jsfilter:stats` (the legacy un-dated hash only), `pnl:daily`.
+
+> **2026-10-20:** `jsfilter:decisions` is **no longer deleted at boot**, and stats moved to per-day
+> `jsfilter:stats:{IST-date}`. A mid-session watchdog restart used to wipe the day's filter evidence
+> (the Oct 16 anomaly). `engine:restarts:{IST-date}` is deliberately not cleaned either: it is the
+> restart budget. Note `pnl:daily` and `market:nifty:bias` are still reset by every restart.
 
 > **2026-10-18:** `trades:open` is **no longer deleted at boot**. The delete ran *after*
 > `positionTracker.init()` had loaded it, so every position still open at the next boot was lost
@@ -1386,6 +1404,19 @@ One row per detector fire, i.e. per `sendTelegramAlert()` call. A fire a detecto
 **Deploy:** rebuild `quant_api` and `quant_engine`. The API must be rebuilt too, because its read-only schema check reads migration files from its own image. Run `migrate` before the engine's next boot. RUNBOOK has the steps.
 
 Verified locally only (throwaway `postgres:15-alpine` + `redis:7-alpine`): 0004 applies on top of 0001–0003 alone, rerun is a no-op, `paper_trades` byte-identical, real `registerTrade` returns the id and the signal joins to it, UNIQUE conflict counted, FK-violating row dropped alone and logged, `alert_sent`/reason CHECK enforced, `ON DELETE SET NULL` works, reversal SQL works. **Not yet deployed.**
+
+## 11.10 Session robustness (2026-10-20, branch `fix/session-robustness`)
+
+| Change | Where |
+|---|---|
+| **Holiday calendar corrected** (data only, its own commit): 15 weekday NSE holidays for 2026. 2026-10-20 was missing, so the engine ran on Dussehra and crash-looped (415 restarts). | `scheduler/nse_holidays.txt` |
+| **One trading-day check for everything.** `scheduler/trading_day.sh` (exit 0 trading / 1 weekend / 2 holiday) is used by `lifecycle.sh` (auth + engine), `market_message.sh` (no public open/close message on holidays) and `liveness.sh`. The engine and screener read the same file and exit 0 on a non-trading day (defence in depth for manual starts). | `scheduler/*.sh`, `src/core/tradingDayGate.ts`, `src/core/sessionGuard.ts` |
+| **Watchdog policy** (pure, tested): trips only 09:15–15:30 IST; trips 1–6 in a day exit 1 (Docker restarts) and the next boot backs off 30 s → 60 → 120 → 240 → 300 s cap; the 7th trip, or any trip at/after 15:15 IST, exits 0 (stands down — `restart: on-failure` leaves it down). Admin Telegram on every trip. Counter: `engine:restarts:{IST-date}` (§7). | `src/core/sessionGuard.ts`, `src/ingestion/websocket.ts`, `src/utils/adminNotify.ts` |
+| **Socket diagnostics:** `[Firehose] ♥` heartbeat every 5 min (message count, last message time); socket `close` / `error` events are now logged. The Oct 19 15:15:50 trip had nothing in the log before it. | `src/ingestion/websocket.ts` |
+| **Seeder:** sliding-window limiter, ≤ 4 starts in any 1000 ms (the old 1 s token refill let 10 simultaneous retries start within 600 ms → `-360`, reproduced by executing the old limiter in `tests/seederRateLimit.test.ts`); `-360` is now recognised and retried (1 s, 2 s, 4 s + jitter, max 3); `no_data` is a soft skip; symbols already seeded today make no call; before 09:15 IST the seeder makes no call at all. | `src/ingestion/vwapSeeder.ts`, `src/utils/rateLimit.ts` |
+| **Filter evidence:** one `[JSFilter] ✗ … rejected at <gate> — <reason>` console line per rejection (score rejections in shadow mode previously printed nothing); decisions survive restarts; stats per IST day. Logging only — no gate changed. | `src/detectors/janeStreetFilter.ts` |
+
+Tests: `tests/sessionGuard.test.ts`, `tests/seederRateLimit.test.ts`, `tests/filterEvidence.test.ts`. **Not deployed.** Deploy steps: `docs/RUNBOOK.md` → "Planned deploy: session robustness".
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 

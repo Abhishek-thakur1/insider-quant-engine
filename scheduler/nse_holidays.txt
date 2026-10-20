@@ -1,13 +1,20 @@
-# NSE Trading Holidays (Format: YYYY-MM-DD)
+# NSE trading holidays, equity / F&O segments (format: YYYY-MM-DD, one per line).
+# Read by scheduler/lifecycle.sh (start_auth, start_engine).
+# Weekday holidays only; weekends are handled in code.
+# 2026: 15 weekday holidays. Cross-checked 2026-10-20 against two broker copies
+# of the NSE circular (Bajaj Broking, ClearTax); owner to confirm vs NSE circular.
 2026-01-26
 2026-03-03
-2026-03-20
+2026-03-26
+2026-03-31
 2026-04-03
 2026-04-14
 2026-05-01
-2026-08-15
+2026-05-28
+2026-06-26
 2026-09-14
 2026-10-02
-2026-11-04
-2026-11-05
+2026-10-20
+2026-11-10
+2026-11-24
 2026-12-25

@@ -9,7 +9,15 @@ import { buildOptionUniverse, updateOptionTick, hasATMShifted } from '../utils/o
 import { seedHistoricalVwap, fetchAndSeedSymbol, getTodayString } from './vwapSeeder.js'
 import { feedTick } from '../utils/candleAggregator.js'
 import { AnomalyScanner } from './anomalyScanner.js'
-import { isMarketHours } from '../utils/marketHours.js'
+import {
+	checkWatchdog,
+	decideTrip,
+	restartBackoffMs,
+	restartCounterKey,
+	RESTART_COUNTER_TTL_SECS,
+} from '../core/sessionGuard.js'
+import { exitIfNotTradingDay } from '../core/tradingDayGate.js'
+import { notifyAdmin } from '../utils/adminNotify.js'
 
 // [NEW] Regime detector feed
 import { pushNiftyReturn } from '../utils/regimeDetector.js'
@@ -118,6 +126,10 @@ const deltaHedgingDetector = new DeltaHedgingPressureDetector()
 export const startLiveEngine = async () => {
 	console.log(`[Engine] 📡 Booting Institutional Quant Router with Jane Street Filter...`)
 
+	// Weekend / NSE holiday → exit 0 (no Docker restart). Behind lifecycle.sh's check.
+	const calendarWarning = exitIfNotTradingDay('Engine')
+	if (calendarWarning) void notifyAdmin(`⚠️ quant_engine: ${calendarWarning}`)
+
 	const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt')
 	const WATCHLIST_PATH = path.resolve(process.cwd(), 'watchlist.json')
 	const UNIVERSE_PATH = path.resolve(process.cwd(), 'fyersUniverse.json')
@@ -128,6 +140,19 @@ export const startLiveEngine = async () => {
 	}
 
 	await bootRedis()
+
+	// Restart backoff: each watchdog trip today incremented this counter before
+	// exiting 1. Docker restarts immediately, so the wait happens here.
+	let restartsToday = 0
+	try {
+		restartsToday = Number(await redisClient.get(restartCounterKey(Date.now()))) || 0
+	} catch {}
+	const backoffMs = restartBackoffMs(restartsToday)
+	if (backoffMs > 0) {
+		console.warn(`[Engine] ⏳ Restart ${restartsToday} today — backing off ${backoffMs / 1000}s before connecting.`)
+		await new Promise((resolve) => setTimeout(resolve, backoffMs))
+	}
+
 	await seedHistoricalVwap()
 	// Read-only. registerTrade writes data_quality (migration 0002), so a
 	// pending migration means trade inserts will fail — warn loudly, don't block.
@@ -210,8 +235,11 @@ export const startLiveEngine = async () => {
 		redisClient.del('market:nifty:bias'),
 		redisClient.del('regime:nifty:returns_1min'),
 		redisClient.del('regime:nifty:current'),
-		redisClient.del('jsfilter:decisions'),
-		redisClient.del('jsfilter:stats'),   // per-session fired/blocked tallies — reset daily
+		// jsfilter:decisions is NOT cleared: a mid-session restart used to wipe
+		// the day's filter evidence (Oct 16). Stats are per-day keys
+		// (jsfilter:stats:YYYY-MM-DD, 30-day TTL); this removes the legacy
+		// un-dated hash only.
+		redisClient.del('jsfilter:stats'),
 		redisClient.del('pnl:daily'),
 	])
 
@@ -344,37 +372,70 @@ export const startLiveEngine = async () => {
 		sendNextChunk()
 	})
 
+	// lastTickTime drives the watchdog (kept fresh outside the session);
+	// lastMessageAt / messagesSinceBeat are for the heartbeat log only.
 	let lastTickTime = Date.now()
-	const WATCHDOG_TIMEOUT_MS = 30000 // 30 seconds without data is a dead socket
+	let lastMessageAt = 0
+	let messagesSinceBeat = 0
+	let lastBeatAt = Date.now()
+	const HEARTBEAT_MS = 5 * 60 * 1000
+	const istClock = (ms: number) => (ms ? new Date(ms + 5.5 * 3600 * 1000).toISOString().slice(11, 19) : 'never')
+
+	// Policy in core/sessionGuard.ts: restart (exit 1, backoff on the next boot)
+	// up to MAX_RESTARTS_PER_DAY, never after 15:15 IST; otherwise stand down
+	// (exit 0, so `restart: on-failure` leaves it down). Admin notified on every trip.
+	const onWatchdogTrip = async (nowMs: number) => {
+		const silentSecs = Math.round((nowMs - lastTickTime) / 1000)
+		let tripsToday = 1
+		try {
+			const key = restartCounterKey(nowMs)
+			tripsToday = await redisClient.incr(key)
+			await redisClient.expire(key, RESTART_COUNTER_TTL_SECS)
+		} catch (err) {
+			console.error('[Watchdog] Could not update the restart counter — assuming first trip:', err)
+		}
+		const trip = decideTrip(nowMs, tripsToday)
+		const next = trip.action === 'RESTART' ? `restart after ${restartBackoffMs(tripsToday) / 1000}s backoff` : 'stand down until the next scheduled start'
+		const summary = `[Watchdog] ⚠️ No socket message for ${silentSecs}s at ${istClock(nowMs)} IST (last message ${istClock(lastMessageAt)}). Trip ${tripsToday} today → ${trip.action} (${trip.reason}); ${next}. Exit ${trip.exitCode}.`
+		console.error(summary)
+		await notifyAdmin(`🚨 quant_engine ${summary}`)
+		anomalyScanner.stop()
+		try { skt.close() } catch {}
+		// Same flush as the SIGTERM path: don't lose the last second of signals rows.
+		await signalLog.shutdown(2000)
+		try { await redisClient.quit() } catch {}
+		process.exit(trip.exitCode)
+	}
 
 	const watchdog = setInterval(() => {
 		if (isShuttingDown) return
-		// Outside 09:15–15:30 IST (pre-open lull after the 09:00 boot, post-close)
-		// silence is normal. Keep the clock fresh so the first in-session check
-		// measures from the open, not from the last pre-open tick.
-		if (!isMarketHours()) {
-			lastTickTime = Date.now()
+		const now = Date.now()
+		if (now - lastBeatAt >= HEARTBEAT_MS) {
+			console.log(`[Firehose] ♥ ${messagesSinceBeat} msgs in last ${Math.round((now - lastBeatAt) / 60000)} min, last at ${istClock(lastMessageAt)} IST`)
+			messagesSinceBeat = 0
+			lastBeatAt = now
+		}
+		const check = checkWatchdog(now, lastTickTime)
+		if (check === 'RESET_CLOCK') {
+			lastTickTime = now
 			return
 		}
-		if (Date.now() - lastTickTime > WATCHDOG_TIMEOUT_MS) {
-			console.error('[Watchdog] ⚠️ No ticks received for 30 seconds! Zombie connection detected.')
-			console.error('[Watchdog] 🔄 In-process reconnect is unreliable with the Fyers SDK singleton — exiting for clean Docker restart...')
-			clearInterval(watchdog)
-			anomalyScanner.stop()
-			try { skt.close() } catch {}
-			// Give Redis a moment to flush, then exit with code 1.
-			// Docker restart: on-failure will bring the container back up cleanly.
-			// Screener skip logic ensures it won't re-run the 7-min screen intraday.
-			setTimeout(async () => {
-				try { await redisClient.quit() } catch {}
-				process.exit(1)
-			}, 1500)
-		}
+		if (check === 'OK') return
+		isShuttingDown = true // stops tick handling and makes a racing SIGTERM a no-op
+		clearInterval(watchdog)
+		void onWatchdogTrip(now)
 	}, 10000)
+
+	// Diagnostics only: before these, a silent socket left no trace in the log
+	// (Oct 19 15:15:50 trip had no disconnect line before it).
+	skt.on('error', (err: unknown) => console.error('[Firehose] ❌ Socket error:', (err as Error | null)?.message ?? err))
+	skt.on('close', () => console.warn(`[Firehose] 🔌 Socket closed at ${istClock(Date.now())} IST (last message ${istClock(lastMessageAt)})`))
 
 	skt.on('message', (rawMessage: any) => {
 		if (!rawMessage || isShuttingDown) return
 		lastTickTime = Date.now()
+		lastMessageAt = lastTickTime
+		messagesSinceBeat++
 
 		let ticks: any[] = []
 		try {

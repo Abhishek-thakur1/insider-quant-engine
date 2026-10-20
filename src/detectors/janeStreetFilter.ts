@@ -55,8 +55,14 @@ const MIN_EV_PTS = 0 // Hard gate — never fire on negative expectancy
 // Exported (read-only) so the signals log records the threshold actually in force.
 export const CONFIRMATION_THRESHOLD = Number(process.env.CONFIRMATION_THRESHOLD) || 78 // fire above this /100
 const SHADOW_MODE = process.env.SHADOW_MODE === 'true'
+// Both survive engine restarts (no boot cleanup since 2026-10-20): a watchdog
+// restart used to wipe the day's evidence. Decisions carry their own timestamp;
+// stats are bucketed per IST day and expire after 30 days.
 const JS_LOG_KEY = 'jsfilter:decisions'
-const JS_STATS_KEY = 'jsfilter:stats'
+const JS_LOG_MAX = 5000
+const JS_STATS_TTL_SECS = 30 * 24 * 3600
+export const jsStatsKey = (nowMs: number = Date.now()): string =>
+	`jsfilter:stats:${new Date(nowMs + 5.5 * 3600 * 1000).toISOString().slice(0, 10)}`
 
 // Point budget — sums to 100
 const WEIGHT_STRUCTURE = 20
@@ -314,6 +320,22 @@ export const runJaneStreetFilter = async (
 	return decision
 }
 
+// One console line per rejection, with the gate and its reason. Logging only —
+// the decision itself is unchanged. (Score rejections in shadow mode used to
+// leave no console trace at all.)
+export const rejectionLogLine = (
+	payload: Pick<AlertPayload, 'symbol' | 'side'>,
+	decision: Pick<FilterDecision, 'score' | 'rejectedAt' | 'breakdown' | 'posterior' | 'ev'>,
+	detectorName?: string,
+): string => {
+	const gate = decision.rejectedAt ?? 'SCORE'
+	const gateReason = decision.rejectedAt
+		? (decision.breakdown.find((b) => b.component === decision.rejectedAt)?.reason ?? '')
+		: `score ${decision.score} < ${CONFIRMATION_THRESHOLD}`
+	const parts = decision.breakdown.map((b) => `${b.component}=${b.points.toFixed(1)}/${b.maxPoints}`).join(' ')
+	return `[JSFilter] ✗ ${payload.symbol} ${payload.side} [${detectorName ?? 'unknown'}] rejected at ${gate} — ${gateReason} | score=${decision.score}/100 P=${decision.posterior.toFixed(2)} EV=${decision.ev.toFixed(1)} | ${parts}`
+}
+
 // ── Persist every decision to Redis for post-session review ──────────────────
 // redis-cli lrange jsfilter:decisions 0 49
 const persistDecision = async (
@@ -336,19 +358,23 @@ const persistDecision = async (
 				.join(' '),
 		}
 
+		if (!decision.passed) console.log(rejectionLogLine(payload, decision, detectorName))
+
+		const statsKey = jsStatsKey()
 		await redisClient
 			.multi()
 			.lPush(JS_LOG_KEY, JSON.stringify(record))
-			.lTrim(JS_LOG_KEY, 0, 999)
-			.hIncrBy(JS_STATS_KEY, decision.passed ? 'fired' : 'blocked', 1)
+			.lTrim(JS_LOG_KEY, 0, JS_LOG_MAX - 1)
+			.hIncrBy(statsKey, decision.passed ? 'fired' : 'blocked', 1)
+			.expire(statsKey, JS_STATS_TTL_SECS)
 			.exec()
 	} catch (err) {
 		console.error('[Confirmation Engine] Failed to persist decision:', err)
 	}
 }
 
-export const getFilterStats = async (): Promise<Record<string, string>> => {
-	return redisClient.hGetAll(JS_STATS_KEY)
+export const getFilterStats = async (nowMs: number = Date.now()): Promise<Record<string, string>> => {
+	return redisClient.hGetAll(jsStatsKey(nowMs))
 }
 
 export const getRecentDecisions = async (n = 20): Promise<object[]> => {

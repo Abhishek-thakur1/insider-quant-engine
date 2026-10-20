@@ -1,0 +1,31 @@
+const createRateLimiter = (maxPerSecond: number) => {
+	const queue: (() => void)[] = []
+	let tokens = maxPerSecond
+
+	const timer = setInterval(() => {
+		tokens = maxPerSecond
+		while (tokens > 0 && queue.length > 0) {
+			tokens--
+			const next = queue.shift()!
+			next()
+		}
+	}, 1000)
+
+	const limit = <T>(fn: () => Promise<T>): Promise<T> => {
+		return new Promise((resolve, reject) => {
+			const run = () => {
+				fn().then(resolve).catch(reject)
+			}
+			if (tokens > 0) {
+				tokens--
+				run()
+			} else {
+				queue.push(run)
+			}
+		})
+	}
+
+	const close = () => clearInterval(timer)
+
+	return { limit, close }
+}

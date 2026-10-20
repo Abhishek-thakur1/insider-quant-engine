@@ -162,3 +162,31 @@ The real restore has **not** been exercised. Only the test restore has.
 | Date | Dump | Result | Evidence |
 |---|---|---|---|
 | 2026-10-18 | `~/pre_bb7fb46.dump` (87 KB, written 12:50 UTC, 3 min before migration 0003) | ✅ **Passed.** Archive lists `paper_trades` + data + sequence. Restored without errors: 1,555 `CLOSED` + 27 `OPEN` = 1,582 rows, matching the live pre-migration count. `schema_migrations` absent, as expected. Scratch DB dropped. | Owner-pasted `pg_restore -l` and `psql` output, 2026-10-18 |
+
+## Planned deploy: session robustness (`fix/session-robustness`) — NOT DEPLOYED
+
+Merge to `v2` only on the owner's say-so. Outside market hours, ideally the evening before a trading day.
+
+> **This branch now contains the `signals` table** (v2 merged in at 5b10d1e). If migration 0004 is not yet applied on EC2, do the **"Planned deploy: `signals` table"** section above in the same window: rebuild `quant_api` too, and run `npm run migrate` (dry run first) **before** the engine's next boot. Check with `SELECT version FROM schema_migrations;`.
+
+1. **Save the engine logs first.** A recreate deletes them:
+   `docker logs -t quant_engine > ~/engine_$(date +%F_%H%M).log 2>&1 && ls -lh ~/engine_*.log`
+2. Back up (see Backup; manual `pg_dump`). Required if 0004 is applied in this window.
+3. `git pull origin v2 && git log --oneline -3`. Note the SHA.
+4. Rebuild the changed images: `docker compose build quant_engine quant_scheduler`, plus `quant_api` if 0004 is being deployed now (see the note above).
+5. Scheduler: `docker compose up -d --no-deps --force-recreate quant_scheduler`, then verify with the real script:
+   ```bash
+   docker exec quant_scheduler /usr/local/bin/trading_day.sh 2026-11-10; echo "exit $?"   # HOLIDAY, exit 2
+   docker exec quant_scheduler /usr/local/bin/trading_day.sh 2026-11-04; echo "exit $?"   # TRADING, exit 0
+   docker exec quant_scheduler /usr/local/bin/trading_day.sh;            echo "exit $?"   # today
+   ```
+6. Engine: `docker compose stop quant_engine && docker compose create --force-recreate quant_engine`.
+   - That leaves it in `Created`. **Never `up -d` the engine off-hours.**
+7. **Next trading day:**
+   - **09:00:** `docker logs quant_engine 2>&1 | grep -E "Before 09:15|PositionTracker|Booting"`.
+   - **After 09:20:** `grep -c "♥"` should increase every 5 min.
+   - **After 15:30:** save the logs as in step 1, then `grep -E "Watchdog|JSFilter|Socket (closed|error)"`.
+   - `docker exec quant_redis redis-cli HGETALL jsfilter:stats:$(TZ=Asia/Kolkata date +%F)`.
+8. **On a holiday** (next one is 2026-11-10): `docker exec quant_scheduler tail -20 /var/log/scheduler.log` should show "Not a trading day" for auth, market messages, liveness and the engine. `docker inspect -f '{{.RestartCount}}' quant_engine` should not increase.
+
+**Rollback:** `git checkout <previous SHA>`, then repeat steps 4–6. The new Redis keys (`engine:restarts:*`, `jsfilter:stats:*`) expire on their own and are harmless to the old code.
