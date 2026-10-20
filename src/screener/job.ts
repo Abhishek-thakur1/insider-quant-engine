@@ -8,7 +8,8 @@
 // Files (all in dataDir, written atomically):
 //   watchlist.json          string[]  — what the engine reads at boot
 //   watchlist_meta.json     as-of, config hash, funnel, per-entry source/tier/score/reason
-//   universe_stats.json     per-symbol records; legacy fields kept for anomalyScanner
+//   universe_stats.json     per-symbol records for every scanned symbol (review / audit)
+//   anomaly_universe.json   Layer B scan set, CAPPED (config layerB.maxSymbols) — what anomalyScanner reads
 //   history/<date>.json.gz  dated copy of meta + stats, one per run day
 // ============================================================
 
@@ -19,7 +20,7 @@ import type { ScreenerConfig } from './config.js'
 import type { CandleStore } from './candleStore.js'
 import { evaluateFailureBudget, type FetchReport } from './fetchDaily.js'
 import { formatFunnel } from './funnel.js'
-import { screenAsOf, type ScreenerSource, type ScreenResult } from './screen.js'
+import { anomalyUniverse, screenAsOf, type ScreenerSource, type ScreenResult } from './screen.js'
 
 export interface JobDeps {
 	dataDir: string
@@ -99,6 +100,7 @@ export const runScreenerJob = async (deps: JobDeps): Promise<JobResult> => {
 		configHash: deps.configHash,
 	})
 
+	const layerB = anomalyUniverse(result, c)
 	const meta = {
 		asOf: result.asOf,
 		generatedAt: new Date().toISOString(),
@@ -107,9 +109,11 @@ export const runScreenerJob = async (deps: JobDeps): Promise<JobResult> => {
 		funnel: result.funnel,
 		notes: result.notes,
 		fetch: { requests: report.requests, retries: report.retries, failed: verdict.failed },
+		layerB: { symbols: Object.keys(layerB).length, cap: c.layerB.maxSymbols },
 		entries: result.entries,
 	}
 	writeAtomic(path.join(deps.dataDir, 'universe_stats.json'), JSON.stringify(result.records))
+	writeAtomic(path.join(deps.dataDir, 'anomaly_universe.json'), JSON.stringify(layerB))
 	writeAtomic(path.join(deps.dataDir, 'watchlist_meta.json'), JSON.stringify(meta, null, 2))
 	writeAtomic(path.join(deps.dataDir, 'history', `${result.asOf}.json.gz`), zlib.gzipSync(JSON.stringify({ meta, records: result.records })))
 	// Last: the file the engine reads. A crash before this line leaves the old list.

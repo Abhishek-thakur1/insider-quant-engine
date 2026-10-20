@@ -52,6 +52,11 @@
 		"tier2MinRsRank": 70,
 		"holdMinRsRank": 70
 	},
+	"layerB": {
+		"maxSymbols": 323,
+		"minTurnoverRupees": 10000000,
+		"note": "Anomaly scanner scan set, capped at the size it had under the old screener (323 symbols with stats on 2026-10-19) until evidence supports widening it. Top N by 30-bar turnover with a bar on the as-of date."
+	},
 	"failureBudget": {
 		"maxFailedPct": 3,
 		"maxNoDataPct": 10

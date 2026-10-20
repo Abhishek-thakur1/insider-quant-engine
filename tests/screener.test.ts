@@ -208,3 +208,24 @@ test('a symbol with no bar ON the as-of date (suspended / stale) is excluded wit
 	assert.ok(why.includes(`no bar on ${AS_OF} (last `) && why.includes(') — suspended or stale'), why)
 	assert.ok(!r.watchlist.includes('NSE:S095-EQ'))
 })
+
+test('LAYER B CAP: anomaly scan set = top N by turnover that traded on the as-of date, legacy 4-field shape', async () => {
+	const { anomalyUniverse } = await import('../src/screener/screen.js')
+	const s = market({ 'NSE:S100-EQ': { volume: 1000 } }) // far below the ₹1 cr scanner floor
+	s.set('NSE:S095-EQ', s.get('NSE:S095-EQ')!.slice(0, -2)) // stale: no bar on the as-of date
+	const r = screenAsOf(input(s))
+	assert.equal(config.layerB.maxSymbols, 323)
+	const capped = anomalyUniverse(r, { ...config, layerB: { ...config.layerB, maxSymbols: 10 } })
+	const syms = Object.keys(capped)
+	assert.equal(syms.length, 10)
+	assert.ok(!syms.includes('NSE:S100-EQ') && !syms.includes('NSE:S095-EQ'))
+	const eligibleByTurnover = Object.entries(r.records)
+		.filter(([k, x]) => x.barOnAsOf && x.turnover >= config.layerB.minTurnoverRupees && k !== 'NSE:S095-EQ')
+		.sort((a, b) => b[1].turnover - a[1].turnover)
+		.slice(0, 10)
+		.map(([k]) => k)
+	assert.deepEqual(syms, eligibleByTurnover)
+	assert.deepEqual(Object.keys(capped[syms[0]!]!).sort(), ['adr', 'advShares', 'close', 'turnover'])
+	// with the real cap (323) and 101 names, it simply takes every qualifying name
+	assert.equal(Object.keys(anomalyUniverse(r, config)).length, 99)
+})

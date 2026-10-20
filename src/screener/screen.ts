@@ -59,6 +59,8 @@ export interface SymbolRecord {
 	bars: number
 	fno: boolean
 	circuitLocked: boolean
+	/** Has a bar dated exactly on the as-of day (false = suspended / stale / no data). */
+	barOnAsOf: boolean
 	liquid: boolean
 	rsRaw: number | null
 	rsRank: number | null
@@ -163,7 +165,7 @@ export const screenAsOf = (input: ScreenInput): ScreenResult => {
 		const reasons: string[] = []
 		const rec: SymbolRecord = {
 			advShares: 0, adr: 0, turnover: 0, close: 0, bars: bars.length, fno: input.fno.has(symbol),
-			circuitLocked: false, liquid: false, rsRaw: null, rsRank: null, residual: null, residualRank: null,
+			circuitLocked: false, barOnAsOf: false, liquid: false, rsRaw: null, rsRank: null, residual: null, residualRank: null,
 			beta: null, proximityPct: null, proximityRank: null, score: null, trend: false, sma50Rising: false,
 			aboveEma50: false, volumeOk: false, tight: false, surge: false, eligible: false, tier: null,
 			held: false, source: null, reasons,
@@ -180,6 +182,7 @@ export const screenAsOf = (input: ScreenInput): ScreenResult => {
 		}
 		const lastBar = bars[bars.length - 1]!
 		const stale = istDay(lastBar.t) !== asOf // suspended / not traded on the as-of date
+		rec.barOnAsOf = !stale
 		rec.close = lastBar.c
 		rec.turnover = avgTurnover(bars, c.liquidity.turnoverLookbackBars)
 		rec.advShares = avgVolume(bars, c.liquidity.turnoverLookbackBars) ?? 0
@@ -343,6 +346,29 @@ export const screenAsOf = (input: ScreenInput): ScreenResult => {
 		watchlist: entries.map((e) => e.symbol),
 		notes: [`market cap: ${c.filters.marketCap}`, `ASM/GSM: ${c.filters.asmGsm}`, `series: ${c.filters.seriesNote}`],
 	}
+}
+
+/** Legacy per-symbol shape the anomaly scanner reads. */
+export interface LayerBStats {
+	advShares: number
+	adr: number
+	turnover: number
+	close: number
+}
+
+/**
+ * Layer B (anomalyScanner) scan set, CAPPED: the top `layerB.maxSymbols` by 30-bar
+ * turnover among symbols that traded on the as-of date with turnover >= the
+ * scanner's own floor. The old screener's losses left ~323 symbols in its stats
+ * file (2026-10-19); v2's full stats would widen Layer B to the whole liquid
+ * universe, so the scan set is held at that size until evidence supports more.
+ */
+export const anomalyUniverse = (r: ScreenResult, c: ScreenerConfig): Record<string, LayerBStats> => {
+	const picked = Object.entries(r.records)
+		.filter(([, rec]) => rec.barOnAsOf && rec.turnover >= c.layerB.minTurnoverRupees)
+		.sort((a, b) => b[1].turnover - a[1].turnover || a[0].localeCompare(b[0]))
+		.slice(0, c.layerB.maxSymbols)
+	return Object.fromEntries(picked.map(([sym, rec]) => [sym, { advShares: rec.advShares, adr: rec.adr, turnover: rec.turnover, close: rec.close }]))
 }
 
 /**

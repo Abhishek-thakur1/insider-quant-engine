@@ -38,6 +38,7 @@ export interface ScreenerConfig {
 	}
 	score: { rsWeight: number; residualWeight: number; proximityWeight: number }
 	tiers: { tier1MinRsRank: number; tier2MinRsRank: number; holdMinRsRank: number }
+	layerB: { maxSymbols: number; minTurnoverRupees: number; note: string }
 	failureBudget: { maxFailedPct: number; maxNoDataPct: number }
 	filters: { marketCap: string; asmGsm: string; seriesNote: string }
 }
@@ -89,6 +90,8 @@ export const validateConfig = (raw: unknown): ScreenerConfig => {
 		if (v > 99) fail(`tiers.${k} must be a percentile 1–99`)
 	}
 	if (c.tiers.holdMinRsRank > c.tiers.tier1MinRsRank) fail('tiers.holdMinRsRank must not exceed tier1MinRsRank (hysteresis)')
+	posNum(c.layerB?.maxSymbols, 'layerB.maxSymbols')
+	posNum(c.layerB?.minTurnoverRupees, 'layerB.minTurnoverRupees')
 	posNum(c.failureBudget?.maxFailedPct, 'failureBudget.maxFailedPct')
 	posNum(c.failureBudget?.maxNoDataPct, 'failureBudget.maxNoDataPct')
 	return c

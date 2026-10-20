@@ -1,4 +1,4 @@
-[Screener] Funnel as of 2026-03-24 (config e493214d5ae8, benchmark NSE:NIFTY500-INDEX)
+[Screener] Funnel as of 2026-03-24 (config ca91526234bc, benchmark NSE:NIFTY500-INDEX)
   scanned                                30
   fetched OK                             29
   failed (after retries)                  1

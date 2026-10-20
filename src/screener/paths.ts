@@ -15,6 +15,18 @@ import { getISTDateString } from '../utils/marketHours.js'
 
 export const screenerDataDir = (): string => process.env.SCREENER_DATA_DIR || '/app/data'
 
+/**
+ * Layer B's scan set: the screener's capped anomaly_universe.json; else (rollback /
+ * before the first job run) a legacy universe_stats.json in the working dir written
+ * by the old boot screener; else null (Layer B disabled, as before).
+ */
+export const resolveAnomalyUniverseFile = (): string | null => {
+	const capped = path.join(screenerDataDir(), 'anomaly_universe.json')
+	if (fs.existsSync(capped)) return capped
+	const legacy = path.resolve(process.cwd(), 'universe_stats.json')
+	return fs.existsSync(legacy) ? legacy : null
+}
+
 /** The screener's file if it exists, else the baked-in one (cwd). */
 export const resolveScreenerFile = (name: 'watchlist.json' | 'universe_stats.json' | 'watchlist_meta.json'): string => {
 	const fromJob = path.join(screenerDataDir(), name)

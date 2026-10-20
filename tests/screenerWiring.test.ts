@@ -125,3 +125,19 @@ test('masters: cash universe = -EQ with INE ISIN; F&O = underlyings with a FUT c
 	].join('\n')
 	assert.deepEqual([...parseFnoCashSymbols(fo)].sort(), ['NSE:BANKNIFTY-EQ', 'NSE:RELIANCE-EQ'])
 })
+
+test('Layer B reads the capped anomaly_universe.json, else a legacy universe_stats.json, else nothing', async () => {
+	const { resolveAnomalyUniverseFile } = await import('../src/screener/paths.js')
+	withDataDir((dir) => {
+		const legacy = path.resolve(process.cwd(), 'universe_stats.json')
+		const hadLegacy = fs.existsSync(legacy)
+		if (!hadLegacy) assert.equal(resolveAnomalyUniverseFile(), null)
+		fs.writeFileSync(path.join(dir, 'universe_stats.json'), '{}') // full stats are NOT the scan set
+		if (!hadLegacy) assert.equal(resolveAnomalyUniverseFile(), null)
+		fs.writeFileSync(path.join(dir, 'anomaly_universe.json'), '{}')
+		assert.equal(resolveAnomalyUniverseFile(), path.join(dir, 'anomaly_universe.json'))
+	})
+	const scanner = fs.readFileSync('src/ingestion/anomalyScanner.ts', 'utf8')
+	assert.match(scanner, /resolveAnomalyUniverseFile\(\)/)
+	assert.doesNotMatch(scanner, /resolveScreenerFile\('universe_stats\.json'\)/)
+})
