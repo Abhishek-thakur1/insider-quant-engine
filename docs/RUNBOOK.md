@@ -190,3 +190,162 @@ Merge to `v2` only on the owner's say-so. Outside market hours, ideally the even
 8. **On a holiday** (next one is 2026-11-10): `docker exec quant_scheduler tail -20 /var/log/scheduler.log` should show "Not a trading day" for auth, market messages, liveness and the engine. `docker inspect -f '{{.RestartCount}}' quant_engine` should not increase.
 
 **Rollback:** `git checkout <previous SHA>`, then repeat steps 4–6. The new Redis keys (`engine:restarts:*`, `jsfilter:stats:*`) expire on their own and are harmless to the old code.
+
+## EOD screener (`quant_screener`) — runbook
+
+Builds tomorrow's watchlist at **16:30 IST on trading days** (`lifecycle.sh run_screener` → `docker start -a quant_screener`). The engine only reads the result at its next boot. Details: AGENTS.md §11.11.
+
+| Exit | Meaning | What to do |
+|---|---|---|
+| 0 | Written (or not a trading day) | nothing |
+| 2 | Run **not trusted** (> 3% failed, > 10% no data, or no benchmark). **Previous watchlist kept.** Admin already got a Telegram message. | Read `failed_<date>.json` (below). Usually rate limits or a token problem; tomorrow's run retries. |
+| 3 | No Fyers token | Today's login was missed; the old list stays. |
+| 1 | Crash | `docker exec quant_scheduler cat /var/log/screener_last.log` |
+
+Read-only checks:
+```bash
+docker exec quant_scheduler grep -E "quant_screener|screener" /var/log/scheduler.log | tail -5
+docker exec quant_scheduler tail -40 /var/log/screener_last.log            # funnel + top 20
+docker volume ls | grep screener_data                                      # real volume name
+docker run --rm -v <that volume>:/d alpine sh -c 'ls -la /d; head -c 1500 /d/watchlist_meta.json'
+```
+
+- **Manual run** (outside 09:00–15:30, and only while today's token exists, i.e. before 17:15): `docker start -a quant_screener; echo "exit $?"`.
+- **First run** has to fetch about 460 days of daily bars for about 2,350 symbols, roughly 25 minutes. Later runs take about 10 minutes.
+- **Engine side:** the boot log shows `[Engine] 📋 Watchlist: /app/data/watchlist.json (N symbols)`. It warns, and pings admin, if the list is more than 3 trading days old.
+- **Layer B:** the boot log shows `[AnomalyScanner] Scan set: /app/data/anomaly_universe.json` and `across N symbols` with N ≤ 323 (`layerB.maxSymbols`). It no longer reads the full `universe_stats.json`.
+
+## Planned deploy: screener v2 (`feature/screener-v2`) — NOT DEPLOYED, NOT LIVE
+
+**Preconditions:** this is **step 3** of "Merge and deploy order" below.
+- `fix/session-robustness` is deployed.
+- `signals` (0004) is applied. 0006 raises and rolls back if it isn't.
+- The evidence report (`backtest/output/universe-comparison.md`) says PASS, and the owner approves going live.
+
+Outside market hours.
+
+1. Save the engine logs, then back up (`pg_dump`, see Backup). Migration 0006 runs in this window (0004 must already be applied).
+2. `git pull origin v2 && git log --oneline -3`.
+3. Build: `docker compose --profile jobs build quant_engine quant_screener quant_scheduler quant_api`. The API is included because its schema check reads migration files from its own image.
+4. Migrate: `docker compose run --rm --no-deps quant_api npm run migrate -- --dry-run`. It should list only `0006_screener_sources` — if it also lists `0004_signals`, the signals deploy has not happened: stop and do that first. Then run it without `--dry-run`.
+5. API: `docker compose up -d --no-deps --force-recreate quant_api`.
+6. Scheduler: `docker compose up -d --no-deps --force-recreate quant_scheduler`, then `docker exec quant_scheduler grep -E "run_screener|purge_token" /etc/crontabs/root`.
+7. Create the job container (it isn't started): `docker compose --profile jobs create quant_screener`.
+8. Engine: `docker compose stop quant_engine && docker compose create --force-recreate quant_engine`. **Never `up -d` the engine off-hours.**
+9. **That evening**, after 16:30: check the scheduler log and `screener_last.log` (above). The funnel prints `scanned → … → final watchlist`.
+10. **After 17:15:** `docker exec quant_scheduler ls -la /app/token` should be empty, which shows the purge reaches the real volume.
+11. **Next morning:** `docker logs quant_engine 2>&1 | grep -E "Watchlist:|screener|AnomalyScanner"`. Layer B should report ≤ 323 symbols from `anomaly_universe.json`.
+
+Verify the old purge bug without changing anything:
+```bash
+docker volume ls | grep token
+docker inspect -f '{{range .Mounts}}{{.Name}} {{end}}' quant_scheduler
+```
+If the token volume isn't literally `quant_token_store`, the old 15:30 purge never touched it.
+
+**Rollback:**
+- Check out the previous SHA and rebuild.
+- `docker compose up -d --no-deps --force-recreate quant_scheduler`, then recreate the engine as in step 8.
+- With the old compose command the engine runs `dailyScreener.ts` at boot again.
+- 0005 can stay applied. It only widens a CHECK.
+
+## Merge and deploy order (fixed)
+
+**Where the branches stand on 2026-10-20.** EC2 runs `bb7fb46`.
+
+| Branch | Contains | Migration | State |
+|---|---|---|---|
+| `v2` @ `046ba43` | signals table (PR #8) + session robustness (PR #7) | 0004 | merged, **not deployed** |
+| Part D (not built) | Nifty index-level tracking | **0005** (reserved) | — |
+| `feature/screener-v2` | session-robustness + screener v2 | **0006** | pushed, unmerged, **not live** |
+
+**The order:**
+
+1. **Session robustness, which also deploys the signals table.**
+   - Merged into `v2` (PR #7, `046ba43`). Next: deploy `v2`.
+   - Migration: **0004**. The dry run must list only `0004_signals`.
+   - Procedure: the "Planned deploy: `signals` table" and "Planned deploy: session robustness" sections, in one window.
+2. **Part D.**
+   - Branch from `v2` *after* step 1, then merge and deploy.
+   - Migration: **0005**. The dry run must list only `0005_…`.
+3. **Screener v2.** Only after the evidence report says PASS and the owner approves.
+   - First merge `v2` into `feature/screener-v2` (it picks up Part D), and re-run the tests.
+   - Then merge → `v2` and deploy ("Planned deploy: screener v2").
+   - Migration: **0006**. The dry run must list only `0006_screener_sources`.
+
+**Rules:**
+- **Hard: 0004 before 0006.** 0006 alters the `signals` table. It checks for the table first and raises, so the runner rolls back. Verified on postgres:15, 2026-10-20.
+- **Soft: 0005 before 0006**, by number. If Part D isn't ready when the screener passes its evidence step, the screener may go first **only with the owner's explicit OK**. 0005 then applies after 0006. The runner allows it, the two are independent, and it was verified with the real runner on 2026-10-20: `0001,0002,0003,0004,0006` → then `0005` → `0001…0006`.
+- **One step per window, never two at once.** Every window:
+  - outside 09:00–15:30 IST, ideally the evening before a trading day;
+  - `pg_dump` first, and save the engine logs first;
+  - the migrate dry run lists exactly the expected migration.
+- **Gate between steps:** one clean trading day. That means:
+  - no `Postgres insert error`;
+  - watchdog trips ≤ 1;
+  - `[JSFilter]` lines present;
+  - the step's own checks in its section pass.
+- **Never deploy `v2` (`3d34de7` or later) without running 0004.** The signals code would log a failed insert for every signal (no trade or alert is lost, but nothing is recorded).
+
+## Screener v2 evidence run (backtest) — owner's PC, Windows / PowerShell
+
+Run it locally: it needs a Fyers token and about 2 GB of disk, and EC2 has about 4 GB free. Nothing touches production state, since the backtest's Redis is in memory and its cache is local files. Thresholds are frozen in `config/screener.json`. The report prints the config hash; if a threshold changes after seeing results, rerun everything under a new label and report both runs.
+
+**When to run.** The Fyers rate limit is per app, so the PC and production share it. The fetch commands refuse to start on trading days during:
+- **08:45–15:45 IST:** engine boot and the live session;
+- **16:25–17:05 IST:** the 16:30 screener job, once it's deployed.
+
+Good windows are 15:45–16:25 and after 17:05 on a trading day, or any time on a weekend or holiday while the token is still valid. `--allow-market-hours` overrides the guard; don't use it. The `run` and `compare` steps make no API calls and can run at any time.
+
+```powershell
+# ── 0. One-time setup ──────────────────────────────────────────────────────
+cd N:\trade\insider-quant-engine
+git fetch origin
+git switch feature/screener-v2
+git pull
+npm ci
+# .env must contain FYERS_APP_ID and FYERS_SECRET_ID (the same app as production).
+# Keep the PC awake for the run:
+powercfg /change standby-timeout-ac 0
+
+# ── 1. Today's token, copied from EC2 (after that day's login) ─────────────
+# The token is a secret: don't paste it into chat, don't commit it
+# (backtest/access_token.txt is gitignored).
+ssh ubuntu@3.6.238.160 "docker volume ls --format '{{.Name}}' | grep token_store"
+# use the name printed above in place of <VOL>:
+ssh ubuntu@3.6.238.160 "docker run --rm -v <VOL>:/t alpine cat /t/access_token.txt > ~/tok.txt && chmod 600 ~/tok.txt"
+scp ubuntu@3.6.238.160:~/tok.txt .\backtest\access_token.txt
+ssh ubuntu@3.6.238.160 "rm -f ~/tok.txt"
+$env:FYERS_TOKEN_PATH = (Resolve-Path .\backtest\access_token.txt).Path
+
+# ── 2. Fetch (API calls; mind the window above) ─────────────────────────────
+Start-Transcript -Path .\backtest\output\evidence-fetch.log -Append
+npx tsx backtest/run.ts fetch-daily-all --days 365   # ~2,350 symbols + NIFTY50 + NIFTY500, ~30–40 min
+npx tsx backtest/run.ts universes --days 365         # no API calls; builds output\universes.json, prints list sizes
+npx tsx backtest/run.ts fetch-intraday               # 5-minute bars for every listed symbol, ~15–30 min
+Stop-Transcript
+
+# ── 3. Replay each universe (no API calls) ─────────────────────────────────
+$env:BACKTEST_MODE = 'true'
+foreach ($L in 'old', 'new', 'random1', 'random2', 'random3') {
+    npx tsx backtest/run.ts run --universe-list $L --label $L
+    if ($LASTEXITCODE -ne 0) { Write-Error "run $L failed"; break }
+}
+Remove-Item Env:BACKTEST_MODE
+
+# ── 4. Compare → backtest\output\universe-comparison.md ─────────────────
+npx tsx backtest/run.ts compare
+```
+
+**If the token expires mid-fetch** (it is single-day):
+- The fetch stops at the first rejected call and prints `⛔ Fyers rejected the token … Everything fetched so far is saved in the cache … rerun the SAME command`.
+- Get the next day's token (step 1) and rerun the same command. Only missing chunks are requested; this is tested in `tests/backtestFetchResume.test.ts`, where the final cache is identical to an uninterrupted run.
+- On a later day, each symbol's newest chunk is requested once more to pick up new bars (one call per symbol).
+- Do **not** rerun `universes` between a partial and a completed `fetch-daily-all`. It needs the complete daily cache.
+
+**Exit codes.** On Windows, `npx` reports every failure as 1, so check the last lines of the output. The guard's message starts with `[backtest] ⛔`.
+
+**Clean up afterwards:**
+- Delete `backtest\access_token.txt`.
+- `powercfg /change standby-timeout-ac 30` (or your previous value).
+- Commit only `backtest/output/universe-comparison.md`. The other outputs are gitignored.

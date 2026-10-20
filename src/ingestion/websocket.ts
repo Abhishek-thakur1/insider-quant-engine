@@ -115,6 +115,7 @@ import { pool } from '../config/db.js'
 import { schemaProblem } from '../db/migrate.js'
 import { signalLog } from '../db/signalLog.js'
 import { registerWatchlistSources, setSymbolSource } from '../core/symbolSource.js'
+import { readMetaSources, resolveScreenerFile, screenerStaleness } from '../screener/paths.js'
 
 // High-Conviction Nifty Singleton Detectors
 const oiSweepDetector = new OiLiquiditySweepDetector()
@@ -131,7 +132,9 @@ export const startLiveEngine = async () => {
 	if (calendarWarning) void notifyAdmin(`⚠️ quant_engine: ${calendarWarning}`)
 
 	const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt')
-	const WATCHLIST_PATH = path.resolve(process.cwd(), 'watchlist.json')
+	// The EOD screener (scripts/screener_eod.ts) writes /app/data/watchlist.json; the
+	// engine only reads it. Falls back to the baked-in file before the first run.
+	const WATCHLIST_PATH = resolveScreenerFile('watchlist.json')
 	const UNIVERSE_PATH = path.resolve(process.cwd(), 'fyersUniverse.json')
 
 	if (!fs.existsSync(TOKEN_PATH) || !fs.existsSync(WATCHLIST_PATH) || !fs.existsSync(UNIVERSE_PATH)) {
@@ -165,12 +168,18 @@ export const startLiveEngine = async () => {
 	const activeUniverse = [...watchlist]
 	const activeUniverseSet = new Set<string>(activeUniverse)
 
-	// Promotion source for the signals log (observation only). watchlist.json is
-	// core_watchlist.json + the screener's Layer A (dailyScreener.ts).
+	// Promotion source for the signals log (observation only): per-symbol from the
+	// screener's watchlist_meta.json when present (SCREENER_LEADER / SCREENER_SETUP).
+	console.log(`[Engine] 📋 Watchlist: ${WATCHLIST_PATH} (${watchlist.length} symbols)`)
+	const staleMsg = screenerStaleness()
+	if (staleMsg) {
+		console.warn(`[Engine] ⚠️ ${staleMsg}`)
+		void notifyAdmin(`⚠️ quant_engine: ${staleMsg}`)
+	}
 	try {
 		const corePath = path.resolve(process.cwd(), 'core_watchlist.json')
 		const core: string[] = fs.existsSync(corePath) ? JSON.parse(fs.readFileSync(corePath, 'utf8')) : []
-		registerWatchlistSources(watchlist, core)
+		registerWatchlistSources(watchlist, core, readMetaSources())
 	} catch (err) {
 		console.warn('[Engine] ⚠️ Could not read core_watchlist.json — signals will log promotion_source SCREENER/UNKNOWN:', err)
 		registerWatchlistSources(watchlist, [])

@@ -1,3 +1,7 @@
+// SUPERSEDED by screener v2 (scripts/screener_eod.ts, src/screener/*). docker-compose no longer
+// runs this at engine boot; it is kept only so a rollback to the previous compose command works.
+// Known defects (why it was replaced): non-ok responses silently dropped (~85% of the universe on
+// 2026-10-19: "Saved stats for 323 symbols" of 2,158) and -360 never retried.
 import fyers from 'fyers-api-v3'
 import fs from 'fs'
 import path from 'path'

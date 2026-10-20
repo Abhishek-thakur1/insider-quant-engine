@@ -1,5 +1,5 @@
 import fs from 'fs'
-import path from 'path'
+import { resolveAnomalyUniverseFile } from '../screener/paths.js'
 
 interface SymbolStats {
 	advShares: number
@@ -17,11 +17,14 @@ export class AnomalyScanner {
 	public onPromote: (symbol: string, reason: string) => void = () => {}
 
 	constructor() {
-		const statsPath = path.resolve(process.cwd(), 'universe_stats.json')
-		if (fs.existsSync(statsPath)) {
+		// Capped scan set from the screener (anomaly_universe.json, config layerB.maxSymbols);
+		// legacy universe_stats.json only as a rollback fallback.
+		const statsPath = resolveAnomalyUniverseFile()
+		if (statsPath) {
 			this.stats = JSON.parse(fs.readFileSync(statsPath, 'utf8'))
+			console.log(`[AnomalyScanner] Scan set: ${statsPath}`)
 		} else {
-			console.warn('[AnomalyScanner] ⚠️ universe_stats.json not found. Layer B scanning disabled.')
+			console.warn('[AnomalyScanner] ⚠️ No anomaly_universe.json / universe_stats.json found. Layer B scanning disabled.')
 		}
 	}
 

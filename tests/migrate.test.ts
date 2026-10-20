@@ -205,7 +205,7 @@ test('shipped migrations parse and the data migration never rewrites outcome col
 	const files = readMigrationFiles(MIGRATIONS_DIR)
 	assert.deepEqual(
 		files.map((f) => `${f.version}_${f.name}`),
-		['0001_baseline', '0002_data_quality', '0003_flag_and_resolve_ghosts', '0004_signals'],
+		['0001_baseline', '0002_data_quality', '0003_flag_and_resolve_ghosts', '0004_signals', '0006_screener_sources'],
 	)
 
 	// No statement in any migration may assign an outcome column.

@@ -16,9 +16,13 @@ export const OUTPUT_DIR = path.join(BACKTEST_ROOT, 'output')
 
 // ── Data acquisition ───────────────────────────────────────────────────────
 export const DATA = {
-	/** Fyers history resolutions. 'D' for the daily store, '5' for intraday. */
+	/**
+	 * Fyers history resolutions. 'D' for the daily store. Intraday defaults to
+	 * '5' — the project's settled timeframe (owner, 2026-10-20). BACKTEST_RES=1
+	 * reproduces the older 1-minute runs. Each resolution has its own cache dir.
+	 */
 	dailyResolution: 'D',
-	intradayResolution: '1',
+	intradayResolution: process.env.BACKTEST_RES || '5',
 
 	/**
 	 * Fyers caps getHistory to a limited span per call. Daily tolerates long
@@ -26,10 +30,11 @@ export const DATA = {
 	 * against current Fyers docs before a long run.
 	 */
 	dailyChunkDays: 365,
-	intradayChunkDays: 30,
+	// Fyers serves at most ~100 days of minute bars per call; 1-minute stays at 30.
+	intradayChunkDays: (process.env.BACKTEST_RES || '5') === '1' ? 30 : 90,
 
-	/** Shared with the live seeder's limiter. Tune to the history endpoint. */
-	maxRequestsPerSecond: 5,
+	/** Same sliding-window limiter as the live seeder and screener: <= 4 starts per rolling second. */
+	maxRequestsPerSecond: 4,
 	maxRetries: 3,
 
 	/** Lookback target. Intraday history availability is the real constraint. */

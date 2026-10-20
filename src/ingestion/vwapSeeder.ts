@@ -4,13 +4,14 @@ import path from 'path'
 import { ENV } from '../config/env.js'
 import { redisClient } from '../config/redis.js'
 import type { VwapState } from '../core/types.js'
+import { resolveScreenerFile } from '../screener/paths.js'
 import { getISTMinutes } from '../utils/marketHours.js'
 import { createSlidingWindowLimiter, isRateLimitError, retryDelayMs, type LimiterClock } from '../utils/rateLimit.js'
 
 const fyersApi = new fyers.fyersModel({ path: './', enableLogging: false })
 
 const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt')
-const WATCHLIST_PATH = path.resolve(process.cwd(), 'watchlist.json')
+const WATCHLIST_PATH = resolveScreenerFile('watchlist.json')
 const NIFTY_SYMBOL = 'NSE:NIFTY50-INDEX'
 
 export const getTodayString = (): string => {

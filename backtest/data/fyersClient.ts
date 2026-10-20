@@ -10,9 +10,8 @@
 //     for 1-minute than for daily, so the two use different chunk sizes.
 //   - Resumable. Every chunk is merged into the cache as it lands, so an
 //     interrupted overnight run continues instead of restarting.
-//   - Rate limited with the same token-bucket shape as the live seeder,
-//     including the deliberately-refed interval (an unrefed timer lets Node
-//     exit mid-drain in a standalone run) and a close() in a finally.
+//   - Rate limited by the live sliding-window limiter (<= 4 starts per rolling
+//     second) with the live rate-limit detection (-360, 429, Cloudflare 1015).
 // ============================================================
 
 import fyers from 'fyers-api-v3'
@@ -21,8 +20,9 @@ import path from 'path'
 import { ENV } from '../../src/config/env.js'
 import { DATA } from '../config.js'
 import { isPlaceholder } from '../core/bootEnv.js'
-import { ensureDirs, loadSeries, saveSeries, type Bar } from './store.js'
+import { addCoverage, ensureDirs, isCovered, loadCoverage, loadSeries, saveSeries, type Bar } from './store.js'
 import { istDateStringOf, realNow } from '../core/clock.js'
+import { createSlidingWindowLimiter, isRateLimitError, retryDelayMs } from '../../src/utils/rateLimit.js'
 
 const fyersApi = new fyers.fyersModel({ path: './', enableLogging: false })
 
@@ -65,38 +65,9 @@ export const authenticate = (): { ok: true } | { ok: false; reason: string } => 
 	return { ok: true }
 }
 
-// ── token bucket (same shape as the live seeder) ───────────────────────────
-const createRateLimiter = (maxPerSecond: number) => {
-	const queue: (() => void)[] = []
-	let tokens = maxPerSecond
-	const timer = setInterval(() => {
-		tokens = maxPerSecond
-		while (tokens > 0 && queue.length > 0) {
-			tokens--
-			queue.shift()!()
-		}
-	}, 1000)
-
-	const limit = <T>(fn: () => Promise<T>): Promise<T> =>
-		new Promise((resolve, reject) => {
-			const run = () => fn().then(resolve).catch(reject)
-			if (tokens > 0) {
-				tokens--
-				run()
-			} else queue.push(run)
-		})
-
-	return { limit, close: () => clearInterval(timer) }
-}
-
-const isRateLimitError = (error: unknown): boolean => {
-	const e = error as { response?: { status?: number; data?: unknown }; message?: string }
-	return (
-		e?.response?.status === 429 ||
-		/(rate|request).?limit/i.test(e?.message ?? '') ||
-		/(rate|request).?limit/i.test(JSON.stringify(e?.response?.data ?? ''))
-	)
-}
+// Rate limiting and rate-limit detection are the live modules (src/utils/rateLimit.ts):
+// the old token bucket here let simultaneous retries burst past Fyers' 5/s, and its
+// regex missed Fyers' -360 "plan limit" body. Tested in tests/seederRateLimit.test.ts.
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -111,13 +82,40 @@ const toBars = (candles: unknown[][]): Bar[] =>
 		v: c[5] as number,
 	}))
 
+/** Fyers getHistory request/response, as used here. */
+type HistoryRequest = { symbol: string; resolution: string; date_format: string; range_from: string; range_to: string; cont_flag: string }
+type HistoryFn = (req: HistoryRequest) => Promise<{ s: string; candles?: unknown[][]; message?: string; code?: number }>
+let historyFn: HistoryFn = (req) => fyersApi.getHistory(req)
+/** Test seam: replace the Fyers call (null restores it). Never used by the CLI. */
+export const __setHistoryFnForTests = (fn: HistoryFn | null): void => {
+	historyFn = fn ?? ((req) => fyersApi.getHistory(req))
+}
+
+/**
+ * The token was rejected (expired at the end of its day, or revoked). Every
+ * further call would fail the same way, so the whole fetch stops here instead of
+ * marking each remaining symbol failed. Progress is already on disk.
+ */
+export class TokenExpiredError extends Error {}
+
+// Fyers auth failures: -8 / -15 / -16 / -17 ("token expired", "invalid token",
+// "could not authenticate"), or HTTP 401. Codes plus a message match, because the
+// exact code varies by endpoint.
+export const isAuthError = (err: unknown): boolean => {
+	if (!err || typeof err !== 'object') return false
+	const e = err as { code?: number; status?: number; message?: string; response?: { status?: number } }
+	if (e.code !== undefined && [-8, -15, -16, -17].includes(Number(e.code))) return true
+	if (e.status === 401 || e.response?.status === 401) return true
+	return /token.{0,20}(expired|invalid)|invalid.{0,20}token|could not authenticate|unauthori[sz]ed|access.?token/i.test(e.message ?? '')
+}
+
 const fetchChunk = async (
 	symbol: string,
 	resolution: string,
 	fromMs: number,
 	toMs: number,
 ): Promise<Bar[]> => {
-	const response = await fyersApi.getHistory({
+	const response = await historyFn({
 		symbol,
 		resolution,
 		date_format: '1',
@@ -126,9 +124,8 @@ const fetchChunk = async (
 		cont_flag: '1',
 	})
 
-	if (response.s !== 'ok') {
-		throw new Error(`Fyers status=${response.s} ${response.message ?? ''}`)
-	}
+	if (response.s === 'no_data') return []
+	if (response.s !== 'ok') throw response // keeps code -360 visible to isRateLimitError
 	if (!response.candles || response.candles.length === 0) return []
 	return toBars(response.candles as unknown[][])
 }
@@ -159,6 +156,7 @@ export const fetchSymbol = async (
 
 	const cached = loadSeries(symbol, resolution)
 	const haveTs = new Set((cached?.bars ?? []).map((b) => b.t))
+	const coverage = loadCoverage(symbol, resolution)
 
 	let chunksFetched = 0
 	let barsCached = cached?.bars.length ?? 0
@@ -166,10 +164,11 @@ export const fetchSymbol = async (
 	for (let start = fromMs; start < toMs; start += chunkMs) {
 		const end = Math.min(start + chunkMs, toMs)
 
-		// Skip a chunk we already appear to hold. Cheap heuristic: if the cache
-		// already has a bar inside every one of this chunk's weekdays, refetching
-		// buys nothing. Kept conservative — it only skips when clearly covered.
-		if (cached && cached.bars.length > 0) {
+		// Skip a chunk fully inside the recorded coverage (exact, survives restarts
+		// and token expiry). Caches written before coverage existed fall back to
+		// the old bar-span heuristic.
+		if (isCovered(coverage, start, end)) continue
+		if (coverage.length === 0 && cached && cached.bars.length > 0) {
 			const covered = cached.bars.some((b) => b.t >= start && b.t < end)
 			const spansWholeChunk =
 				cached.bars.some((b) => b.t <= start + DAY_MS) &&
@@ -186,18 +185,23 @@ export const fetchSymbol = async (
 					barsCached = saveSeries(symbol, resolution, bars)
 					for (const b of fresh) haveTs.add(b.t)
 				}
+				// Recorded only after the bars are on disk. The newest range stays open
+				// to new data: tomorrow's 'to' is later, so that chunk isn't contained.
+				addCoverage(symbol, resolution, start, end)
 				chunksFetched++
 				break
 			} catch (error) {
-				if (isRateLimitError(error)) {
-					const maxAttempts = 20;
-					if (attempt < maxAttempts) {
-						const backoff = Math.min(60000, 1000 * Math.pow(2, attempt + 1))
-						console.warn(`[fetch] rate limited on ${symbol} ${resolution}, retry in ${backoff}ms (attempt ${attempt + 1}/${maxAttempts})`)
-						await new Promise((r) => setTimeout(r, backoff))
-						attempt++
-						continue
-					}
+				if (isAuthError(error)) {
+					throw new TokenExpiredError(`Fyers rejected the token at ${symbol} (${(error as Error).message ?? JSON.stringify(error)})`)
+				}
+				// A long fetch is resumable, so after a few retries it is better to
+				// record the failure and move on than to stall the whole run.
+				if (isRateLimitError(error) && attempt < DATA.maxRetries) {
+					const backoff = retryDelayMs(attempt, error)
+					console.warn(`[fetch] rate limited on ${symbol} ${resolution}, retry in ${backoff}ms (attempt ${attempt + 1}/${DATA.maxRetries})`)
+					await new Promise((r) => setTimeout(r, backoff))
+					attempt++
+					continue
 				}
 				return {
 					symbol,
@@ -219,12 +223,15 @@ export const fetchUniverse = async (
 	resolution: string,
 	fromMs: number,
 	toMs: number,
+	opts: { skipAuth?: boolean } = {},
 ): Promise<FetchSummary[]> => {
 	ensureDirs()
-	const auth = authenticate()
-	if (!auth.ok) throw new Error(auth.reason)
+	if (!opts.skipAuth) {
+		const auth = authenticate()
+		if (!auth.ok) throw new Error(auth.reason)
+	}
 
-	const { limit, close } = createRateLimiter(DATA.maxRequestsPerSecond)
+	const { limit } = createSlidingWindowLimiter(DATA.maxRequestsPerSecond, 1000)
 	const started = realNow()
 	const summaries: FetchSummary[] = []
 
@@ -233,7 +240,16 @@ export const fetchUniverse = async (
 		// limiter is what governs throughput, not the concurrency here.
 		let done = 0
 		for (const symbol of symbols) {
-			summaries.push(await fetchSymbol(symbol, resolution, fromMs, toMs, limit))
+			try {
+				summaries.push(await fetchSymbol(symbol, resolution, fromMs, toMs, limit))
+			} catch (err) {
+				if (err instanceof TokenExpiredError) {
+					console.error(`\n[fetch] ⛔ ${err.message}`)
+					console.error(`[fetch] Stopped after ${done}/${symbols.length} symbols at res=${resolution}. Everything fetched so far is saved in the cache.`)
+					console.error('[fetch] Get a fresh token and rerun the SAME command — already-covered chunks are skipped.')
+				}
+				throw err
+			}
 			done++
 			if (done % 10 === 0 || done === symbols.length) {
 				const secs = ((realNow() - started) / 1000).toFixed(0)
@@ -241,7 +257,7 @@ export const fetchUniverse = async (
 			}
 		}
 	} finally {
-		close()
+		// sliding-window limiter holds no timer — nothing to close
 	}
 
 	const failed = summaries.filter((s) => s.failed)
