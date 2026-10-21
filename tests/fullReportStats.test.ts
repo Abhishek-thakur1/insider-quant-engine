@@ -44,3 +44,14 @@ test('day-block CI is wider than a naive per-trade CI when trades cluster by day
 	const naiveHalf = (1.96 * sd) / Math.sqrt(trades.length)
 	assert.ok(hi - lo > 2 * naiveHalf * 2, `day-block width ${hi - lo} vs naive ${2 * naiveHalf}`)
 })
+
+test('caveat shown next to every result states the look-ahead universe, the 2,000 resamples and the "not trusted" rule', async () => {
+	const { CAVEAT_EQUITY, CAVEAT_NIFTY } = await import('../backtest/fullReport.js')
+	assert.match(CAVEAT_EQUITY, /chosen in July 2026 and replayed back to 2021 — look-ahead and survivorship-biased/)
+	assert.match(CAVEAT_EQUITY, /2,000 resamples/)
+	assert.match(CAVEAT_EQUITY, /A positive result on this universe would NOT be trusted\./)
+	assert.match(CAVEAT_NIFTY, /index points, not option premium/)
+	assert.match(CAVEAT_NIFTY, /2,000 resamples/)
+	const src = (await import('node:fs')).readFileSync('backtest/fullReport.ts', 'utf8')
+	assert.ok((src.match(/caveatP\(|caveatFor\(/g) ?? []).length >= 12, 'caveat rendered at every table and card')
+})

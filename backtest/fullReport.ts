@@ -210,6 +210,15 @@ const histSvg = (rs: number[], w = 360, h = 110) => {
 
 const statRow = (label: string, s: Summary) =>
 	`<tr class="${s.sufficient ? '' : 'insufficient'}"><td>${esc(label)}</td><td class="n">${s.n}</td><td class="n">${pc(s.winRate)}</td><td class="n">${f(s.expectancyR)}</td><td class="n">${ciTxt(s)}</td><td class="n">${f(s.profitFactor, 2)}</td><td class="n">${f(s.maxDrawdownR, 1)}</td><td class="n">${f(s.bestR, 2)} / ${f(s.worstR, 2)}</td><td class="n">${holdTxt(s)}</td><td>${s.sufficient ? 'ok' : '<b>n &lt; 30 — insufficient</b>'}</td></tr>`
+// Shown next to EVERY result (owner, 2026-10-21).
+export const CAVEAT_EQUITY =
+	'Universe: 90 stocks chosen in July 2026 and replayed back to 2021 — look-ahead and survivorship-biased. CI: day-block bootstrap over trade days, 2,000 resamples. A positive result on this universe would NOT be trusted.'
+export const CAVEAT_NIFTY =
+	'Nifty: R measured on index points, not option premium; one history window. CI: day-block bootstrap over trade days, 2,000 resamples. A positive result here would NOT be trusted as option P&L.'
+const caveatP = (nifty = false) => `<p class="caveat">⚠ ${esc(nifty ? CAVEAT_NIFTY : CAVEAT_EQUITY)}</p>`
+const caveatFor = (id: string) => caveatP(specsByIdGlobal.get(id)?.scope === 'nifty-singleton')
+const specsByIdGlobal = new Map(REGISTRY.map((s) => [s.id, s]))
+
 const STAT_HEAD = '<tr><th></th><th>n</th><th>win</th><th>E[R]</th><th>95% CI</th><th>PF</th><th>max DD (R)</th><th>best / worst R</th><th>hold p25 / p50 / p75</th><th>sample</th></tr>'
 
 // ── main ─────────────────────────────────────────────────────────────────────
@@ -291,10 +300,10 @@ export const buildFullReport = () => {
 			const rej = Object.entries(r.m.rejections).map(([k, v]) => `${esc(k)} ${v}`).join(' · ') || 'none'
 			return `<section class="card ${r.g.sufficient ? '' : 'dim'}" id="d-${esc(r.m.detectorId)}">
 <h3>${esc(r.m.displayName)} <span class="tag">${esc(r.m.tier)}</span> <span class="tag">${esc(r.spec?.scope ?? '')}</span> <span class="tag">exit: ${esc(r.m.exitBasis)}</span>${r.g.sufficient ? '' : ' <span class="tag warn">gated n &lt; 30 — insufficient</span>'}</h3>
-<p class="muted">signals ${r.m.signalsUngated} · gate pass ${(r.m.gatePassRate * 100).toFixed(1)}% · rejections: ${rej}</p>
+${caveatFor(r.m.detectorId)}<p class="muted">signals ${r.m.signalsUngated} · gate pass ${(r.m.gatePassRate * 100).toFixed(1)}% · rejections: ${rej}</p>
 <div class="grid"><figure><figcaption>Equity, gated (R)</figcaption>${lineSvg(equityPoints(g))}</figure><figure><figcaption>Equity, ungated (R)</figcaption>${lineSvg(equityPoints(all))}</figure><figure><figcaption>R distribution, ungated</figcaption>${histSvg(all.map((t) => t.r))}</figure></div>
 <table class="t">${STAT_HEAD}${statRow('baseline · gated', r.g)}${statRow('baseline · ungated', r.u)}${reg}${extraRows.join('')}</table>
-${(r.spec?.caveats ?? []).length ? `<p class="muted">Caveats: ${(r.spec!.caveats ?? []).map(esc).join(' · ')}</p>` : ''}</section>`
+${caveatFor(r.m.detectorId)}${(r.spec?.caveats ?? []).length ? `<p class="muted">Caveats: ${(r.spec!.caveats ?? []).map(esc).join(' · ')}</p>` : ''}</section>`
 		})
 		.join('\n')
 
@@ -360,11 +369,13 @@ tr.insufficient td,td.insufficient{color:var(--mut);opacity:.55}.card{background
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}figure{margin:0}figcaption{font-size:12px;color:var(--mut)}
 svg.chart{width:100%;height:auto}svg .zero{stroke:var(--line)}svg path{fill:none;stroke-width:2}svg path.up{stroke:var(--up)}svg path.down{stroke:var(--down)}svg rect.win{fill:var(--win)}svg rect.loss{fill:var(--loss)}svg .tick,svg .lbl{font-size:9px;fill:var(--mut)}
 .pins{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px;font-size:12.5px}.pins div{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
-pre{white-space:pre-wrap;font-size:12px;background:var(--card);border:1px solid var(--line);padding:8px;border-radius:6px}.empty{color:var(--mut);font-size:12px;padding:20px 0}`
+pre{white-space:pre-wrap;font-size:12px;background:var(--card);border:1px solid var(--line);padding:8px;border-radius:6px}.empty{color:var(--mut);font-size:12px;padding:20px 0}
+.caveat{font-size:11.5px;color:var(--warn);margin:4px 0}.banner{border:1px solid var(--warn);border-radius:8px;padding:10px 12px;margin:12px 0;background:var(--card)}`
 
 	const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Backtest Report</title><style>${css}</style></head><body>
 <h1>Full backtest report</h1>
 <p class="muted">Report only — no tuning, pruning or keep/archive verdicts. Generated ${esc(new Date().toISOString())}.</p>
+<div class="banner"><b>Read this first.</b> Every equity result below comes from a 90-stock list chosen in July 2026 and replayed back to 2021. That list was picked with hindsight, and stocks that fell out of favour or were delisted are missing. <b>A positive result on this universe would not be trusted</b>; a negative one is still informative about the detector on stocks that did well. Nifty results are measured on the index, not on option premium. All confidence intervals are 95% day-block bootstraps over trade days with 2,000 resamples.</div>
 <div class="pins"><div><b>Commit (runs)</b><br>${esc(pins.commit)}</div><div><b>Commit (report)</b><br>${esc(pins.reportCommit)}</div><div><b>Screener config hash</b><br>${esc(pins.screenerConfigHash)}</div><div><b>Trend-day config</b><br>${esc(pins.trendDayConfigHash)} · committed ${esc(pins.trendDayCommittedIn)}</div><div><b>First run started</b><br>${esc(pins.firstRunStarted)}</div><div><b>Data</b><br>Fyers history, cached 2026-09-07; 5-minute bars aggregated exactly from 1-minute</div></div>
 
 <h2>What ran</h2><table class="t">${status}</table>
@@ -383,16 +394,25 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--card);border:1px solid 
 <li>Intraday only (forced exit 15:15 IST), like live; the multi-day ledger appears only in the labelled EXTRA run.</li>
 <li>CIs: 95% day-block bootstrap over trade days, ${BOOT_ITER.toLocaleString()} resamples. n &lt; 30: shown greyed, no conclusion.</li></ul>
 
-<h2>Ranked — baseline, by gated E[R] (insufficient samples last, greyed)</h2>${ranked}
-<h2>By market regime — baseline</h2><p class="muted">Session labels from the committed trend-day rule on the NIFTY daily bar: trend-down ${counts['trend-down']}, trend-up ${counts['trend-up']}, chop ${counts.chop} sessions.</p>${regimeTable}
-<h2>Nifty trend-day study — cold (live-like) vs warm start</h2><p class="muted">"Move captured" = signed index points of the detector's trades on those sessions ÷ Σ|close − open| of those sessions.</p>${studyTable}
-<h2>Reconciliation with results_5m.json</h2>${recon}
+<h2>Ranked — baseline, by gated E[R] (insufficient samples last, greyed)</h2>${caveatP()}${caveatP(true)}${ranked}${caveatP()}
+<h2>By market regime — baseline</h2>${caveatP()}${caveatP(true)}<p class="muted">Session labels from the committed trend-day rule on the NIFTY daily bar: trend-down ${counts['trend-down']}, trend-up ${counts['trend-up']}, chop ${counts.chop} sessions.</p>${regimeTable}${caveatP()}
+<h2>Nifty trend-day study — cold (live-like) vs warm start</h2><p class="muted">"Move captured" = signed index points of the detector's trades on those sessions ÷ Σ|close − open| of those sessions.</p>${caveatP(true)}${studyTable}${caveatP(true)}
+<h2>Reconciliation with results_5m.json</h2>${caveatP()}${recon}
 <h2>Per-detector cards</h2>${cards}
 ${errs.length ? `<h2>Detector errors during replay</h2><pre>${esc(errs.map(([k, v]) => `${k}: ${v}`).join('\n'))}</pre>` : ''}
 </body></html>`
 
 	// Markdown summary of anything that failed or looked wrong
-	summaryMd.push(`# Full backtest — summary of failures and oddities`, '', `Runs at commit ${pins.commit}; screener config ${pins.screenerConfigHash}; trend-day config ${pins.trendDayConfigHash}.`, '')
+	summaryMd.push(
+		`# Full backtest — summary of failures and oddities`,
+		'',
+		`Runs at commit ${pins.commit}; screener config ${pins.screenerConfigHash}; trend-day config ${pins.trendDayConfigHash}.`,
+		'',
+		`> **${CAVEAT_EQUITY}**`,
+		'>',
+		`> **${CAVEAT_NIFTY}**`,
+		'',
+	)
 	for (const r of runs) if (!r.data) summaryMd.push(`- **${r.title}: not run / output missing.**`)
 	for (const [k, v] of errs) summaryMd.push(`- Detector error during replay — ${k}: ${v}`)
 	const zero = rows.filter((r) => r.m.signalsUngated === 0).map((r) => r.m.displayName)
