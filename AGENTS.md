@@ -1564,6 +1564,20 @@ V0–V2 paid 2.3 points. `backtest/emaCostSensitivity.ts` re-costs everything on
 **none validated**). At 2.3 pts Trend Pulse is +0.078R [−0.01, +0.17] vs V1 −0.010R; under the futures
 model every strategy is negative. Output: `backtest/output/ema/cost-sensitivity.md`. Harness default unchanged.
 
+## 11.15 SHORT direction: history and the real-path test (2026-10-21, branch `test/short-real-path`)
+
+- SHORT was paused in `9b109cb` (2026-09-16) and re-enabled in `f0d51fc` (2026-09-24) on the strength of
+  `tests/shortDirectionGeometry.test.ts`, which imports **no** `src/` code (it re-implements the formulas).
+  The Oct 6 plan item "keep SHORT paused until a real-path test exists" was never put in code.
+- For equities the pipeline **ignores the trigger's SL/T1** (which the EV gate scores) and derives
+  stop = VWAP × 0.998 / × 1.002, target = entry ± 1.5 × risk. The detectors' own levels never reach the trade.
+- `tests/alertPipeline.test.ts` REAL-PATH cases run the real `runAlertPipeline`: entry below / at / above
+  VWAP on both sides. **Known defect, pinned, not fixed:** an entry on the wrong side of VWAP (SHORT above,
+  LONG below) registers and alerts a trade whose stop is on the wrong side of entry; an option trigger
+  with SL on the wrong side passes through unchecked.
+- **Proposed, not wired:** `levelGeometryProblem()` in `src/workers/alertPolicy.ts` (stop and target must
+  bracket entry correctly). If approved it would suppress dispatch, not recording. Behaviour unchanged.
+
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
 The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 

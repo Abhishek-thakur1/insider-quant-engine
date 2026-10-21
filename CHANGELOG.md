@@ -2,11 +2,16 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## Unreleased — `study/nifty-cost-sensitivity` (offline, not deployed)
+## Unreleased — `test/short-real-path` (not merged, not deployed; no behaviour change)
+
+- **Real-path direction tests** (AGENTS.md §11.15) in `tests/alertPipeline.test.ts`: SHORT and LONG with entry below, at and above VWAP through the real `runAlertPipeline`. They pin a known defect: a wrong-side entry gets a wrong-side stop and is still alerted.
+- **Proposed, not wired:** `levelGeometryProblem()` in `alertPolicy.ts`.
+
+## `study/nifty-cost-sensitivity` — merged (PR #17); offline, nothing deployed
 
 - **Labelled correction to the Nifty EMA study:** every variant and current detector re-costed on the same assumption, with fixed 2.3 pts and two unvalidated Nifty cost models (futures; an ATM option without theta). Trend Pulse at 2.3 pts: +0.078R. Under the futures model everything is negative. Harness default unchanged.
 
-## Unreleased — `fix/signal-log-stall` (not merged, not deployed)
+## `fix/signal-log-stall` — merged (PR #15); deploy pending
 
 - **`signals` writer stall fixed** (AGENTS.md §11.9). After the first flush of an empty queue, `SignalLog` never wrote again and logged nothing. Live on Oct 21 only 1 of 4 fires reached the table. The guard is now released in `.finally()`. Three regression tests reproduce the live sequence and failed before the fix.
 
