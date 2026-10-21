@@ -2,7 +2,12 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## Unreleased — `test/short-real-path` (not merged, not deployed; no behaviour change)
+## Unreleased — `fix/engine-graceful-stop` (not merged, not deployed)
+
+- **The engine now shuts down cleanly on `docker stop`** (AGENTS.md §1.1). The compose command ends with `exec node --import tsx src/ingestion/websocket.ts`, plus `stop_grace_period: 20s`. Before, `sh` was PID 1 and every 15:30 stop was a SIGKILL (exit 137), so the signals flush never ran.
+- Proven on a throwaway stub: without exec, SIGKILL at 20 s (137). With `exec npx`, npm exits in 0.6 s and kills its child mid-handler. With `exec node`, the handler runs and the stub exits 0 in 5.1 s.
+
+## `test/short-real-path` — merged (PR #16); deployed with `8caf9a3` (no behaviour change)
 
 - **Real-path direction tests** (AGENTS.md §11.15) in `tests/alertPipeline.test.ts`: SHORT and LONG with entry below, at and above VWAP through the real `runAlertPipeline`. They pin a known defect: a wrong-side entry gets a wrong-side stop and is still alerted.
 - **Proposed, not wired:** `levelGeometryProblem()` in `alertPolicy.ts`.

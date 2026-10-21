@@ -58,8 +58,12 @@ mounts and only READS (watchlist.json, watchlist_meta.json, universe_stats.json)
 ```
 
 `quant_engine`'s compose `command` is a shell `until [ -f /app/token/access_token.txt ]` poll loop
-(10 s) before it execs `npx tsx src/ingestion/websocket.ts`. So the engine can be started before
-the token exists and it will wait.
+(10 s) before it runs `exec node --import tsx src/ingestion/websocket.ts`. So the engine can be started before
+the token exists and it will wait. **`exec node` matters (2026-10-21):** node must be PID 1 for `docker stop`'s
+SIGTERM to reach `shutdown()`. Before, `sh` was PID 1, ignored SIGTERM, and every stop was a SIGKILL after
+10 s (exit 137): the signals flush and Redis quit never ran. `exec npx tsx` is not enough — `npm exec`
+exits on SIGTERM without waiting for its child (stub-proven). `stop_grace_period: 20s` (handler ≈ 5 s).
+While the token wait loop is still running, `sh` is PID 1 and a stop still takes the full 20 s (harmless).
 
 ### 1.2 Daily lifecycle (`scheduler/crontab`, IST, Mon–Fri)
 
