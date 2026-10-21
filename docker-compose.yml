@@ -78,12 +78,19 @@ services:
         done;
         echo '[Engine] Token found.';
         echo '[Engine] Booting live engine (watchlist from the 16:30 quant_screener job; no screening at boot).';
-        npx tsx src/ingestion/websocket.ts
+        exec node --import tsx src/ingestion/websocket.ts
       "
     restart: 'on-failure'
+    # exec node (not npx): node becomes PID 1, so docker stop's SIGTERM reaches the
+    # engine's shutdown() (socket close, signals flush, Redis quit). Before, sh was
+    # PID 1 and ignored SIGTERM: every stop ended in SIGKILL after 10 s (exit 137,
+    # Oct 21). 'exec npx tsx' is NOT enough: npm exec exits on SIGTERM without
+    # waiting for its child (stub-proven 2026-10-21), killing the engine mid-handler.
+    # The handler needs ~5 s (3 s settle + 2 s flush); 20 s leaves margin.
+    stop_grace_period: 20s
     volumes:
       - token_store:/app/token
-      - screener_data:/app/data # read-only use: watchlist.json, watchlist_meta.json, universe_stats.json
+      - screener_data:/app/data # reads watchlist.json, watchlist_meta.json, anomaly_universe.json; writes ema_shadow/<date>.jsonl (EMA shadow)
       - /app/node_modules
     env_file:
       - .env
