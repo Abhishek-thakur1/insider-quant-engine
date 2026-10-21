@@ -674,16 +674,23 @@ Because `velocity` uses **absolute** premium and index moves, it is a magnitude 
 verify the premium moved in the *same direction* as the index — a collapsing premium on a rising
 index still produces a positive velocity. Worth fixing if you touch this file.
 
-### 4.3 ACTIVE — the per-equity stack (3 instances × 90 symbols = 270 detector objects)
+### 4.3 ACTIVE — the per-equity stack (2 detectors per watchlist symbol)
 
-⚠️ 270 objects are constructed, but only **85 symbols ever reach them**: five are swallowed by the
-option-routing bug in §6.11 before `strategyRouter` is consulted.
+**Verified 2026-10-21 against `src/ingestion/websocket.ts`:** every watchlist symbol (and every
+anomaly promotion) gets exactly the two detectors built by `buildEquityStack()`. The boot banner
+reads `EQUITY_STACK_NAMES` (it used to print a stale "9 detectors"); `tests/liveStack.test.ts` pins
+both. Symbols whose names contain "CE"/"PE" never reach them (option-routing bug, §6.11).
 
 | Class | File | Setups |
 |---|---|---|
 | `StockMomentumBreakoutDetector` | `v2/stockMomentumBreakoutDetector.ts` | 3 setups in one detector, 5-min candles |
 | `VolatilityContraction` | `v2/high_alpha/VolatilityContraction.ts` | 5-min VCP, Redis-backed history |
-| `GapAndGoMomentum` | `v2/high_alpha/GapAndGoMomentum.ts` | 09:15–09:30 opening range, break 09:30–10:15 |
+
+**Unwired: `GapAndGoMomentum`** (now `src/detectors/deprecated/GapAndGoMomentum.ts`). It was the third
+live equity detector until commit `e170317` (2026-09-07, "feat(janeStreetFilter): overhaul…"),
+which removed its import and instantiation and moved the file, **with no reason recorded** in the
+commit message or the deprecated README. Not a performance decision (no performance data existed).
+Its mechanics are kept below for reference. Not re-enabled.
 
 **`StockMomentumBreakoutDetector`.** Its header explains the design intent: it *replaces* the
 former 9-detector equity stack, because 9 × 100 instances produced 50–100 alerts/day with 4–6
@@ -735,7 +742,7 @@ first tick after; active 09:30–10:15; requires `0.5% ≤ rangeSpread ≤ 2.5%`
 `BaseDetector` (`v2/high_alpha/baseDetector.ts`) provides only `isDailyTrendAligned()` and
 `triggerAlert()` (a thin `sendTelegramAlert` wrapper) plus the abstract `analyze()`.
 
-### 4.4 ARCHIVED — moved to `src/detectors/deprecated/` (15)
+### 4.4 ARCHIVED — moved to `src/detectors/deprecated/` (16)
 
 See `src/detectors/deprecated/README.md` for the per-file rationale and revival steps. All 15 are
 `UNTRACKED` — none was removed on measured performance, because no performance data has ever
@@ -746,6 +753,8 @@ existed in this repo.
 `vwapCrossoverDetector`, `valueZoneScalpDetector`, `liquidityTrapDetector`. Plus 7 superseded:
 `niftyOptionsDetector`, `morningMomentumDetector`, `candleBreakoutDetector`, `vcpDetector`,
 `parabolicRvolSweepDetector`, `volumeSpikeDetector`, `equityLiquiditySweepDetector`.
+
+**Unrecorded (1).** `GapAndGoMomentum` — unwired in `e170317` (2026-09-07) without a stated reason (§4.3).
 
 **Tier C (1).** `NiftyLiquiditySweep` — mean-reversion *and* dead code (it read `orb:30min:high:*`,
 written only by the dormant `orbDetector`). Removed from `v2/high_alpha/index.ts` and from the
@@ -1345,7 +1354,7 @@ Do not decide these unilaterally:
    than guessed, which argues for doing it first, but the user has not confirmed the order. The
    suite is specified and unbuilt; several of its inputs (market cap, daily candles, benchmark
    indices, order-book depth, circuit bands, account equity) have no source in the repo at all.
-3. **The 15 archived detectors** are archived, not deleted, specifically so the backtest can
+3. **The 16 archived detectors** are archived, not deleted, specifically so the backtest can
    still import them. Deleting them needs explicit approval and would end that option.
 
 ### 11.5 Documentation map
@@ -1356,7 +1365,7 @@ Do not decide these unilaterally:
 | `CLAUDE.md`, `GEMINI.md` | Thin pointers here, plus the non-negotiables. Deliberately short — do not duplicate content into them. |
 | `README.md` | Human-facing project overview and how to run it. |
 | `backtest/README.md` | The harness: isolation guarantees, virtual clock, assumptions, fidelity gaps. |
-| `src/detectors/deprecated/README.md` | Why each of the 15 archived detectors was archived, and how to revive one. |
+| `src/detectors/deprecated/README.md` | Why each of the 16 archived detectors was archived, and how to revive one. |
 | `docs/qullamaggie-spec-v2.md` | The source-verified spec for a momentum suite that is **not built**. Carries the repo's status, what the revision corrects versus the earlier version, and the data blockers a builder hits immediately. |
 
 If you change behaviour, update `AGENTS.md` in the same commit. A stale brief is worse than no
@@ -1521,6 +1530,25 @@ Until the screener runs again, `anomaly_universe.json` does not exist: bench 0, 
 (3 requests). Risks: the token can arrive late (manual login), pre-open quotes before 09:08 are
 indicative, the swap must be an in-place unsubscribe/subscribe, and a throttle spends breach budget
 before the open.
+
+## 11.14 Nifty EMA trend study (2026-10-21, offline, report only — branch `backtest/full-report`)
+
+Pre-registered (`config/nifty_ema_study.json`, `backtest/studies/nifty-ema-trend/PREREGISTRATION.md`,
+committed before the run) and run once on 1,285 cached 5-minute sessions (2021-07-05 → 2026-09-07).
+Index points only, no option premium. "VWAP" is a TWAP proxy (the cached index volume is 0).
+
+| Piece | Where |
+|---|---|
+| Pure engine: EMA, session TWAP, V0 cross / V1 alignment / V2 pullback signals, stop-first exits, one position | `backtest/emaTrend.ts` |
+| Runner + report (reuses `compare.summarize`, day-block bootstrap, 10,000 resamples) | `backtest/emaStudy.ts` → `backtest/output/ema/` |
+| Tests: no look-ahead, hand-checked EMA/TWAP, stop-first, gap fill, 15:15 exit, skips | `tests/emaTrend.test.ts` |
+| Plain-language summary | `backtest/studies/nifty-ema-trend/SUMMARY.md` |
+
+**Result (no decision attached):** every variant is positive on trend days and negative on chop days
+(69% of sessions). Net E[R]: V1 −0.010 [−0.042, +0.024], V2 −0.013 [−0.046, +0.023], V0 −0.053;
+all negative at 2× cost. V1/V2 capture 13–17% of trend-day moves (the current detectors: 1–2%) at
+about 5 trades per session. Current Nifty detectors, ungated: Trend Pulse −0.280, ORB −0.313,
+VWAP Reclaim −1.003 R/trade. Nothing live changed.
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
