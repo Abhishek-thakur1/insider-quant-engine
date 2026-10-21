@@ -115,19 +115,26 @@ export class SignalLog {
 	/** Drain the queue. Concurrent calls share one drain. Never throws. */
 	flush(): Promise<void> {
 		if (this.flushing) return this.flushing
-		this.flushing = (async () => {
-			try {
-				while (this.queue.length > 0) {
-					const batch = this.queue.splice(0, this.batchSize)
-					await this.writeBatch(batch)
-				}
-			} catch (err) {
-				this.log.error('[SignalLog] ❌ Unexpected flush error:', err)
-			} finally {
-				this.flushing = null
-			}
-		})()
+		// The guard is released in .finally(), which always runs asynchronously —
+		// after this assignment. Clearing it inside the async body (as before) ran
+		// synchronously when the queue was empty, BEFORE the assignment, leaving a
+		// resolved promise in `flushing` forever: every later flush returned early
+		// and nothing more was written (Oct 21: 1 of 4 rows; tests/signalLog.test.ts STALL).
+		this.flushing = this.drain().finally(() => {
+			this.flushing = null
+		})
 		return this.flushing
+	}
+
+	private async drain(): Promise<void> {
+		try {
+			while (this.queue.length > 0) {
+				const batch = this.queue.splice(0, this.batchSize)
+				await this.writeBatch(batch)
+			}
+		} catch (err) {
+			this.log.error('[SignalLog] ❌ Unexpected flush error:', err)
+		}
 	}
 
 	private count(attempted: number, rowCount: number | null): void {

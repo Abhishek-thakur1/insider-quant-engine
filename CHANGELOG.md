@@ -2,7 +2,11 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## `backtest/full-report` — Nifty EMA trend study (offline, report only, not deployed)
+## Unreleased — `fix/signal-log-stall` (not merged, not deployed)
+
+- **`signals` writer stall fixed** (AGENTS.md §11.9). After the first flush of an empty queue, `SignalLog` never wrote again and logged nothing. Live on Oct 21 only 1 of 4 fires reached the table. The guard is now released in `.finally()`. Three regression tests reproduce the live sequence and failed before the fix.
+
+## `backtest/full-report` — Nifty EMA trend study — merged (PR #14); offline, report only, nothing deployed
 
 - Pre-registered study (AGENTS.md §11.14): V0 EMA 9/21 cross, V1 EMA20 + slope + VWAP-proxy alignment, V2 pullback rejection, with EMA10/30 robustness. Run once on 1,285 sessions.
 - Result: positive on trend days, negative on chop days. Net ≈ 0 or below (V1 −0.010R, V2 −0.013R; CIs span 0) and negative at 2× cost. About 5 trades per session. No detector or alert changed.

@@ -1435,6 +1435,14 @@ One row per detector fire, i.e. per `sendTelegramAlert()` call. A fire a detecto
 
 Verified locally only (throwaway `postgres:15-alpine` + `redis:7-alpine`): 0004 applies on top of 0001–0003 alone, rerun is a no-op, `paper_trades` byte-identical, real `registerTrade` returns the id and the signal joins to it, UNIQUE conflict counted, FK-violating row dropped alone and logged, `alert_sent`/reason CHECK enforced, `ON DELETE SET NULL` works, reversal SQL works. **Not yet deployed.**
 
+**Writer stall, fixed 2026-10-21 (`fix/signal-log-stall`).** `SignalLog.flush()` cleared its
+in-flight guard inside the async body; on an empty queue that body ran synchronously, *before* the
+assignment, so a resolved promise stayed in `flushing` forever and every later flush returned
+early. Live on Oct 21 only the first of four fires (GALLANTT 14:22) reached `signals`; MRPL,
+JINDWORLD and AEQUS were enqueued and never written, with no log line. The guard is now released
+in `.finally()` (always asynchronous). Tests: `tests/signalLog.test.ts` STALL cases (failed before
+the fix: 1 of 3 rows written).
+
 ## 11.10 Session robustness (2026-10-20, branch `fix/session-robustness`)
 
 | Change | Where |

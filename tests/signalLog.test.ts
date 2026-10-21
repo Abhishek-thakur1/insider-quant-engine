@@ -369,3 +369,56 @@ test('shutdown flushes pending rows and logs totals', async () => {
 		),
 	)
 })
+
+// ── Oct 21 stall: a flush on an EMPTY queue left `flushing` set forever ─────
+// Live: GALLANTT's row was written at 14:22; the 1-second timer then ran
+// flush() on an empty queue; MRPL, JINDWORLD and AEQUS (14:27–14:38) were
+// enqueued but never written, and nothing was logged.
+
+const countingQuery = () => {
+	const box = { inserted: 0 }
+	const query: QueryFn = async (_t, v) => {
+		const n = v.length / SIGNAL_COLUMNS.length
+		box.inserted += n
+		return { rowCount: n }
+	}
+	return { box, query }
+}
+
+test('STALL: rows enqueued after a timer flush of an empty queue are still written', async () => {
+	const { box, query } = countingQuery()
+	const { log } = quietLog()
+	const sl = new SignalLog({ query, log, flushMs: 20 })
+	sl.enqueue(rowN(1))
+	await new Promise((r) => setTimeout(r, 70)) // row 1 written, then ≥ 1 tick on an empty queue
+	assert.equal(box.inserted, 1)
+	sl.enqueue(rowN(2))
+	sl.enqueue(rowN(3))
+	await new Promise((r) => setTimeout(r, 70))
+	assert.equal(box.inserted, 3, 'rows after the empty tick were never written')
+	assert.equal(sl.pending, 0)
+	await sl.shutdown(100)
+})
+
+test('STALL: flush() on an empty queue does not wedge later flushes', async () => {
+	const { box, query } = countingQuery()
+	const { log } = quietLog()
+	const sl = new SignalLog({ query, log, flushMs: 60_000 })
+	await sl.flush() // empty
+	sl.enqueue(rowN(1))
+	await sl.flush()
+	assert.equal(box.inserted, 1)
+	await sl.shutdown(100)
+})
+
+test('STALL: shutdown after an empty flush still writes pending rows', async () => {
+	const { box, query } = countingQuery()
+	const { log } = quietLog()
+	const sl = new SignalLog({ query, log, flushMs: 60_000 })
+	await sl.flush() // empty
+	sl.enqueue(rowN(1))
+	sl.enqueue(rowN(2))
+	await sl.shutdown(500)
+	assert.equal(box.inserted, 2)
+	assert.equal(sl.pending, 0)
+})
