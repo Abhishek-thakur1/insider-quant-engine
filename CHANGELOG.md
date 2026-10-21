@@ -2,7 +2,16 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## Unreleased — `fix/fyers-quota` (not merged, not deployed)
+## Unreleased — `feat/subscription-cap` (not merged, not deployed)
+
+- **Subscribe only what the engine evaluates** (AGENTS.md §11.13): watchlist + bench + Nifty, instead of the 2,158-name universe. Fyers Standard allows 100 data-socket symbols per user; since Oct 16 only Nifty index ticks have arrived. Above `SUBSCRIPTION_CAP` (default 100) a boot check refuses to start (exit 0, admin Telegram), before any Fyers call.
+- **Screener:** watchlist cap 100 → 60 (core included, hysteresis unchanged); Layer B is now a 30-name bench ranked by score. Budget: 60 + 30 + 1 = 91.
+- **Nifty option strikes off** (`NIFTY_OPTIONS_ENABLED`, default false) until the expiry fix.
+- **Quota gate:** throttle warnings carry Fyers' raw error text.
+- **Backtest:** `--static-list live25=<file>` adds a fixed comparison list.
+- AGENTS.md line endings restored to CRLF (`1b502dc` had converted them).
+
+## `fix/fyers-quota` — merged (PR #11), deployed 2026-10-20 (`05f4bf3`)
 
 - **Fyers quota discipline** (AGENTS.md §11.12). Every Data-API call (screener, VWAP seeder, anomaly promotions, backtest fetch) goes through one gate:
   - pacing of 4/s and 40/min (Fyers Standard: 5/s, 50/min);

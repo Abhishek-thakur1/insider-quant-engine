@@ -1204,6 +1204,8 @@ REDIS_HOST=redis_cache
 REDIS_PORT=6379
 SHADOW_MODE=false           # read directly via process.env in janeStreetFilter + telegramWorker
 CONFIRMATION_THRESHOLD=78   # read directly via process.env in janeStreetFilter
+SUBSCRIPTION_CAP=100        # data-socket symbol cap checked at engine boot (Fyers Standard = 100); invalid → 100
+NIFTY_OPTIONS_ENABLED=false # subscribe Nifty option strikes (30); off until the Thursday→Tuesday expiry fix
 ```
 
 `env.ts` hard-fails (`process.exit(1)`) if `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHANNEL_ID`,
@@ -1441,6 +1443,7 @@ Verified locally only (throwaway `postgres:15-alpine` + `redis:7-alpine`): 0004 
 | **One trading-day check for everything.** `scheduler/trading_day.sh` (exit 0 trading / 1 weekend / 2 holiday) is used by `lifecycle.sh` (auth + engine), `market_message.sh` (no public open/close message on holidays) and `liveness.sh`. The engine and screener read the same file and exit 0 on a non-trading day (defence in depth for manual starts). | `scheduler/*.sh`, `src/core/tradingDayGate.ts`, `src/core/sessionGuard.ts` |
 | **Watchdog policy** (pure, tested): trips only 09:15–15:30 IST; trips 1–6 in a day exit 1 (Docker restarts) and the next boot backs off 30 s → 60 → 120 → 240 → 300 s cap; the 7th trip, or any trip at/after 15:15 IST, exits 0 (stands down — `restart: on-failure` leaves it down). Admin Telegram on every trip. Counter: `engine:restarts:{IST-date}` (§7). | `src/core/sessionGuard.ts`, `src/ingestion/websocket.ts`, `src/utils/adminNotify.ts` |
 | **Socket diagnostics:** `[Firehose] ♥` heartbeat every 5 min (message count, last message time); socket `close` / `error` events are now logged. The Oct 19 15:15:50 trip had nothing in the log before it. | `src/ingestion/websocket.ts` |
+| **Tick accounting (2026-10-21, diagnostics only):** each heartbeat also prints ticks split by fate — index, option, equity→router, equity→anomaly scanner, equity dropped by the zero-volume filter (and how many lacked `vol_traded_today`), non-tick frames, distinct active symbols seen — plus one raw equity tick and one non-tick frame (300 chars). Added because Oct 21 had ~1,000 msgs/5 min but zero watchlist equities reaching `updateVwap`, and no equity fire since Oct 15. Counters are incremented after the routing decision and never change it. | `src/core/tickStats.ts`, `src/ingestion/websocket.ts` |
 | **Seeder:** sliding-window limiter, ≤ 4 starts in any 1000 ms (the old 1 s token refill let 10 simultaneous retries start within 600 ms → `-360`, reproduced by executing the old limiter in `tests/seederRateLimit.test.ts`); `-360` is now recognised and retried (1 s, 2 s, 4 s + jitter, max 3); `no_data` is a soft skip; symbols already seeded today make no call; before 09:15 IST the seeder makes no call at all. | `src/ingestion/vwapSeeder.ts`, `src/utils/rateLimit.ts` |
 | **Filter evidence:** one `[JSFilter] ✗ … rejected at <gate> — <reason>` console line per rejection (score rejections in shadow mode previously printed nothing); decisions survive restarts; stats per IST day. Logging only — no gate changed. | `src/detectors/janeStreetFilter.ts` |
 
@@ -1461,6 +1464,8 @@ never retried `-360`. "High alpha" here = persistent outperformance vs the bench
 | Engine reads only: `/app/data/*` via `resolveScreenerFile` (baked-in fallback), promotion source per symbol from meta. **No screening and no history calls at boot.** | `src/screener/paths.ts`, `websocket.ts`, `vwapSeeder.ts`, `anomalyScanner.ts` |
 | `signals.promotion_source` gains `SCREENER_LEADER` / `SCREENER_SETUP` (migration **0006**; 0005 is reserved for Part D). Requires 0004 and raises if the signals table is missing. | `db/migrations/0006_screener_sources.sql`, `src/core/symbolSource.ts` |
 | Backtest: point-in-time universes (old / new / random×3), per-session universe replay, 5-minute default, multi-day ledger opt-in, day-block bootstrap comparison with the approved go-live rule. | `backtest/universes.ts`, `backtest/compare.ts`, `backtest/run.ts` |
+
+**Superseded 2026-10-21 — see §11.13:** watchlist cap 100 → **60**; Layer B is now a 30-name **bench** ranked by score.
 
 **Layer B is held at its old size.** `anomalyScanner` only scans the symbols in its stats file.
 Under the old screener that was ~323 (whatever survived its API losses on 2026-10-19). v2's
@@ -1493,6 +1498,38 @@ per-minute breaches in a day block the user for the rest of the day. Cloudflare 
 
 The quote pre-filter changes nothing about who can qualify: a skipped name fails a far looser bar than the
 screen's own liquidity rule (`tests/screenerPrefilter.test.ts`, property test).
+
+Throttle warnings and the stop error now include Fyers' own error text (`— Fyers said: …`, ≤ 300 chars).
+On 2026-10-21 the seeder was throttled 3× in 8 requests and the log kept only the classification.
+
+## 11.13 Subscription cap: watchlist 60 + bench 30 + Nifty (2026-10-21, branch `feat/subscription-cap`)
+
+**Why.** From 2026-10-16 the engine received **only Nifty index ticks**: no equity or option tick, no
+error frame, no fire on any stock detector. The heartbeat's tick accounting (§11.10) showed 972/972
+index ticks on 2026-10-21. The subscription code, symbol universe and SDK (1.7.0) are identical
+between Oct 15 (stock fires) and Oct 16 (none) — EC2 ran `c83cd23` throughout. Fyers' websocket page
+(updated 2026-10-14): "Data Socket symbol limits are per user, across all connections. Standard allows
+100 symbols and Prime allows 5,000." The engine subscribed 2,159 (`fyersUniverse.json` + Nifty).
+Index names are mapped inside the SDK (`HSM/mapper.js`); equities and options are not.
+**Status: strong lead, not proven** — the 26-symbol boot test settles it.
+
+| Piece | Where |
+|---|---|
+| Subscribe = watchlist + bench + Nifty (+ 30 option strikes only if `NIFTY_OPTIONS_ENABLED=true`). `fyersUniverse.json` is no longer read by the engine. | `src/core/subscriptionPlan.ts`, `websocket.ts` |
+| **Boot check, before any Fyers call:** total > `SUBSCRIPTION_CAP` (default 100) → log, admin Telegram, **exit 0** (no restart loop). Boot log: `[Engine] 🧾 Subscription plan: N/cap symbols — watchlist … + bench … + index … + options …`. | `websocket.ts` |
+| Screener: `watchlistCap` 100 → **60** (core counts toward it; hysteresis unchanged). Layer B scan set (`anomaly_universe.json`) = the **bench**: the next `layerB.maxSymbols` = **30** names by score that missed the watchlist (eligible, bar on the as-of date, turnover ≥ ₹1 cr). Promotions move a bench name into the active universe and add no subscription. | `config/screener.json`, `src/screener/screen.ts` |
+| Budget: 60 + 30 + 1 + 0 options = **91 of 100**. Options back on = 121 → refused. | `tests/subscriptionPlan.test.ts` |
+| Backtest: `new` uses the config cap (60); random controls already match its size; `--static-list live25=<file>` adds a fixed list (same symbols every day — look-ahead, labelled). | `backtest/universes.ts`, `backtest/run.ts` |
+
+**What this gives up (owner's choice (b), 2026-10-21):** movers outside watchlist + bench are never seen
+(e.g. KSCL, HGINFRA unless ranked in the top 90). Oct 1–15: 85–90% of stock fires were on anomaly
+promotions outside the watchlist; how many of those a 30-name bench would have contained is untested.
+Until the screener runs again, `anomaly_universe.json` does not exist: bench 0, Layer B off, 26 symbols.
+
+**Not built (planned):** pre-open re-rank at ~09:05–09:08 of the top ~150 by evening score, from quotes
+(3 requests). Risks: the token can arrive late (manual login), pre-open quotes before 09:08 are
+indicative, the swap must be an in-place unsubscribe/subscribe, and a throttle spends breach budget
+before the open.
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 

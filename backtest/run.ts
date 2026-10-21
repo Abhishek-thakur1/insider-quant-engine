@@ -10,6 +10,7 @@
 // Screener v2 universe comparison (see backtest/universes.ts, backtest/compare.ts):
 //   npx tsx backtest/run.ts fetch-daily-all --days 365     # daily bars, full master universe + benchmarks
 //   npx tsx backtest/run.ts universes --days 365           # point-in-time lists -> output/universes.json
+//   npx tsx backtest/run.ts universes --days 365 --static-list live25=watchlist.json   # + a fixed list (look-ahead)
 //   npx tsx backtest/run.ts fetch-intraday                 # intraday bars for every listed symbol
 //   BACKTEST_MODE=true npx tsx backtest/run.ts run --universe-list new --label new   (old, random1..3 likewise)
 //   npx tsx backtest/run.ts compare                        # -> output/universe-comparison.md
@@ -416,7 +417,7 @@ const cmdFetchDailyAll = async (sessions: number): Promise<void> => {
 	await fetchUniverse([NIFTY_SYMBOL, config.benchmark, ...universe], DATA.dailyResolution, from, to)
 }
 
-const cmdUniverses = (sessions: number): void => {
+const cmdUniverses = (sessions: number, staticSpecs: string[] = []): void => {
 	const { config, hash } = loadConfig()
 	const universe = JSON.parse(fs.readFileSync(path.join(OUTPUT_DIR, 'universe_master.json'), 'utf8')) as string[]
 	const core = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'core_watchlist.json'), 'utf8')) as string[]
@@ -426,7 +427,14 @@ const cmdUniverses = (sessions: number): void => {
 	const benchmark = loadSeries(config.benchmark, DATA.dailyResolution)?.bars ?? []
 	if (benchmark.length === 0) throw new Error(`no daily bars for ${config.benchmark} — run fetch-daily-all first`)
 	const started = realNow()
-	const set = buildUniverses({ tradingDays: days, universe, series, benchmark, core, config, configHash: hash })
+	// --static-list name=path: a fixed JSON string[] (e.g. the live 25-name list), same symbols every day.
+	const staticLists: Record<string, string[]> = {}
+	for (const spec of staticSpecs) {
+		const eq = spec.indexOf('=')
+		if (eq <= 0) throw new Error(`--static-list expects name=path, got '${spec}'`)
+		staticLists[spec.slice(0, eq)] = JSON.parse(fs.readFileSync(path.resolve(spec.slice(eq + 1)), 'utf8')) as string[]
+	}
+	const set = buildUniverses({ tradingDays: days, universe, series, benchmark, core, config, configHash: hash, staticLists })
 	fs.writeFileSync(UNIVERSES_JSON, JSON.stringify(set))
 	const avg = (l: string) => (Object.values(set.lists[l]!).reduce((a, x) => a + x.length, 0) / Math.max(1, set.window.sessions)).toFixed(1)
 	console.log(`[universes] ${set.window.first} → ${set.window.last} (${set.window.sessions} sessions) in ${((realNow() - started) / 1000).toFixed(0)}s`)
@@ -517,7 +525,10 @@ const main = async (): Promise<void> => {
 			await cmdFetchDailyAll(dayLimit ?? 365)
 			break
 		case 'universes':
-			cmdUniverses(dayLimit ?? 365)
+			cmdUniverses(
+				dayLimit ?? 365,
+				rest.flatMap((a, i) => (a === '--static-list' && rest[i + 1] ? [rest[i + 1]!] : [])),
+			)
 			break
 		case 'fetch-intraday':
 			await cmdFetchIntraday()

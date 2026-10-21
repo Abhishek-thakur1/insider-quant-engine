@@ -1,7 +1,7 @@
 {
 	"version": 1,
 	"benchmark": "NSE:NIFTY500-INDEX",
-	"watchlistCap": 100,
+	"watchlistCap": 60,
 	"liquidity": {
 		"minAvgTurnoverRupees": 150000000,
 		"turnoverLookbackBars": 30,
@@ -59,9 +59,9 @@
 		"note": "Lenient quote pre-filter (50 symbols per quote call) before any history call. Always fetched: CORE, yesterday's watchlist and Layer B set, symbols without a quote. Names the full screen rejected as illiquid are re-checked weekly."
 	},
 	"layerB": {
-		"maxSymbols": 323,
+		"maxSymbols": 30,
 		"minTurnoverRupees": 10000000,
-		"note": "Anomaly scanner scan set, capped at the size it had under the old screener (323 symbols with stats on 2026-10-19) until evidence supports widening it. Top N by 30-bar turnover with a bar on the as-of date."
+		"note": "Bench = anomaly scanner scan set: the next N names by score that missed the watchlist (eligible, bar on the as-of date). The engine subscribes watchlist (cap 60) + bench + Nifty; Fyers Standard allows 100 symbols per user, options are off until the expiry fix, so the total is at most 91. Owner's choice (b), 2026-10-21."
 	},
 	"failureBudget": {
 		"maxFailedPct": 3,
