@@ -54,3 +54,23 @@ All three are positive on trend days and strongly negative on chop days. VWAP Re
 The study is report only. It doesn't change any detector, gate, threshold or alert. A follow-up
 that tries to tell trend days from chop days *in real time* (for example, the first hour's range
 or regime) would be a new, separately pre-registered study.
+
+## Correction, 2026-10-21 — the baseline comparison above was not cost-matched
+
+The tables above charged V0–V2 a fixed 2.3 points but showed the current detectors with the
+harness cost (5 bps slippage per leg ≈ 15–25 index points). Re-costed on one assumption at a time
+(`backtest/output/ema/cost-sensitivity.md`; trades unchanged, only the cost differs):
+
+| All sessions E[R] | fixed 2.3 pts | futures model (~14–17 pts) | ATM option model (~6 pts, no theta) |
+|---|---|---|---|
+| V1 alignment | −0.010 | −0.426 | −0.134 |
+| V2 pullback | −0.013 | −0.458 | −0.145 |
+| Trend Pulse (ungated) | **+0.078** [−0.01, +0.17] | −0.160 | +0.003 |
+| Opening Range (ungated) | −0.024 | −0.214 | −0.082 |
+| VWAP Reclaim (ungated) | −0.097 | −0.694 | −0.280 |
+
+So "the current detectors take 1–2% of trend days and are far worse" overstated the gap. Costed the
+same way, Trend Pulse is no worse than V1/V2, and it trades about 0.5 times per session instead of 5.
+**Every strategy loses under the futures model.** The two cost models (`config/nifty_cost_models.json`)
+are assumptions, **not validated**, and the option model leaves out theta. The harness default is
+unchanged. The trend-day capture figures above use gross points and are unaffected.

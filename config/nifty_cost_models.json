@@ -1,0 +1,28 @@
+{
+	"version": 1,
+	"status": "NOT VALIDATED. Assumptions for a labelled sensitivity only, written 2026-10-21. Rates must be checked against a real contract note before any decision. The backtest harness default (SIM.slippageBps = 5 per leg) is unchanged.",
+	"lotSize": 65,
+	"brokeragePerOrderRupees": 20,
+	"gstOnBrokerageAndCharges": 0.18,
+	"models": {
+		"futures": {
+			"label": "Nifty index futures (near month)",
+			"spreadAndSlippagePtsPerSide": 1.0,
+			"sttSellSideFraction": 0.0005,
+			"exchangeTxnFractionPerSide": 0.0000173,
+			"sebiFractionPerSide": 0.000001,
+			"stampBuySideFraction": 0.00002,
+			"note": "Cost in index points per unit: 2 × spread + STT on the sell leg + exchange, SEBI and stamp on notional + (2 × brokerage + GST) / lot size. STT 0.05% of the sell-side value is an ASSUMED post-Budget-2026 rate. At an index of 25,000 the total is about 16.8 points."
+		},
+		"atmOption": {
+			"label": "At-the-money weekly Nifty option, bought (delta 0.5)",
+			"premiumFractionOfIndex": 0.005,
+			"delta": 0.5,
+			"spreadRupeesPerSide": 1.0,
+			"sttSellSideFractionOfPremium": 0.0015,
+			"exchangeTxnFractionOfPremiumPerSide": 0.0003503,
+			"stampBuySideFractionOfPremium": 0.00003,
+			"note": "Costs in premium rupees per unit, converted to index points by dividing by delta (the index move needed to pay them back). Premium = 0.5% of the index. STT 0.15% of the sell-side premium is an ASSUMED rate. THETA IS NOT MODELLED: the largest cost of holding a bought option, so this model is optimistic. At an index of 25,000 the total is about 6.1 points."
+		}
+	}
+}
