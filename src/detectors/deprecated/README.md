@@ -27,6 +27,12 @@ archived on structural grounds — dormant *and* mean-reversion-biased, or expli
 | `volumeSpikeDetector.ts` | superseded by the v2 equity stack |
 | `equityLiquiditySweepDetector.ts` | superseded by the v2 equity stack |
 
+## Unrecorded (1)
+
+| File | Reason |
+|---|---|
+| `GapAndGoMomentum.ts` | Was the third live equity detector. Unwired and moved here in `e170317` (2026-09-07, a large commit titled "feat(janeStreetFilter): overhaul for SWING parameters…") **with no reason recorded**. Not a performance decision. Documented 2026-10-21; not re-enabled. |
+
 ## Tier C — dead code (1)
 
 | File | Reason |
