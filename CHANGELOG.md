@@ -2,7 +2,11 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## Unreleased — `feat/subscription-cap` (not merged, not deployed)
+## Unreleased — `fix/signal-log-stall` (not merged, not deployed)
+
+- **`signals` writer stall fixed** (AGENTS.md §11.9). After the first flush of an empty queue, `SignalLog` never wrote again and logged nothing. Live on Oct 21 only 1 of 4 fires reached the table. The guard is now released in `.finally()`. Three regression tests reproduce the live sequence and failed before the fix.
+
+## `feat/subscription-cap` — merged (PR #13), deployed 2026-10-21 13:46 IST (`bd20eec`)
 
 - **Subscribe only what the engine evaluates** (AGENTS.md §11.13): watchlist + bench + Nifty, instead of the 2,158-name universe. Fyers Standard allows 100 data-socket symbols per user; since Oct 16 only Nifty index ticks have arrived. Above `SUBSCRIPTION_CAP` (default 100) a boot check refuses to start (exit 0, admin Telegram), before any Fyers call.
 - **Screener:** watchlist cap 100 → 60 (core included, hysteresis unchanged); Layer B is now a 30-name bench ranked by score. Budget: 60 + 30 + 1 = 91.
