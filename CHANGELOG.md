@@ -2,13 +2,17 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## Unreleased — `feat/ema-shadow` (not merged, not deployed)
+## Unreleased — `feat/geometry-guard` (not merged, not deployed; owner: not before 2026-10-22 close)
+
+- **Geometry guard, scaled-down** (AGENTS.md §11.15): a wrong-side stop or target is recorded, flagged `invalid_geometry` on the paper and signals rows, and logged, but not alerted. No migration, no API or dashboard change. Daily count query in the RUNBOOK. The REAL-PATH tests now expect the trade to be recorded and flagged, with no alert.
+
+## `feat/ema-shadow` — merged (PR #18); deploy pending
 
 - **The Nifty EMA study now runs live in shadow** (AGENTS.md §11.16). V0/V1/V2 run on 5-minute candles built from ticks. It writes JSONL trades and a 15:15 daily summary, with no alerts, no filter, no paper trades, no migration and no Fyers calls. Kill switch: `EMA_SHADOW_ENABLED=false`.
 - One engine for study and live: `src/core/emaTrend.ts`, re-exported by `backtest/emaTrend.ts`. Parameters come from `config/nifty_ema_study.json`.
 - Parity test: the live detector, fed tick by tick from real cached minutes, matches the study trade for trade (177 trades, 15 sessions).
 
-## Unreleased — `fix/engine-graceful-stop` (not merged, not deployed)
+## `fix/engine-graceful-stop` — merged (PR #18); deploy pending
 
 - **The engine now shuts down cleanly on `docker stop`** (AGENTS.md §1.1). The compose command ends with `exec node --import tsx src/ingestion/websocket.ts`, plus `stop_grace_period: 20s`. Before, `sh` was PID 1 and every 15:30 stop was a SIGKILL (exit 137), so the signals flush never ran.
 - Proven on a throwaway stub: without exec, SIGKILL at 20 s (137). With `exec npx`, npm exits in 0.6 s and kills its child mid-handler. With `exec node`, the handler runs and the stub exits 0 in 5.1 s.
@@ -22,7 +26,7 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
 - **Labelled correction to the Nifty EMA study:** every variant and current detector re-costed on the same assumption, with fixed 2.3 pts and two unvalidated Nifty cost models (futures; an ATM option without theta). Trend Pulse at 2.3 pts: +0.078R. Under the futures model everything is negative. Harness default unchanged.
 
-## `fix/signal-log-stall` — merged (PR #15); deploy pending
+## `fix/signal-log-stall` — merged (PR #15); deployed 2026-10-21 evening with `8caf9a3` (engine left Created)
 
 - **`signals` writer stall fixed** (AGENTS.md §11.9). After the first flush of an empty queue, `SignalLog` never wrote again and logged nothing. Live on Oct 21 only 1 of 4 fires reached the table. The guard is now released in `.finally()`. Three regression tests reproduce the live sequence and failed before the fix.
 

@@ -45,6 +45,8 @@ export interface SignalDraft {
 	tradeId?: number | null
 	suppressed?: SuppressReason
 	alertSent?: boolean
+	/** Stop or target on the wrong side of entry (alert blocked; row flagged invalid_geometry). */
+	invalidGeometry?: boolean
 }
 
 export const newSignalDraft = (
@@ -247,6 +249,7 @@ export const buildSignalRow = (
 	if (isOptionSymbol(p.symbol)) flags.push('index_option_proxy')
 	if (!lv.parsed) flags.push('levels_default_rr')
 	if (g.regime_guessed) flags.push('regime_guessed')
+	if (d.invalidGeometry) flags.push('invalid_geometry')
 
 	return {
 		signal_id: d.signalId,

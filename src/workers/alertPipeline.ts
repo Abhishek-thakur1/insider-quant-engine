@@ -21,6 +21,7 @@ import {
 	computeSizing,
 	dispatchBlockReason,
 	getISTDateString,
+	levelGeometryProblem,
 	releaseAlertSlot,
 	reserveAlertSlot,
 	type AlertStore,
@@ -154,6 +155,20 @@ export const runAlertPipeline = async (
 			o.levels = lv
 		})
 
+		// Geometry guard (owner, 2026-10-21, scaled-down version): a stop or target on the
+		// wrong side of entry is still RECORDED (flagged invalid_geometry on the paper row
+		// and the signals row) but never ALERTED. No migration: the signals row keeps the
+		// existing catch-all suppression reason; the flag carries the cause.
+		const geometry = levelGeometryProblem({ side: data.side, entry, stop: stopLoss, target: target1 })
+		if (geometry) {
+			console.warn(
+				`⛔ [${data.side}] ${data.symbol} invalid geometry (${geometry}) — entry ${entry} stop ${stopLoss} target ${target1}; recorded as invalid_geometry, not alerted`,
+			)
+			note(obs, (o) => {
+				o.invalidGeometry = true
+			})
+		}
+
 		// Capital-constrained position sizing
 		const positionTracker = await deps.getTracker()
 		const sizing = computeSizing({
@@ -190,11 +205,19 @@ export const runAlertPipeline = async (
 			capitalGated: sizing.capitalGated,
 			actualSize: sizing.actualSize,
 			durationClass,
+			...(geometry ? { dataQuality: ['invalid_geometry'] } : {}),
 		})
 		note(obs, (o) => {
 			o.tradeRegistered = true
 			o.tradeId = tradeId
 		})
+
+		if (geometry) {
+			note(obs, (o) => {
+				o.suppressed = 'WORKER_ERROR'
+			})
+			return
+		}
 
 		// ── ALERT POLICY (Telegram only — never affects what is recorded) ──────
 		const block = dispatchBlockReason({
