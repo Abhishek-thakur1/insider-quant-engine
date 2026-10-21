@@ -1531,6 +1531,25 @@ Until the screener runs again, `anomaly_universe.json` does not exist: bench 0, 
 indicative, the swap must be an in-place unsubscribe/subscribe, and a throttle spends breach budget
 before the open.
 
+## 11.14 Nifty EMA trend study (2026-10-21, offline, report only — branch `backtest/full-report`)
+
+Pre-registered (`config/nifty_ema_study.json`, `backtest/studies/nifty-ema-trend/PREREGISTRATION.md`,
+committed before the run) and run once on 1,285 cached 5-minute sessions (2021-07-05 → 2026-09-07).
+Index points only, no option premium. "VWAP" is a TWAP proxy (the cached index volume is 0).
+
+| Piece | Where |
+|---|---|
+| Pure engine: EMA, session TWAP, V0 cross / V1 alignment / V2 pullback signals, stop-first exits, one position | `backtest/emaTrend.ts` |
+| Runner + report (reuses `compare.summarize`, day-block bootstrap, 10,000 resamples) | `backtest/emaStudy.ts` → `backtest/output/ema/` |
+| Tests: no look-ahead, hand-checked EMA/TWAP, stop-first, gap fill, 15:15 exit, skips | `tests/emaTrend.test.ts` |
+| Plain-language summary | `backtest/studies/nifty-ema-trend/SUMMARY.md` |
+
+**Result (no decision attached):** every variant is positive on trend days and negative on chop days
+(69% of sessions). Net E[R]: V1 −0.010 [−0.042, +0.024], V2 −0.013 [−0.046, +0.023], V0 −0.053;
+all negative at 2× cost. V1/V2 capture 13–17% of trend-day moves (the current detectors: 1–2%) at
+about 5 trades per session. Current Nifty detectors, ungated: Trend Pulse −0.280, ORB −0.313,
+VWAP Reclaim −1.003 R/trade. Nothing live changed.
+
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
 The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 

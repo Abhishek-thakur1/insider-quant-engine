@@ -99,7 +99,7 @@ const rowFor = (group: string, days: string[], res: RunResult, trades: Trade[], 
 	const tr = trades.filter((t) => ds.has(t.sessionDate))
 	const sl = res.signalLog.filter((s) => ds.has(s.sessionDate))
 	const s1 = summarize(tr.map((t) => lite(t)), days, SEED, ITER)
-	const s2 = summarize(tr.map((t) => lite(t, t.r2x)), days, SEED, 1)
+	const s2 = tr.some((t) => Number.isNaN(t.r2x)) ? null : summarize(tr.map((t) => lite(t, t.r2x)), days, SEED, 1)
 	let capture: number | null = null
 	if (withCapture) {
 		const shares = days
@@ -118,7 +118,7 @@ const rowFor = (group: string, days: string[], res: RunResult, trades: Trade[], 
 		winRate: s1.winRate,
 		expR: s1.expectancyR,
 		ci: s1.ci95,
-		expR2x: s2.expectancyR,
+		expR2x: s2 ? s2.expectancyR : null,
 		pf: s1.profitFactor,
 		maxDD: s1.maxDrawdownR,
 		best: tr.length ? Math.max(...tr.map((t) => t.r)) : null,
@@ -156,7 +156,7 @@ if (fs.existsSync(baselinePath)) {
 			const trades: Trade[] = sel.map((t) => ({
 				variant: det, side: t.side, sessionDate: t.sessionDate, entryIdx: 0, entryTs: t.entryTs, entry: t.entryPrice, stop: 0, risk: 1,
 				exitIdx: 0, exitTs: 0, exit: t.exitPrice, reason: 'TIME',
-				pts: t.side === 'LONG' ? t.exitPrice - t.entryPrice : t.entryPrice - t.exitPrice, r: t.r, r2x: t.r, holdMin: t.holdingMinutes,
+				pts: t.side === 'LONG' ? t.exitPrice - t.entryPrice : t.entryPrice - t.exitPrice, r: t.r, r2x: Number.NaN, holdMin: t.holdingMinutes, // harness R carries its own costs: no 2× re-costing
 			}))
 			const fake: RunResult = { trades, signals: trades.length, skippedOpenPosition: 0, skippedWideStop: 0, sessionEndGaps: [], signalLog: trades.map((t) => ({ sessionDate: t.sessionDate, side: t.side, outcome: 'TRADE' })) }
 			baselineRows.push({ detector: det, gated, rows: groupsFor(fake, trades).filter((r) => !r.group.startsWith('year ')) })
