@@ -1558,6 +1558,12 @@ all negative at 2× cost. V1/V2 capture 13–17% of trend-day moves (the current
 about 5 trades per session. Current Nifty detectors, ungated: Trend Pulse −0.280, ORB −0.313,
 VWAP Reclaim −1.003 R/trade. Nothing live changed.
 
+**Correction (same day):** the baselines carried the harness cost (5 bps/leg ≈ 15–25 index points) while
+V0–V2 paid 2.3 points. `backtest/emaCostSensitivity.ts` re-costs everything on one model at a time
+(`config/nifty_cost_models.json`: fixed 2.3 pts, futures ~14–17 pts, ATM option ~6 pts without theta;
+**none validated**). At 2.3 pts Trend Pulse is +0.078R [−0.01, +0.17] vs V1 −0.010R; under the futures
+model every strategy is negative. Output: `backtest/output/ema/cost-sensitivity.md`. Harness default unchanged.
+
 ## 11.15 SHORT direction: history and the real-path test (2026-10-21, branch `test/short-real-path`)
 
 - SHORT was paused in `9b109cb` (2026-09-16) and re-enabled in `f0d51fc` (2026-09-24) on the strength of
