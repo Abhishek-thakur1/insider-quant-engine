@@ -63,3 +63,17 @@ hold, share of the day's move captured on trend days (Σ signed trade points / |
 Current Nifty VWAP Reclaim, Opening Range Explosion and Trend Pulse through the existing harness on
 the same sessions (5-minute), ungated and gated with the filter score as it would have been. Their
 exits are the harness's own, so the comparison is per detector as built, not like-for-like exits.
+
+## Addendum — implementation notes, committed with the code BEFORE the first study run
+
+These fix details the text above left open. None was chosen after seeing study results; the
+baseline harness run (current detectors only) had run, the EMA variants had not.
+
+1. **Episode that begins before 09:30.** V1 enters on the first *in-window* bar of the episode
+   (so a trend in force from the open is tradable from 09:30). V2 only counts touches in-window.
+2. **Same-bar re-entry.** A signal on the bar where the previous position exits is skipped
+   (the position was open at that bar's start) and counted as "skipped: position open".
+3. **V2 spacing** is counted from the previous V2 *signal* bar in the episode, taken or not.
+4. **Capture** uses gross signed points (before cost); a trend session with no trade counts as 0.
+5. **Baselines** come from `backtest/run.ts run --detectors nifty_vwap_reclaim,nifty_opening_range_explosion,nifty_trend_pulse --label nifty_baselines_5m` (5-minute, BACKTEST_MODE). "Gated" = the harness's `gatePassed` (score ≥ 78 and hard gates).
+6. **Per-year rows** are computed for every year in the window; 2021 starts on 2021-07-05 (cache start).
