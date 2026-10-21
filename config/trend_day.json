@@ -1,0 +1,8 @@
+{
+	"version": 1,
+	"committedBeforeAnyRun": "2026-10-21 — fixed before the first trend-day study run; never tuned afterwards. A change is a second, labelled study.",
+	"source": "NIFTY50 daily bar (backtest cache res-D) of the session",
+	"definition": "R = high - low. trend-down: (close - open) <= -bodyFraction*R AND (close - low) <= closeFraction*R. trend-up: (close - open) >= bodyFraction*R AND (high - close) <= closeFraction*R. Otherwise chop (also when R = 0).",
+	"bodyFraction": 0.6,
+	"closeFraction": 0.25
+}

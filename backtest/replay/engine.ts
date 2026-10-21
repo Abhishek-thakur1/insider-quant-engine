@@ -108,6 +108,14 @@ export interface ReplayInputs {
 	barsBySymbol: Map<string, Bar[]>
 	/** Which detectors to run. Defaults to every backtestable one. */
 	specs?: DetectorSpec[]
+	/**
+	 * WARM-START variant (trend-day study): bars from BEFORE this session, fed only
+	 * into the shared candle buffer (candleAggregator) after the reset, so the
+	 * filter's structure / liquidity / order-flow scores have history from the
+	 * open. Live is COLD (the engine boots each morning with empty buffers), which
+	 * is the default here. Detectors' own candles and all other state stay cold.
+	 */
+	warmup?: Map<string, Bar[]>
 }
 
 /** Set immediately before awaiting a detector; read by the sink. */
@@ -129,6 +137,9 @@ export const replaySession = async (inputs: ReplayInputs): Promise<SessionResult
 	for (const symbol of [...equitySymbols, NIFTY_SYMBOL]) {
 		resetCandles(symbol)
 		resetStructure(symbol)
+	}
+	for (const [symbol, bars] of inputs.warmup ?? []) {
+		for (const bar of bars) for (const t of barToTicks(bar)) feedTick(symbol, t.price, symbol === NIFTY_SYMBOL ? 1 : t.volume, t.timestamp)
 	}
 
 	// ── 2. build detector instances ────────────────────────────────────────

@@ -25,9 +25,10 @@ A signal detection and alerting engine for NSE intraday, on the Fyers API, outpu
 
 ## Non-negotiables
 
-1. **Check the detector is live before editing it.** 17 of 26 classes are not wired in — 15
-   archived under `src/detectors/deprecated/`, 3 dormant in place. Grep
-   `src/ingestion/websocket.ts` for the class name first.
+1. **Check the detector is live before editing it.** 19 of 26 classes are not wired in — 16
+   archived under `src/detectors/deprecated/` (incl. GapAndGoMomentum, unwired 2026-09-07), 3
+   dormant in place. Live: 2 equity detectors (`buildEquityStack` in `websocket.ts`) + 5 Nifty
+   singletons (`NIFTY_STACK`). Grep `src/ingestion/websocket.ts` for the class name first.
 2. **Ignore the commented-out archive blocks** at the bottom of most files. They are previous
    versions, kept as history.
 3. **`trigger` strings are an interface, not prose.** The filter regex-parses `SL ₹x` / `T1 ₹y`

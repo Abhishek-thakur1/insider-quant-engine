@@ -127,6 +127,17 @@ const niftyVwapReclaim = new NiftyVwapReclaimDetector()
 const niftyOpeningRangeExpl = new NiftyOpeningRangeExplosionDetector()
 const deltaHedgingDetector = new DeltaHedgingPressureDetector()
 
+// The live Nifty stack, in the order analyze() is called below (AGENTS.md §4.1).
+const NIFTY_STACK = [niftyOpeningRangeExpl, niftyTrendPulse, niftyVwapReclaim, oiSweepDetector, deltaHedgingDetector]
+
+// The live EQUITY stack — the only per-symbol detectors that run (AGENTS.md §4.3).
+// Both wiring sites (boot and anomaly promotion) use this one factory, and the boot
+// banner reads EQUITY_STACK_NAMES, so the banner can no longer drift from what runs.
+// GapAndGoMomentum was unwired in e170317 (2026-09-07) and is archived; the rest
+// of the archived / dormant classes are listed in src/detectors/deprecated/README.md.
+const EQUITY_STACK_NAMES = ['Stock Momentum Breakout', 'Volatility Contraction'] as const
+const buildEquityStack = (symbol: string): IDetector[] => [new StockMomentumBreakoutDetector(symbol), new VolatilityContraction(symbol)]
+
 export const startLiveEngine = async () => {
 	console.log(`[Engine] 📡 Booting Institutional Quant Router with Jane Street Filter...`)
 
@@ -227,10 +238,7 @@ export const startLiveEngine = async () => {
 			.call(() => fetchAndSeedSymbol(symbol, getTodayString()))
 			.catch((e) => console.error(`[Scanner] ❌ VWAP seed failed for ${symbol}:`, (e as Error)?.message ?? e))
 
-		strategyRouter.set(symbol, [
-			new StockMomentumBreakoutDetector(symbol),
-			new VolatilityContraction(symbol),
-		])
+		strategyRouter.set(symbol, buildEquityStack(symbol))
 
 		// Cooldown / session-open keys carry TTLs and are deliberately NOT deleted:
 		// after a restart a symbol is promoted again, and wiping its cooldown let
@@ -244,10 +252,7 @@ export const startLiveEngine = async () => {
 	// ── Boot Cleanup & Strategy Routing ──────────────────────────────────────
 	await Promise.all(
 		activeUniverse.map(async (symbol) => {
-			strategyRouter.set(symbol, [
-				new StockMomentumBreakoutDetector(symbol),
-				new VolatilityContraction(symbol),
-			])
+			strategyRouter.set(symbol, buildEquityStack(symbol))
 
 			// Cooldown and session-open keys all have TTLs (≤ 8 h), so yesterday's
 			// have expired by morning. They are NOT deleted at boot: a mid-session
@@ -290,8 +295,8 @@ export const startLiveEngine = async () => {
 	}
 
 	console.log('[Engine] ✅ Full boot cleanup complete.')
-	console.log(`[Engine] 📡 Equity stack: 9 detectors × ${activeUniverse.length} stocks`)
-	console.log('[Engine] 📡 Nifty stack:  OI Sweep + Value Zone + Delta Hedging')
+	console.log(`[Engine] 📡 Equity stack: ${EQUITY_STACK_NAMES.length} detectors (${EQUITY_STACK_NAMES.join(' + ')}) × ${activeUniverse.length} stocks`)
+	console.log(`[Engine] 📡 Nifty stack: ${NIFTY_STACK.length} detectors (${NIFTY_STACK.map((d) => d.name).join(' + ')})`)
 	console.log(
 		'[Engine] 🧮 JaneStreetFilter ACTIVE — all signals gated (Regime → Bayes → EV → Kelly)',
 	)

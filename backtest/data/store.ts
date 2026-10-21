@@ -153,3 +153,57 @@ export const cacheReport = (): { resolution: string; symbols: number; bars: numb
 			return { resolution: d.replace('res-', ''), symbols: files.length, bars }
 		})
 }
+
+// ── Derived resolutions ──────────────────────────────────────────────────────
+const IST_OFFSET_MS = 5.5 * 3600 * 1000
+const SESSION_OPEN_MIN = 9 * 60 + 15
+
+/**
+ * Aggregate 1-minute bars into N-minute bars aligned to the NSE session
+ * (09:15, 09:20, … IST): open = first open, high = max, low = min, close =
+ * last close, volume = sum, t = bucket start. Exact — no interpolation — so
+ * 5-minute bars derived from the cached 1-minute history cost zero API calls.
+ */
+export const aggregateBars = (bars: Bar[], minutes: number): Bar[] => {
+	const out: Bar[] = []
+	let cur: Bar | null = null
+	let curKey = NaN
+	for (const b of bars) {
+		const ist = b.t + IST_OFFSET_MS
+		const dayStart = ist - (ist % 86_400_000)
+		const minOfDay = Math.floor((ist - dayStart) / 60_000)
+		const bucket = Math.floor((minOfDay - SESSION_OPEN_MIN) / minutes)
+		const key = dayStart + bucket
+		if (key !== curKey) {
+			if (cur) out.push(cur)
+			curKey = key
+			const startMin = SESSION_OPEN_MIN + bucket * minutes
+			cur = { t: dayStart - IST_OFFSET_MS + startMin * 60_000, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v }
+		} else {
+			cur!.h = Math.max(cur!.h, b.h)
+			cur!.l = Math.min(cur!.l, b.l)
+			cur!.c = b.c
+			cur!.v += b.v
+		}
+	}
+	if (cur) out.push(cur)
+	return out
+}
+
+/** Write res-<to> series for every res-<from> series in the cache. Returns per-symbol bar counts. */
+export const deriveResolution = (from: string, to: string, minutes: number): { symbol: string; bars: number }[] => {
+	const dir = path.join(DATA_DIR, `res-${from}`)
+	if (!fs.existsSync(dir)) return []
+	const out: { symbol: string; bars: number }[] = []
+	for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json') && !x.endsWith('.coverage.json'))) {
+		const src = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as SymbolSeries
+		const agg = aggregateBars(src.bars, minutes)
+		const p = seriesPath(src.symbol, to)
+		fs.mkdirSync(path.dirname(p), { recursive: true })
+		fs.writeFileSync(p, JSON.stringify({ symbol: src.symbol, resolution: to, bars: agg, fetchedAt: src.fetchedAt, derivedFrom: `res-${from}` }))
+		const cov = loadCoverage(src.symbol, from)
+		if (cov.length) fs.writeFileSync(coveragePath(src.symbol, to), JSON.stringify(cov))
+		out.push({ symbol: src.symbol, bars: agg.length })
+	}
+	return out
+}
