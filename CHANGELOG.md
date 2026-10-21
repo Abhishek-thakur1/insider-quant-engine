@@ -2,6 +2,12 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased — `feat/ema-shadow` (not merged, not deployed)
+
+- **The Nifty EMA study now runs live in shadow** (AGENTS.md §11.16). V0/V1/V2 run on 5-minute candles built from ticks. It writes JSONL trades and a 15:15 daily summary, with no alerts, no filter, no paper trades, no migration and no Fyers calls. Kill switch: `EMA_SHADOW_ENABLED=false`.
+- One engine for study and live: `src/core/emaTrend.ts`, re-exported by `backtest/emaTrend.ts`. Parameters come from `config/nifty_ema_study.json`.
+- Parity test: the live detector, fed tick by tick from real cached minutes, matches the study trade for trade (177 trades, 15 sessions).
+
 ## Unreleased — `fix/engine-graceful-stop` (not merged, not deployed)
 
 - **The engine now shuts down cleanly on `docker stop`** (AGENTS.md §1.1). The compose command ends with `exec node --import tsx src/ingestion/websocket.ts`, plus `stop_grace_period: 20s`. Before, `sh` was PID 1 and every 15:30 stop was a SIGKILL (exit 137), so the signals flush never ran.

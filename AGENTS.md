@@ -1163,6 +1163,7 @@ version live in `backtest/core/symbolClass.ts`, with a test pinning the five aff
 | `HTF_TREND:{sym}` | `BULLISH\|BEARISH` | — | **nothing** | `BaseDetector.isDailyTrendAligned` |
 | `alert:sent:{IST-date}:{detector}:{symbol}` | timestamp (SET NX) | 36 h | `alertPolicy.reserveAlertSlot` | itself — one Telegram alert per detector+symbol per day. Nifty option symbols dedup on `NIFTY`. **Never cleared at boot.** |
 | `alert:count:{IST-date}` | counter | 36 h | `alertPolicy.reserveAlertSlot` | itself — daily cap. **Never cleared at boot.** |
+| `ema_shadow:nifty:bars5` | list of closed 5-min Nifty candles (JSON `{t,o,h,l,c}`), capped at 1,500 | none | `NiftyEmaShadow` (`redisBarStore`) | itself at boot — EMA warm-up history. **Never cleared at boot** (listed in the boot-cleanup comment). |
 
 > **2026-10-06:** cooldown keys (`cooldown:*`, `v2:cooldown:*`, `v2:session_open:*`) are **no
 > longer deleted at boot or on anomaly promotion**. They are TTL'd (≤ 8 h), so yesterday's have
@@ -1210,6 +1211,8 @@ SHADOW_MODE=false           # read directly via process.env in janeStreetFilter 
 CONFIRMATION_THRESHOLD=78   # read directly via process.env in janeStreetFilter
 SUBSCRIPTION_CAP=100        # data-socket symbol cap checked at engine boot (Fyers Standard = 100); invalid → 100
 NIFTY_OPTIONS_ENABLED=false # subscribe Nifty option strikes (30); off until the Thursday→Tuesday expiry fix
+EMA_SHADOW_ENABLED=true     # Nifty EMA study in shadow (no alerts/filter/trades); 'false' turns it off
+EMA_SHADOW_DIR=/app/data/ema_shadow  # JSONL output, one file per IST day (screener_data volume)
 ```
 
 `env.ts` hard-fails (`process.exit(1)`) if `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHANNEL_ID`,
@@ -1581,6 +1584,30 @@ model every strategy is negative. Output: `backtest/output/ema/cost-sensitivity.
   with SL on the wrong side passes through unchecked.
 - **Proposed, not wired:** `levelGeometryProblem()` in `src/workers/alertPolicy.ts` (stop and target must
   bracket entry correctly). If approved it would suppress dispatch, not recording. Behaviour unchanged.
+
+## 11.16 Nifty EMA study in SHADOW (2026-10-21, branch `feat/ema-shadow`)
+
+Owner spec: the pre-registered study (§11.14) runs live in shadow. **No Telegram, no JaneStreetFilter, no
+`paper_trades` rows, no migration, no Fyers calls.** Not an alerting detector and not in `NIFTY_STACK`.
+
+| Piece | Where |
+|---|---|
+| One engine for study and live: `backtest/emaTrend.ts` moved to `src/core/emaTrend.ts` (backtest re-exports it); parameters from `config/nifty_ema_study.json` via `studyParams` / `studyVariants` (the study runner uses the same helpers) | `src/core/emaTrend.ts` |
+| 5-min candles from Nifty ticks, aligned to 09:15 IST like `aggregateBars`; ticks outside 09:15–15:30 ignored. On each candle close: `runVariant` over stored history + today for V0/V1/V2; a trade is written once its exit is final (STOP / STOP_GAP / TRAIL / TIME) | `src/detectors/shadow/niftyEmaShadow.ts` |
+| Output: `/app/data/ema_shadow/<IST-date>.jsonl` — `trade` rows (variant, side, entry/exit time and price, stop, risk, points, R at 2.3 pts, exit reason, skips so far) and a `summary` row at the 15:15 candle; a `[EmaShadow] 📊` log line | same |
+| Warm-up as the study: continuous SMA-seeded EMAs over stored candles, per-session VWAP proxy. History = the engine's own closed candles in Redis (`ema_shadow:nifty:bars5`, §7), no REST. `warmup_partial` while < 200 candles precede the session; `bars_incomplete` after a gap or a mid-candle boot. Restart-safe (dedupe by key from the day's file) | same |
+| Wiring: built at boot after the Redis cleanup (boot line `[EmaShadow] 🧪 ACTIVE …`), fed from the Nifty route inside a try/catch; kill switch `EMA_SHADOW_ENABLED=false` | `src/ingestion/websocket.ts` |
+| Tests: parity (live, tick by tick from real cached minutes, == study: 177 trades, 15 sessions), no look-ahead, 15:15, warm-up flag, restart, candle alignment, isolation; engine fixtures (EMA/VWAP hand-checked, stop-first, gap fill, >80 skip) in `tests/emaTrend.test.ts` | `tests/niftyEmaShadow.test.ts`, `tests/fixtures/nifty_1m_2026-06-01_to_06-24.json.gz` |
+
+**Full-cache parity (local, 2026-10-21, not a committed test):** the live detector fed all 479,801 cached minutes
+tick by tick → 14,807 of 14,876 trades identical; all 69 differences trace to two cache artifacts the live path
+cannot see: Diwali Muhurat evening bars (2021-11-04, 2022-10-24, 2023-11-12, 2024-11-01; the study's continuous
+EMAs include them, the live detector ignores ticks outside 09:15–15:30) and 174 malformed 1-minute bars (high
+below open/close). With those removed/repaired identically on both sides: **14,839 / 14,839 identical, 0 differing.**
+The published study (§11.14) includes those artifacts; the effect on its tables is small but unmeasured.
+
+First live session (2026-10-22) has **no stored candles** (the code did not run on Oct 21), so every row
+that day is `warmup_partial`; EMAs seed from that day's first 20–21 candles (≈ 10:55).
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 

@@ -17,6 +17,7 @@ import {
 	RESTART_COUNTER_TTL_SECS,
 } from '../core/sessionGuard.js'
 import { formatTickStats, newTickStats, sampleOf } from '../core/tickStats.js'
+import { NiftyEmaShadow, emaShadowEnabled, jsonlWriter, redisBarStore } from '../detectors/shadow/niftyEmaShadow.js'
 import { describePlan, planSubscription, subscriptionCapFromEnv } from '../core/subscriptionPlan.js'
 import { exitIfNotTradingDay } from '../core/tradingDayGate.js'
 import { notifyAdmin } from '../utils/adminNotify.js'
@@ -281,7 +282,25 @@ export const startLiveEngine = async () => {
 		// un-dated hash only.
 		redisClient.del('jsfilter:stats'),
 		redisClient.del('pnl:daily'),
+		// ema_shadow:nifty:bars5 is NOT cleared: it is the EMA shadow's warm-up
+		// history (its own closed 5-min candles, capped at MAX_STORED_BARS).
 	])
+
+	// EMA trend study in SHADOW (owner spec 2026-10-21): no alerts, no filter,
+	// no paper trades. Kill switch EMA_SHADOW_ENABLED=false.
+	let emaShadow: NiftyEmaShadow | null = null
+	if (emaShadowEnabled(process.env.EMA_SHADOW_ENABLED)) {
+		try {
+			const cfg = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'config', 'nifty_ema_study.json'), 'utf8'))
+			emaShadow = new NiftyEmaShadow(cfg, redisBarStore(redisClient), jsonlWriter(process.env.EMA_SHADOW_DIR || '/app/data/ema_shadow'))
+			await emaShadow.init(Date.now())
+		} catch (err) {
+			emaShadow = null
+			console.error('[EmaShadow] ❌ Could not start — shadow disabled for this session (engine unaffected):', err)
+		}
+	} else {
+		console.log('[EmaShadow] ⏸️ Disabled (EMA_SHADOW_ENABLED=false)')
+	}
 
 	// Prime the in-memory Nifty reference from the seeded value so bias checks
 	// work from the very first tick rather than waiting a full minute.
@@ -323,6 +342,13 @@ export const startLiveEngine = async () => {
 				if (lastNiftyVwap > 0) await updateNiftyBias(rawTick.ltp, lastNiftyVwap)
 
 				feedTick(NIFTY_SYMBOL, rawTick.ltp, liveTick.volume)
+
+				// Shadow only; a failure here must never touch the live Nifty stack.
+				try {
+					emaShadow?.onTick(rawTick.ltp, liveTick.timestamp)
+				} catch (e) {
+					console.error('[EmaShadow] ❌ Tick error (shadow only):', e)
+				}
 
 				await niftyOpeningRangeExpl.analyze(liveTick)
 				await niftyTrendPulse.analyze(liveTick)

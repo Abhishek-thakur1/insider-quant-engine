@@ -14,7 +14,7 @@ import path from 'node:path'
 
 import { summarize, MIN_SAMPLE, type TradeLite } from './compare.js'
 import { labelSession, loadTrendDayConfig, type SessionLabel } from './trendDay.js'
-import { runVariant, toSessionBars, type Bar, type RunResult, type StudyParams, type Trade, type VariantSpec } from './emaTrend.js'
+import { runVariant, studyParams, studyVariants, toSessionBars, type Bar, type RunResult, type StudyParams, type Trade, type VariantSpec } from './emaTrend.js'
 
 const ROOT = process.cwd()
 const OUT = path.join(ROOT, 'backtest', 'output', 'ema')
@@ -25,27 +25,13 @@ const loadBars = (res: string): Bar[] => {
 	return j.bars.slice().sort((a, b) => a.t - b.t)
 }
 
-const P: StudyParams = {
-	barMinutes: Number(cfg.data.intradayResolution),
-	entryFirstCloseMinute: cfg.session.entryFirstCloseMinute,
-	entryLastCloseMinute: cfg.session.entryLastCloseMinute,
-	forcedExitCloseMinute: cfg.session.forcedExitCloseMinute,
-	slopeLookbackBars: cfg.indicators.slopeLookbackBars,
-	stopLookbackBars: cfg.exits.stopLookbackBars,
-	stopBufferPts: cfg.exits.stopBufferPts,
-	maxStopPts: cfg.exits.maxStopPts,
-	roundTripPts: cfg.costs.roundTripPts,
-	costMultiplier: cfg.costs.sensitivityMultiplier,
-	touchPct: cfg.variants.V2.touchPct,
-	minBarsBetweenEntries: cfg.variants.V2.minBarsBetweenEntries,
-}
+// Same mapping the live shadow detector uses (src/core/emaTrend.ts).
+const P: StudyParams = studyParams(cfg)
 const SEED: number = cfg.statistics.seed
 const ITER: number = cfg.statistics.resamples
 
 const VARIANTS: { spec: VariantSpec; robustness: boolean }[] = [
-	{ spec: { id: 'V0', label: 'V0 crossover 9/21', fast: cfg.variants.V0.fast, slow: cfg.variants.V0.slow, trendEma: 20 }, robustness: false },
-	{ spec: { id: 'V1', label: 'V1 alignment (EMA20)', trendEma: cfg.variants.V1.ema }, robustness: false },
-	{ spec: { id: 'V2', label: 'V2 pullback (EMA20)', trendEma: cfg.variants.V2.ema }, robustness: false },
+	...studyVariants(cfg).map((spec) => ({ spec, robustness: false })),
 	...(cfg.robustness.emaVariants as number[]).flatMap((n) => [
 		{ spec: { id: 'V1' as const, label: `V1 alignment (EMA${n}) [robustness]`, trendEma: n }, robustness: true },
 		{ spec: { id: 'V2' as const, label: `V2 pullback (EMA${n}) [robustness]`, trendEma: n }, robustness: true },

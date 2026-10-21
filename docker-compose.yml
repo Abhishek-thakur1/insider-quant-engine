@@ -90,7 +90,7 @@ services:
     stop_grace_period: 20s
     volumes:
       - token_store:/app/token
-      - screener_data:/app/data # read-only use: watchlist.json, watchlist_meta.json, universe_stats.json
+      - screener_data:/app/data # reads watchlist.json, watchlist_meta.json, anomaly_universe.json; writes ema_shadow/<date>.jsonl (EMA shadow)
       - /app/node_modules
     env_file:
       - .env
