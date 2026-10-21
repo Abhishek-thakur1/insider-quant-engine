@@ -32,7 +32,7 @@ import { DATA, METRICS, NIFTY_SYMBOL, OUTPUT_DIR, SIM, filterEnvSnapshot } from 
 import { installVirtualClock, istDateStringOf, istEpoch, realNow } from './core/clock.js'
 import { installMemoryRedis } from './core/memoryRedis.js'
 import { REGISTRY, notBacktestable, type DetectorSpec } from './registry.js'
-import { barsInRange, cacheReport, ensureDirs, loadSeries, type Bar } from './data/store.js'
+import { barsInRange, cacheReport, deriveResolution, ensureDirs, loadSeries, type Bar } from './data/store.js'
 import { fetchUniverse } from './data/fyersClient.js'
 import { replaySession } from './replay/engine.js'
 import { resolveUnderlying, simulateExit, type SimulatedTrade } from './sim/exit.js'
@@ -117,6 +117,11 @@ interface RunOptions {
 	label?: string
 	/** Multi-day SMB ledger (off by default — see header). */
 	multiday?: boolean
+	/** Session window (IST dates, inclusive). Used to reproduce an earlier run exactly. */
+	from?: string
+	to?: string
+	/** Warm-start variant: pre-load the previous session's last N five-minute candles into the candle buffer. */
+	warmCandles?: number
 }
 
 const cmdRun = async (dayLimit?: number, targetDetectors?: string[], opts: RunOptions = {}): Promise<void> => {
@@ -137,7 +142,9 @@ const cmdRun = async (dayLimit?: number, targetDetectors?: string[], opts: RunOp
 	const listed = perDay
 	const symbols = listed ? [...new Set(Object.values(listed).flat())] : loadWatchlist()
 	const allDays = listed ? tradingDays().filter((d) => listed[d]) : tradingDays(dayLimit)
-	const days = listed && dayLimit ? allDays.slice(-dayLimit) : allDays
+	const windowed = allDays.filter((d) => (!opts.from || d >= opts.from) && (!opts.to || d <= opts.to))
+	const days = dayLimit ? windowed.slice(-dayLimit) : windowed
+	const allTradingDays = tradingDays()
 	const multiday = opts.multiday === true
 	console.log(`[run] universe: ${opts.universeList ?? 'watchlist.json (static)'} · ${DATA.intradayResolution}-minute bars · multi-day SMB ledger ${multiday ? 'ON' : 'OFF'}`)
 
@@ -191,7 +198,20 @@ const cmdRun = async (dayLimit?: number, targetDetectors?: string[], opts: RunOp
 			}
 			if (!barsBySymbol.has(NIFTY_SYMBOL)) continue // no index data ⇒ cannot judge context
 
-			const result = await replaySession({ sessionDate: day, barsBySymbol, specs })
+			let warmup: Map<string, Bar[]> | undefined
+			if (opts.warmCandles && opts.warmCandles > 0) {
+				const prev = allTradingDays[allTradingDays.indexOf(day) - 1]
+				if (prev) {
+					const perCandle = Math.max(1, Math.round(5 / Number(DATA.intradayResolution)))
+					warmup = new Map()
+					const pStart = istEpoch(prev, 0)
+					for (const symbol of barsBySymbol.keys()) {
+						const pb = barsInRange(seriesCache.get(symbol) ?? [], pStart, pStart + DAY_MS)
+						if (pb.length) warmup.set(symbol, pb.slice(-opts.warmCandles * perCandle))
+					}
+				}
+			}
+			const result = await replaySession({ sessionDate: day, barsBySymbol, specs, ...(warmup ? { warmup } : {}) })
 			acc.sessionsReplayed++
 			acc.barsReplayed += result.barsReplayed
 			acc.ticksDispatched += result.ticksDispatched
@@ -291,6 +311,8 @@ const cmdRun = async (dayLimit?: number, targetDetectors?: string[], opts: RunOp
 			resolution: DATA.intradayResolution,
 			universe: opts.universeList ?? 'watchlist.json (static)',
 			multidayLedger: multiday,
+			warmCandles: opts.warmCandles ?? 0,
+			window: { from: opts.from ?? null, to: opts.to ?? null },
 			label: opts.label ?? null,
 			barsReplayed: acc.barsReplayed,
 			ticksDispatched: acc.ticksDispatched,
@@ -462,6 +484,12 @@ const main = async (): Promise<void> => {
 	const lb = flag('--label')
 	if (ul) runOpts.universeList = ul
 	if (lb) runOpts.label = lb
+	const fr = flag('--from')
+	const tt = flag('--to')
+	const wc = flag('--warm-candles')
+	if (fr) runOpts.from = fr
+	if (tt) runOpts.to = tt
+	if (wc) runOpts.warmCandles = Number(wc)
 
 	if (['fetch', 'fetch-daily-all', 'fetch-intraday'].includes(cmd ?? '') && !rest.includes('--allow-market-hours')) {
 		const why = marketWindowViolation(Date.now())
@@ -494,6 +522,12 @@ const main = async (): Promise<void> => {
 		case 'fetch-intraday':
 			await cmdFetchIntraday()
 			break
+		case 'derive-5m': {
+			const out = deriveResolution('1', '5', 5)
+			console.log(`[derive-5m] ${out.length} series written to res-5 (exact aggregation of res-1; zero API calls)`)
+			for (const o of out.slice(0, 3)) console.log(`  ${o.symbol}: ${o.bars.toLocaleString()} bars`)
+			break
+		}
 		case 'compare':
 			cmdCompare((flag('--labels') ?? 'old,new,random1,random2,random3').split(','))
 			break
