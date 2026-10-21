@@ -1,0 +1,56 @@
+{
+	"version": 1,
+	"study": "nifty-ema-trend",
+	"committedBeforeAnyRun": "2026-10-21 — fixed before the first run of this study; never tuned afterwards. A change is a second, labelled run.",
+	"data": {
+		"symbol": "NSE:NIFTY50-INDEX",
+		"intradayResolution": "5",
+		"dailyResolution": "D",
+		"note": "Backtest cache only (backtest/data/cache/res-5 and res-D). No Fyers calls."
+	},
+	"session": {
+		"openMinute": 555,
+		"entryFirstCloseMinute": 570,
+		"entryLastCloseMinute": 885,
+		"forcedExitCloseMinute": 915,
+		"note": "Minutes after midnight IST. A 5-minute bar starting at s closes at s+5. Entries only on bars whose CLOSE time is in [09:30, 14:45]. The bar closing at 15:15 (starting 15:10) is the forced exit; if a session has no such bar, the last bar of the session is used and counted as a data gap."
+	},
+	"indicators": {
+		"emaSeeding": "EMA(n) runs continuously across sessions on 5-minute closes, seeded with the SMA of the first n closes of the dataset; alpha = 2/(n+1). Values at bar t use closes up to and including t.",
+		"vwapProxy": "Index volume is 0 in the cache, so VWAP is not computable. 'VWAP' = the session's running equal-weight mean of 5-minute typical price (H+L+C)/3 from 09:15 up to and including bar t (a TWAP). The live engine also has no index volume and uses a tick-weighted reference; the two differ. Stated next to every result.",
+		"slopeLookbackBars": 3
+	},
+	"variants": {
+		"V0": { "label": "plain crossover", "fast": 9, "slow": 21, "rule": "LONG when EMA9 crosses above EMA21 at bar close (prev EMA9 <= EMA21, now >); SHORT mirror. No filters." },
+		"V1": { "label": "trend alignment", "ema": 20, "rule": "SHORT when close < EMA20 AND EMA20[t] < EMA20[t-3] AND close < VWAP; LONG mirror. Enter at the close of the first bar of an alignment episode (episode = consecutive bars where all three hold)." },
+		"V2": { "label": "pullback rejection", "ema": 20, "touchPct": 0.05, "minBarsBetweenEntries": 3, "rule": "While V1 alignment holds at bar t (SHORT): high[t] >= level*(1-0.0005) AND close[t] < level, for level = EMA20 or VWAP; enter at close[t]. LONG mirror (low[t] <= level*(1+0.0005) AND close[t] > level). Several entries per episode, each at least 3 bars after the previous V2 entry in that episode." }
+	},
+	"robustness": {
+		"label": "Allowed robustness check — reported separately, never used to select",
+		"emaVariants": [10, 30],
+		"applyTo": ["V1", "V2"],
+		"rule": "The 20 EMA is replaced by EMA n everywhere it appears for that run: alignment, slope, pullback level and trailing exit."
+	},
+	"exits": {
+		"stopLookbackBars": 4,
+		"stopBufferPts": 5,
+		"maxStopPts": 80,
+		"stopRule": "SHORT: max(high of bars t-3..t) + 5; LONG: min(low of bars t-3..t) - 5. Skip the signal (counted) if |entry - stop| > 80 points.",
+		"trail": "Exit at the close of the first bar after entry that closes through the trailing EMA against the position (SHORT: close > EMA; LONG: close < EMA). V0 trails on EMA20.",
+		"stopFirst": "From bar t+1 on, the stop is checked before anything else in each bar. If the bar opens beyond the stop, the fill is the open (worse); otherwise the stop.",
+		"timeExit": "Close of the 15:15 bar.",
+		"oneOpenPosition": "A signal while a position is open is skipped and counted (not queued)."
+	},
+	"costs": { "roundTripPts": 2.3, "sensitivityMultiplier": 2 },
+	"rUnit": "R = (signed points - cost) / initial risk points, risk = |entry - stop|.",
+	"statistics": {
+		"ci": "95% day-block bootstrap of expectancy R (backtest/compare.ts summarize: whole sessions resampled with replacement)",
+		"resamples": 10000,
+		"seed": 20261021,
+		"minSample": 30,
+		"minCiDays": 10,
+		"timeSplit": [["2021", "2024"], ["2025", "2026"]]
+	},
+	"labels": "config/trend_day.json (unchanged): trend-down / trend-up / chop from the res-D bar of each session. End-of-day information — evaluation only, never used for entries.",
+	"baselines": "Current Nifty VWAP Reclaim, Opening Range Explosion and Trend Pulse detectors through the existing harness (backtest/run.ts --detectors ..., 5-minute), ungated and gated with the filter score as it would have been. Their exits are the harness's, not the study's."
+}
