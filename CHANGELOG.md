@@ -2,6 +2,10 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased — `feat/geometry-guard` (not merged, not deployed; owner: not before 2026-10-22 close)
+
+- **Geometry guard, scaled-down** (AGENTS.md §11.15): a wrong-side stop or target is recorded, flagged `invalid_geometry` on the paper and signals rows, and logged, but not alerted. No migration, no API or dashboard change. Daily count query in the RUNBOOK. The REAL-PATH tests now expect the trade to be recorded and flagged, with no alert.
+
 ## Unreleased — `test/short-real-path` (not merged, not deployed; no behaviour change)
 
 - **Real-path direction tests** (AGENTS.md §11.15) in `tests/alertPipeline.test.ts`: SHORT and LONG with entry below, at and above VWAP through the real `runAlertPipeline`. They pin a known defect: a wrong-side entry gets a wrong-side stop and is still alerted.

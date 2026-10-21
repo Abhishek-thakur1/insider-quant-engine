@@ -18,6 +18,8 @@ export interface OpenPosition {
 	capitalGated?: boolean
 	actualSize?: number
 	durationClass?: 'INTRADAY' | 'SWING'
+	/** Extra provenance flags for the paper row (e.g. invalid_geometry from the alert pipeline). */
+	dataQuality?: string[]
 }
 
 export interface ClosedPosition extends OpenPosition {
@@ -102,7 +104,8 @@ class PositionTracker {
 
 		// Insert into Postgres. Capital-skipped signals (actual size 0) go in as
 		// SKIPPED, not OPEN — they are not positions (see positionStatus.ts).
-		const { status, dataQuality } = insertStatusFor(pos)
+		const { status, dataQuality: statusFlags } = insertStatusFor(pos)
+		const dataQuality = [...statusFlags, ...(pos.dataQuality ?? [])]
 		let tradeId: number | null = null
 		try {
 			const ins = await pool.query(

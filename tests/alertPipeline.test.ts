@@ -84,20 +84,24 @@ test('SEND_FAILED releases the reserved alert slot (unchanged behaviour)', async
 import { decision as passedDecision, type Scenario } from './helpers/workerScenarios.js'
 import { levelGeometryProblem } from '../src/workers/alertPolicy.js'
 
-type Pos = { side: string; entryPrice: number; stopLoss: number; target: number }
+type Pos = { side: string; entryPrice: number; stopLoss: number; target: number; dataQuality?: string[] }
 
 const realPath = async (side: 'LONG' | 'SHORT', price: number, vwap: number, symbol = 'NSE:TEST-EQ', trigger = 'x | SL ₹496 | T1 ₹506') => {
+	const payload = { ...equity, symbol, side, price, vwap, trigger }
 	const sc: Scenario = {
 		name: `real-path ${side} ${price} vs VWAP ${vwap}`,
-		payload: { ...equity, symbol, side, price, vwap, trigger },
+		payload,
 		decision: passedDecision(),
 		golden: { registered: true, sends: 1, delivered: true, admin: false },
 		row: {},
 	}
-	const effects = await runPipeline(sc, null)
+	const draft = newSignalDraft(payload, { signalId: '00000000-0000-4000-8000-000000000001', firedAt: NOW, shadowMode: false })
+	const effects = await runPipeline(sc, draft)
 	const reg = effects.find((e) => e[0] === 'registerTrade')
 	const sends = effects.filter((e) => e[0] === 'send').map((e) => String(e[2]))
-	return { pos: reg ? (reg[1] as Pos) : null, sends }
+	const warns = effects.filter((e) => e[0] === 'console.warn').map((e) => JSON.stringify(e[1]))
+	const row = buildSignalRow(draft, { threshold: 78, promotionSource: /NIFTY/.test(symbol) ? 'INDEX' : 'SCREENER' })
+	return { pos: reg ? (reg[1] as Pos) : null, sends, warns, row }
 }
 
 const geometryOk = (p: Pos) => levelGeometryProblem({ side: p.side as 'LONG' | 'SHORT', entry: p.entryPrice, stop: p.stopLoss, target: p.target }) === null
@@ -108,8 +112,8 @@ for (const [side, price, vwap] of [
 	['LONG', 505, 499], // entry above VWAP — intended LONG case
 	['LONG', 499, 499], // entry at VWAP
 ] as const) {
-	test(`REAL-PATH ${side}: entry ${price} vs VWAP ${vwap} → correct side, registered and alerted`, async () => {
-		const { pos, sends } = await realPath(side, price, vwap)
+	test(`REAL-PATH ${side}: entry ${price} vs VWAP ${vwap} → correct side, registered and alerted, no flag`, async () => {
+		const { pos, sends, row } = await realPath(side, price, vwap)
 		assert.ok(pos, 'registered')
 		assert.equal(pos.side, side)
 		assert.equal(pos.entryPrice, price)
@@ -119,33 +123,41 @@ for (const [side, price, vwap] of [
 		if (side === 'SHORT') assert.ok(pos.target < price && price < pos.stopLoss)
 		else assert.ok(pos.stopLoss < price && price < pos.target)
 		assert.equal(sends.length, 1)
+		assert.equal(pos.dataQuality, undefined, 'valid geometry adds no flag (legacy parity unchanged)')
+		assert.ok(!(row.data_quality as string[]).includes('invalid_geometry'))
+		assert.equal(row.alert_sent, true)
 	})
 }
 
-// KNOWN DEFECT, pinned (not fixed): entry on the wrong side of VWAP puts the stop on the wrong side of entry,
-// and the trade is still registered and alerted. The proposed levelGeometryProblem() flags it; nothing calls it yet.
+// GEOMETRY GUARD (owner, 2026-10-21, scaled-down): an entry on the wrong side of VWAP puts the stop on the wrong
+// side of entry. Before the guard this was registered AND alerted. Now: recorded and flagged, logged, never alerted.
 for (const [side, price, vwap] of [
 	['SHORT', 505, 499], // SHORT above VWAP: stop 499.998 is BELOW entry 505
 	['LONG', 495, 499], // LONG below VWAP: stop 498.002 is ABOVE entry 495
 ] as const) {
-	test(`REAL-PATH ${side} adversarial: entry ${price} vs VWAP ${vwap} → stop on the WRONG side, still alerted (known defect)`, async () => {
-		const { pos, sends } = await realPath(side, price, vwap)
-		assert.ok(pos)
+	test(`REAL-PATH ${side} adversarial: entry ${price} vs VWAP ${vwap} → recorded + flagged invalid_geometry, NOT alerted`, async () => {
+		const { pos, sends, warns, row } = await realPath(side, price, vwap)
+		assert.ok(pos, 'still recorded as a paper trade')
 		if (side === 'SHORT') assert.ok(pos.stopLoss < price, `stop ${pos.stopLoss} vs entry ${price}`)
 		else assert.ok(pos.stopLoss > price, `stop ${pos.stopLoss} vs entry ${price}`)
-		assert.equal(sends.length, 1, 'alerted today — the proposed guard would suppress this')
-		assert.equal(levelGeometryProblem({ side, entry: pos.entryPrice, stop: pos.stopLoss, target: pos.target }), 'STOP_WRONG_SIDE')
+		assert.deepEqual(pos.dataQuality, ['invalid_geometry'])
+		assert.equal(sends.length, 0, 'no Telegram send')
+		assert.ok(warns.some((w) => w.includes('invalid geometry (STOP_WRONG_SIDE)')), 'logged')
+		assert.ok((row.data_quality as string[]).includes('invalid_geometry'), 'signals row flagged')
+		assert.equal(row.alert_sent, false)
+		assert.equal(row.alert_suppressed_reason, 'WORKER_ERROR', 'no migration: existing catch-all reason, cause in the flag')
+		assert.equal(row.trade_id, 42)
 	})
 }
 
-test('REAL-PATH option SHORT adversarial: trigger SL below entry is passed through unchecked (known defect)', async () => {
-	// Option alerts take SL/T1 from the trigger text. A SHORT trigger with SL below entry is not caught.
-	const { pos, sends } = await realPath('SHORT', 25000, 24990, 'NIFTY 25000 PE', 'bad | SL ₹24950 | T1 ₹24900')
+test('REAL-PATH option SHORT adversarial: trigger SL below entry → recorded + flagged, NOT alerted', async () => {
+	// Option alerts take SL/T1 from the trigger text; the guard covers that path too.
+	const { pos, sends, row } = await realPath('SHORT', 25000, 24990, 'NIFTY 25000 PE', 'bad | SL ₹24950 | T1 ₹24900')
 	assert.ok(pos)
 	assert.equal(pos.stopLoss, 24950)
-	assert.ok(pos.stopLoss < pos.entryPrice)
-	assert.equal(sends.length, 1)
-	assert.equal(levelGeometryProblem({ side: 'SHORT', entry: pos.entryPrice, stop: pos.stopLoss, target: pos.target }), 'STOP_WRONG_SIDE')
+	assert.deepEqual(pos.dataQuality, ['invalid_geometry'])
+	assert.equal(sends.length, 0)
+	assert.ok((row.data_quality as string[]).includes('invalid_geometry'))
 })
 
 test('proposed levelGeometryProblem: both sides, both levels, non-finite', () => {

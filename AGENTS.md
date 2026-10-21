@@ -1575,8 +1575,13 @@ model every strategy is negative. Output: `backtest/output/ema/cost-sensitivity.
   VWAP on both sides. **Known defect, pinned, not fixed:** an entry on the wrong side of VWAP (SHORT above,
   LONG below) registers and alerts a trade whose stop is on the wrong side of entry; an option trigger
   with SL on the wrong side passes through unchecked.
-- **Proposed, not wired:** `levelGeometryProblem()` in `src/workers/alertPolicy.ts` (stop and target must
-  bracket entry correctly). If approved it would suppress dispatch, not recording. Behaviour unchanged.
+- **Geometry guard (scaled-down, branch `feat/geometry-guard`):** `runAlertPipeline` calls
+  `levelGeometryProblem()` after computing levels. If the stop or target is on the wrong side of entry, the
+  trade is still recorded, but both the paper row and the signals row get `invalid_geometry` in `data_quality`.
+  An `⛔ … invalid geometry` line is logged and **no Telegram alert is sent**. No migration: the signals row
+  keeps the existing catch-all `alert_suppressed_reason = WORKER_ERROR`, and the flag carries the cause.
+  The API and dashboard are unchanged. Daily read-only count: RUNBOOK "Daily check: invalid geometry".
+  Historical count: 0 of 1,584. The heavier version is built only if it ever fires.
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 

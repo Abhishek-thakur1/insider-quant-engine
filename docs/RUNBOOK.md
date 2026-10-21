@@ -114,6 +114,20 @@ docker exec quant_redis redis-cli HGETALL jsfilter:stats            # fired+bloc
 
 **Rollback:** run `$Q "DROP TABLE signals; DELETE FROM schema_migrations WHERE version='0004';"`, then redeploy the previous commit with the same rebuild/recreate steps. Old code ignores a missing table. The full fallback is restoring `~/pre_signals_$SHA.dump` (see Restore).
 
+## Daily check: invalid geometry (read-only)
+
+The geometry guard (AGENTS.md §11.15) records a wrong-side stop or target and flags it instead of
+alerting. Expected count: 0 (none in 1,584 paper trades from 2026-09-10 to 10-21). If it is ever
+non-zero, the heavier version (its own suppression reason via a migration, and exclusion from the P&L
+figures in the API and dashboard) gets built.
+
+```bash
+docker exec quant_postgres psql -U postgres -d insider_quant -c "
+SELECT 'paper_trades' AS t, count(*) FROM paper_trades WHERE 'invalid_geometry' = ANY(data_quality) AND entry_time >= current_date
+UNION ALL
+SELECT 'signals', count(*) FROM signals WHERE 'invalid_geometry' = ANY(data_quality) AND trade_date = current_date;"
+```
+
 ## Database migrations
 
 - The migration files live in `db/migrations/NNNN_name.sql`. The runner is `src/db/migrate.ts` (see AGENTS.md §11.8 and §14).
