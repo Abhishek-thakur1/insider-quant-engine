@@ -364,6 +364,41 @@ npx tsx backtest/run.ts compare
 - `powercfg /change standby-timeout-ac 30` (or your previous value).
 - Commit only `backtest/output/universe-comparison.md`. The other outputs are gitignored.
 
+## Planned deploy: subscription cap (`feat/subscription-cap`) — 26-symbol boot test
+
+Owner-approved 2026-10-21: deploy **after 15:45 IST** and after the 15:25 evidence dump. No migrations.
+The engine is left `Created`; the **09:00 cron** starts it. That boot is the test.
+
+**Side effects (all of them):**
+- The `quant_engine` container is replaced, so its `docker logs` history is gone (hence the 15:25 dump).
+- Tonight: **no Fyers call, no socket**. The container is created, not started. `quant_api`, Postgres, Redis, the scheduler and `.env` are untouched.
+- Tomorrow's 09:00 boot subscribes **26** symbols (25-name watchlist + Nifty): no options, no bench (`anomaly_universe.json` absent, so Layer B is off). Before 09:15 the seeder skips, so **our code makes no REST call**. The Fyers SDK itself appears to call its symbol-token endpoint when subscribing equities; that is unavoidable and not counted in our ledger.
+- Option-based Nifty detectors (OI Sweep, Delta Hedging) get no option ticks, as since Oct 16 (the Thursday symbols never existed).
+
+**Steps (EC2):**
+```bash
+cd ~/insider-quant-engine
+mkdir -p ~/backups && docker exec quant_postgres pg_dump -U postgres -Fc insider_quant > ~/backups/pre-subcap-$(date -u +%Y%m%dT%H%MZ).dump && ls -la ~/backups | tail -2
+git log --oneline -1                                   # record the running SHA (381a309)
+docker tag insider-quant-engine-quant_engine:latest insider-quant-engine-quant_engine:rollback-381a309
+git pull origin v2 && git log --oneline -1             # record the new SHA
+docker compose build quant_engine
+docker compose stop quant_engine && docker compose create --force-recreate quant_engine
+docker ps -a --format '{{.Names}}	{{.Status}}' | grep quant_engine   # expect: Created
+```
+
+**Rollback (one line):**
+```bash
+docker compose stop quant_engine && docker tag insider-quant-engine-quant_engine:rollback-381a309 insider-quant-engine-quant_engine:latest && docker compose create --force-recreate quant_engine
+```
+Also run `git checkout 381a309` if the next build must not include the change.
+
+**Read the result at 09:20 IST (read-only):**
+```bash
+docker logs quant_engine 2>&1 | grep -E "Subscription plan|subscribed|♥ ticks" | tail -6
+```
+If `active symbols seen x/25` and `eq→router` are above 0, the 100-symbol cap was the cause. Still 0: it was not.
+
 ## Planned deploy: Fyers quota discipline (`fix/fyers-quota`) — NOT DEPLOYED
 
 No migration. Outside market hours. **Re-enabling the screener makes live Fyers calls, so the owner decides when** (the first run is ~48 quote requests, then ≤ 40/min history up to 2,200).

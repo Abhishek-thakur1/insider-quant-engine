@@ -359,16 +359,19 @@ export interface LayerBStats {
 }
 
 /**
- * Layer B (anomalyScanner) scan set, CAPPED: the top `layerB.maxSymbols` by 30-bar
- * turnover among symbols that traded on the as-of date with turnover >= the
- * scanner's own floor. The old screener's losses left ~323 symbols in its stats
- * file (2026-10-19); v2's full stats would widen Layer B to the whole liquid
- * universe, so the scan set is held at that size until evidence supports more.
+ * Layer B (anomalyScanner) scan set = the BENCH: the next `layerB.maxSymbols`
+ * names by screener score that did not make the watchlist (eligible, traded on
+ * the as-of date, turnover >= the scanner's own floor). The engine subscribes
+ * watchlist + bench + Nifty only — Fyers Standard allows 100 symbols per user —
+ * so the bench is what anomaly promotion can draw from (owner's choice (b),
+ * 2026-10-21: bench ~30, watchlist cap 60, options 0 → at most 91 of 100).
+ * Movers outside watchlist + bench are not seen.
  */
 export const anomalyUniverse = (r: ScreenResult, c: ScreenerConfig): Record<string, LayerBStats> => {
+	const listed = new Set(r.watchlist)
 	const picked = Object.entries(r.records)
-		.filter(([, rec]) => rec.barOnAsOf && rec.turnover >= c.layerB.minTurnoverRupees)
-		.sort((a, b) => b[1].turnover - a[1].turnover || a[0].localeCompare(b[0]))
+		.filter(([sym, rec]) => !listed.has(sym) && rec.eligible && rec.score !== null && rec.barOnAsOf && rec.turnover >= c.layerB.minTurnoverRupees)
+		.sort((a, b) => b[1].score! - a[1].score! || a[0].localeCompare(b[0]))
 		.slice(0, c.layerB.maxSymbols)
 	return Object.fromEntries(picked.map(([sym, rec]) => [sym, { advShares: rec.advShares, adr: rec.adr, turnover: rec.turnover, close: rec.close }]))
 }

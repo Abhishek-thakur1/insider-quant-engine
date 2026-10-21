@@ -5,7 +5,7 @@ import { EventEmitter } from 'events'
 import { ENV } from '../config/env.js'
 import { bootRedis, redisClient } from '../config/redis.js'
 import { updateVwap, getVwap, updateNiftyBias, warnIfVwapMissing } from '../utils/vwapUtils.js'
-import { buildOptionUniverse, updateOptionTick, hasATMShifted } from '../utils/optionUtils.js'
+import { buildOptionUniverse, updateOptionTick, hasATMShifted, OPTION_STRIKE_COUNT } from '../utils/optionUtils.js'
 import { seedHistoricalVwap, fetchAndSeedSymbol, getTodayString } from './vwapSeeder.js'
 import { feedTick } from '../utils/candleAggregator.js'
 import { AnomalyScanner } from './anomalyScanner.js'
@@ -17,6 +17,7 @@ import {
 	RESTART_COUNTER_TTL_SECS,
 } from '../core/sessionGuard.js'
 import { formatTickStats, newTickStats, sampleOf } from '../core/tickStats.js'
+import { describePlan, planSubscription, subscriptionCapFromEnv } from '../core/subscriptionPlan.js'
 import { exitIfNotTradingDay } from '../core/tradingDayGate.js'
 import { notifyAdmin } from '../utils/adminNotify.js'
 
@@ -116,7 +117,7 @@ import { pool } from '../config/db.js'
 import { schemaProblem } from '../db/migrate.js'
 import { signalLog } from '../db/signalLog.js'
 import { registerWatchlistSources, setSymbolSource } from '../core/symbolSource.js'
-import { readMetaSources, resolveScreenerFile, screenerStaleness } from '../screener/paths.js'
+import { readMetaSources, resolveAnomalyUniverseFile, resolveScreenerFile, screenerStaleness } from '../screener/paths.js'
 import { engineGate } from '../fyers/engineGates.js'
 
 // High-Conviction Nifty Singleton Detectors
@@ -137,11 +138,33 @@ export const startLiveEngine = async () => {
 	// The EOD screener (scripts/screener_eod.ts) writes /app/data/watchlist.json; the
 	// engine only reads it. Falls back to the baked-in file before the first run.
 	const WATCHLIST_PATH = resolveScreenerFile('watchlist.json')
-	const UNIVERSE_PATH = path.resolve(process.cwd(), 'fyersUniverse.json')
 
-	if (!fs.existsSync(TOKEN_PATH) || !fs.existsSync(WATCHLIST_PATH) || !fs.existsSync(UNIVERSE_PATH)) {
-		console.error('❌ CRITICAL: Missing access_token.txt, watchlist.json, or fyersUniverse.json.')
+	if (!fs.existsSync(TOKEN_PATH) || !fs.existsSync(WATCHLIST_PATH)) {
+		console.error('❌ CRITICAL: Missing access_token.txt or watchlist.json.')
 		process.exit(1)
+	}
+
+	// Subscription plan (core/subscriptionPlan.ts): only what the engine evaluates,
+	// checked against the Fyers per-user symbol cap before any Fyers call is made.
+	// The bench is the Layer B scan set; promotions draw from it and add nothing.
+	const watchlist: string[] = JSON.parse(fs.readFileSync(WATCHLIST_PATH, 'utf8'))
+	const scanSetPath = resolveAnomalyUniverseFile()
+	const bench: string[] = scanSetPath ? Object.keys(JSON.parse(fs.readFileSync(scanSetPath, 'utf8'))) : []
+	const optionsEnabled = process.env.NIFTY_OPTIONS_ENABLED === 'true' // off until the expiry fix
+	const subscriptionPlan = planSubscription({
+		watchlist,
+		bench,
+		indexSymbol: NIFTY_SYMBOL,
+		optionStrikes: optionsEnabled ? OPTION_STRIKE_COUNT : 0,
+		cap: subscriptionCapFromEnv(process.env.SUBSCRIPTION_CAP),
+	})
+	console.log(`[Engine] 🧾 Subscription plan: ${describePlan(subscriptionPlan)}`)
+	if (subscriptionPlan.overCap) {
+		// Exit 0: `restart: on-failure` must not loop on a config problem.
+		const msg = `subscription plan ${describePlan(subscriptionPlan)} is over the cap — refusing to boot (Fyers drops over-cap subscriptions without an error). Shrink watchlist.json / anomaly_universe.json or raise SUBSCRIPTION_CAP.`
+		console.error(`[Engine] ⛔ ${msg}`)
+		await notifyAdmin(`⛔ quant_engine: ${msg}`)
+		process.exit(0)
 	}
 
 	await bootRedis()
@@ -165,8 +188,6 @@ export const startLiveEngine = async () => {
 	if (schemaIssue) console.error(`[Engine] ❌ Database schema not current: ${schemaIssue}`)
 	await positionTracker.init()
 
-	const watchlist: string[] = JSON.parse(fs.readFileSync(WATCHLIST_PATH, 'utf8'))
-	const fullUniverse: string[] = JSON.parse(fs.readFileSync(UNIVERSE_PATH, 'utf8'))
 	const activeUniverse = [...watchlist]
 	const activeUniverseSet = new Set<string>(activeUniverse)
 
@@ -305,7 +326,7 @@ export const startLiveEngine = async () => {
 				await deltaHedgingDetector.analyze(liveTick)
 
 				// Option Chain Dynamic Rolling
-				if (lastSubscribedNiftySpot === 0 || hasATMShifted(rawTick.ltp, lastSubscribedNiftySpot)) {
+				if (optionsEnabled && (lastSubscribedNiftySpot === 0 || hasATMShifted(rawTick.ltp, lastSubscribedNiftySpot))) {
 					const newOpts = buildOptionUniverse(rawTick.ltp)
 					if (subscribedOptionSymbols.length > 0) skt.unsubscribe(subscribedOptionSymbols)
 					skt.subscribe(newOpts)
@@ -363,7 +384,8 @@ export const startLiveEngine = async () => {
 	skt.on('connect', () => {
 		console.log('[Firehose] 🟢 Connected to Fyers Data Servers!')
 
-		const allSymbols = [...fullUniverse, NIFTY_SYMBOL, ...subscribedOptionSymbols]
+		// The plan checked at boot (watchlist + bench + Nifty), plus option strikes when enabled.
+		const allSymbols = [...subscriptionPlan.symbols, ...subscribedOptionSymbols]
 		// FIX: Chunk subscriptions to avoid SDK internal dictionary corruption.
 		// FIX2: Stagger with 600ms delay — sending all chunks simultaneously causes Fyers
 		// server to silently drop later chunks, leaving the socket subscribed to nothing

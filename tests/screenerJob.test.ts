@@ -173,7 +173,7 @@ test('1/40 failed (2.5%) → written: watchlist, meta, stats (with anomaly-scann
 	assert.equal(stats['NSE:S039-EQ'].fno, true)
 	const layerB = JSON.parse(fs.readFileSync(path.join(dir, 'anomaly_universe.json'), 'utf8'))
 	assert.ok(Object.keys(layerB).length <= config.layerB.maxSymbols)
-	assert.equal(meta.layerB.cap, 323)
+	assert.equal(meta.layerB.cap, 30)
 	assert.equal(meta.layerB.symbols, Object.keys(layerB).length)
 	const hist = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(dir, 'history', `${TODAY}.json.gz`))).toString())
 	assert.deepEqual(hist.meta.entries, meta.entries)
