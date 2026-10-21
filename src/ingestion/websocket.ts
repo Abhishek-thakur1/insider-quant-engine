@@ -16,6 +16,7 @@ import {
 	restartCounterKey,
 	RESTART_COUNTER_TTL_SECS,
 } from '../core/sessionGuard.js'
+import { formatTickStats, newTickStats, sampleOf } from '../core/tickStats.js'
 import { exitIfNotTradingDay } from '../core/tradingDayGate.js'
 import { notifyAdmin } from '../utils/adminNotify.js'
 
@@ -390,6 +391,7 @@ export const startLiveEngine = async () => {
 	let lastTickTime = Date.now()
 	let lastMessageAt = 0
 	let messagesSinceBeat = 0
+	let tickStats = newTickStats()
 	let lastBeatAt = Date.now()
 	const HEARTBEAT_MS = 5 * 60 * 1000
 	const istClock = (ms: number) => (ms ? new Date(ms + 5.5 * 3600 * 1000).toISOString().slice(11, 19) : 'never')
@@ -425,7 +427,9 @@ export const startLiveEngine = async () => {
 		const now = Date.now()
 		if (now - lastBeatAt >= HEARTBEAT_MS) {
 			console.log(`[Firehose] ♥ ${messagesSinceBeat} msgs in last ${Math.round((now - lastBeatAt) / 60000)} min, last at ${istClock(lastMessageAt)} IST`)
+			for (const line of formatTickStats(tickStats, activeUniverseSet.size)) console.log(line)
 			messagesSinceBeat = 0
+			tickStats = newTickStats()
 			lastBeatAt = now
 		}
 		const check = checkWatchdog(now, lastTickTime)
@@ -456,13 +460,23 @@ export const startLiveEngine = async () => {
 			if (Array.isArray(parsed)) ticks = parsed
 			else if (parsed?.symbol) ticks = [parsed]
 			else if (parsed?.data && Array.isArray(parsed.data)) ticks = parsed.data
-			else return
+			else {
+				tickStats.unparsed++
+				if (!tickStats.sampleUnparsed) tickStats.sampleUnparsed = sampleOf(parsed)
+				return
+			}
 		} catch {
+			tickStats.unparsed++
+			if (!tickStats.sampleUnparsed) tickStats.sampleUnparsed = sampleOf(rawMessage)
 			return
 		}
 
 		for (const tick of ticks) {
-			if (!tick?.symbol || !tick?.ltp) continue
+			tickStats.ticks++
+			if (!tick?.symbol || !tick?.ltp) {
+				tickStats.noLtp++
+				continue
+			}
 
 			const cumulativeVol = tick.vol_traded_today || 0
 			// Use ?? so we don't accidentally fallback to cumulativeVol if it was recorded as 0
@@ -474,6 +488,18 @@ export const startLiveEngine = async () => {
 
 			const isIndexOrOption =
 				tick.symbol === NIFTY_SYMBOL || tick.symbol.endsWith('CE') || tick.symbol.endsWith('PE')
+
+			// Diagnostics only (core/tickStats.ts) — counted after the decision, never alters it.
+			if (tick.symbol === NIFTY_SYMBOL) tickStats.index++
+			else if (isIndexOrOption) tickStats.option++
+			else {
+				if (!tickStats.sampleEquity) tickStats.sampleEquity = sampleOf(tick)
+				if (activeUniverseSet.has(tick.symbol)) tickStats.activeSymbols.add(tick.symbol)
+				if (!tick.vol_traded_today) tickStats.eqNoVolField++
+				if (actualTickVol <= 0) tickStats.eqZeroVol++
+				else if (activeUniverseSet.has(tick.symbol)) tickStats.eqActive++
+				else tickStats.eqInactive++
+			}
 
 			// FIX: Only discard zero-volume ticks for equities (preventing false bid/ask ticks from firing logic)
 			if (!isIndexOrOption && actualTickVol <= 0) {
