@@ -157,3 +157,13 @@ test('no CI when trades span fewer than 10 sessions (a one-day sample must not l
 	const md = renderMarkdown(compareUniverses(trades, POOLED, fast), { window: 'w', resolution: '5', configHash: hash, pooled: POOLED, names: {} })
 	assert.match(md, /— \(trades on 1 day < 10\)/)
 })
+
+test('universes: a static list (e.g. live25) is the same symbols every day, beside new / old / random', () => {
+	const live = ['NSE:U03-EQ', 'NSE:U07-EQ']
+	const s = buildUniverses({ tradingDays: TRADING, universe: UNIVERSE, series: SERIES, benchmark: BENCH_BARS, core: CORE, config, configHash: hash, staticLists: { live25: live } })
+	assert.deepEqual(Object.keys(s.lists).sort(), ['live25', 'new', 'old', 'random1', 'random2', 'random3'])
+	for (const day of Object.keys(s.lists.new!)) assert.deepEqual(s.lists.live25![day], live)
+	assert.deepEqual(s.lists.new, set.lists.new, 'adding a static list does not change the screened lists')
+	for (const day of Object.keys(s.lists.new!)) assert.ok(s.lists.new![day]!.length <= config.watchlistCap)
+	assert.throws(() => buildUniverses({ tradingDays: TRADING, universe: UNIVERSE, series: SERIES, benchmark: BENCH_BARS, core: CORE, config, configHash: hash, staticLists: { old: live } }), /collides/)
+})

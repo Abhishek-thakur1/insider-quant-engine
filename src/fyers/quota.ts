@@ -323,9 +323,11 @@ export const createQuotaGate = (opts: {
 				if (kind === 'THROTTLE') {
 					const until = clock.now() + Math.max(retryAfterMs(err), c.cooldownMs)
 					const breaches = await ledger.breach(day, until)
-					log.warn(`[FyersQuota] ${job}: throttled (breach ${breaches}/${c.maxBreachesPerDay} today) — all callers cool down ${Math.round((until - clock.now()) / 1000)} s`)
+					// Fyers' own words, so a throttle can be diagnosed from the log (Oct 21 kept only the classification).
+					const said = textOf(err).replace(/\s+/g, ' ').trim().slice(0, 300) || '(no error text)'
+					log.warn(`[FyersQuota] ${job}: throttled (breach ${breaches}/${c.maxBreachesPerDay} today) — all callers cool down ${Math.round((until - clock.now()) / 1000)} s — Fyers said: ${said}`)
 					if (breaches >= c.maxBreachesPerDay)
-						throw new BreachLimitError(`throttled ${breaches}× on ${day} — stopping before Fyers blocks the day`)
+						throw new BreachLimitError(`throttled ${breaches}× on ${day} — stopping before Fyers blocks the day (last: ${said})`)
 					if (attempt < c.maxRetries) continue
 				}
 				throw err

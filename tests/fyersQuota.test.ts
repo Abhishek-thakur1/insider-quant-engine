@@ -214,3 +214,16 @@ test('FileLedger (owner PC) persists across processes/nights; RedisLedger (EC2) 
 	assert.deepEqual(await r.state('2026-10-21'), { used: { seeder: 5 }, breaches: 1, exhausted: true, cooldownUntil: 999 })
 	assert.equal(ttl.get('fyers:quota:2026-10-21'), 3 * 24 * 3600)
 })
+
+test('THROTTLE LOG: the warning and the stop error carry Fyers’ own error text', async () => {
+	const clock = new VirtualClock(START)
+	const ledger = new MemoryLedger()
+	const warnings: string[] = []
+	const gate = createQuotaGate({ job: 'seeder', config, ledger, clock, log: { warn: (m: string) => void warnings.push(m), error: () => {} } })
+	const fyers = async () => {
+		throw CLOUDFLARE
+	}
+	await assert.rejects(clock.run(gate.call(fyers)), (err: Error) => err instanceof BreachLimitError && /Error 1015: You are being rate limited/.test(err.message))
+	assert.ok(warnings.length >= 1)
+	for (const w of warnings) assert.match(w, /— Fyers said: .*Error 1015: You are being rate limited/)
+})

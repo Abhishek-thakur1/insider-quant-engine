@@ -17,6 +17,8 @@
 
 const STRIKE_INTERVAL = 50
 const STRIKES_EACH_SIDE = 7 // 7 CE + 7 PE = 14 strikes per side
+/** Symbols one buildOptionUniverse() call subscribes: CE + PE for ATM and STRIKES_EACH_SIDE each way (30). */
+export const OPTION_STRIKE_COUNT = 2 * (2 * STRIKES_EACH_SIDE + 1)
 
 // Month code map — Fyers uses single char for each month
 const MONTH_CODE: Record<number, string> = {

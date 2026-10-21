@@ -6,9 +6,13 @@
 // daily bars only — screenAsOf() cuts every series at its as-of date.
 //
 //   old       old Layer A rule (turnover >= ₹15 cr, ADR >= 4.5%) + CORE, no cap
-//   new       screener v2 Tier 1 + Tier 2 + CORE, cap 100, hysteresis carried day to day
+//   new       screener v2 Tier 1 + Tier 2 + CORE, cap = config watchlistCap (60 since
+//             2026-10-21, what runs live), hysteresis carried day to day
 //   randomK   CORE + a seeded random draw from that day's liquid names, sized to
 //             match `new` exactly (seeds 1..3)
+//   static    optional fixed lists (e.g. live25 = the 25-name list the engine ran
+//             Oct 20-21), the SAME symbols every day. Look-ahead: such a list was
+//             picked on a later date than most of the window it is tested on.
 //
 // Survivorship: the symbol universe is TODAY's master — names delisted during
 // the window are absent for every list alike.
@@ -59,11 +63,18 @@ export const buildUniverses = (args: {
 	config: ScreenerConfig
 	configHash: string
 	randomSeeds?: number[]
+	/** Fixed lists applied unchanged to every day (name â†’ symbols). */
+	staticLists?: Record<string, string[]>
 }): UniverseSet => {
 	const { tradingDays, universe, series, core, config, configHash } = args
 	const seeds = args.randomSeeds ?? [1, 2, 3]
 	const lists: UniverseSet['lists'] = { old: {}, new: {} }
 	for (const k of seeds) lists[`random${k}`] = {}
+	const statics = Object.entries(args.staticLists ?? {})
+	for (const [name] of statics) {
+		if (lists[name]) throw new Error(`static list name '${name}' collides with a built-in list`)
+		lists[name] = {}
+	}
 	const funnels: UniverseSet['funnels'] = {}
 	let previous: Map<string, ScreenerSource> | null = null
 
@@ -88,6 +99,7 @@ export const buildUniverses = (args: {
 			}
 			lists[`random${k}`]![day] = [...core, ...p.slice(0, want)]
 		}
+		for (const [name, symbols] of statics) lists[name]![day] = [...symbols]
 	}
 	return {
 		configHash,

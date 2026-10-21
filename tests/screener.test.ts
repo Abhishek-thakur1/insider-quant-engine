@@ -25,7 +25,7 @@ test('config/screener.json validates; hash ignores key order', () => {
 	const reordered = Object.fromEntries(Object.entries(raw).reverse())
 	assert.equal(configHash(validateConfig(reordered)), hash)
 	assert.equal(config.benchmark, 'NSE:NIFTY500-INDEX')
-	assert.equal(config.watchlistCap, 100)
+	assert.equal(config.watchlistCap, 60)
 	assert.equal(config.tiers.tier1MinRsRank, 85)
 	assert.equal(config.proximity.maxBelowHighPct, 25)
 	assert.match(config.filters.asmGsm, /^not applied/)
@@ -209,23 +209,24 @@ test('a symbol with no bar ON the as-of date (suspended / stale) is excluded wit
 	assert.ok(!r.watchlist.includes('NSE:S095-EQ'))
 })
 
-test('LAYER B CAP: anomaly scan set = top N by turnover that traded on the as-of date, legacy 4-field shape', async () => {
+test('LAYER B BENCH: scan set = next N by score that missed the watchlist, traded on the as-of date, legacy 4-field shape', async () => {
 	const { anomalyUniverse } = await import('../src/screener/screen.js')
 	const s = market({ 'NSE:S100-EQ': { volume: 1000 } }) // far below the ₹1 cr scanner floor
 	s.set('NSE:S095-EQ', s.get('NSE:S095-EQ')!.slice(0, -2)) // stale: no bar on the as-of date
 	const r = screenAsOf(input(s))
-	assert.equal(config.layerB.maxSymbols, 323)
+	assert.equal(config.layerB.maxSymbols, 30)
 	const capped = anomalyUniverse(r, { ...config, layerB: { ...config.layerB, maxSymbols: 10 } })
 	const syms = Object.keys(capped)
-	assert.equal(syms.length, 10)
-	assert.ok(!syms.includes('NSE:S100-EQ') && !syms.includes('NSE:S095-EQ'))
-	const eligibleByTurnover = Object.entries(r.records)
-		.filter(([k, x]) => x.barOnAsOf && x.turnover >= config.layerB.minTurnoverRupees && k !== 'NSE:S095-EQ')
-		.sort((a, b) => b[1].turnover - a[1].turnover)
-		.slice(0, 10)
+	const listed = new Set(r.watchlist)
+	const nextByScore = Object.entries(r.records)
+		.filter(([k, x]) => !listed.has(k) && x.eligible && x.score !== null && x.barOnAsOf && x.turnover >= config.layerB.minTurnoverRupees)
+		.sort((a, b) => b[1].score! - a[1].score! || a[0].localeCompare(b[0]))
 		.map(([k]) => k)
-	assert.deepEqual(syms, eligibleByTurnover)
-	assert.deepEqual(Object.keys(capped[syms[0]!]!).sort(), ['adr', 'advShares', 'close', 'turnover'])
-	// with the real cap (323) and 101 names, it simply takes every qualifying name
-	assert.equal(Object.keys(anomalyUniverse(r, config)).length, 99)
+	assert.ok(nextByScore.length > 0, 'fixture must leave names off the watchlist')
+	assert.deepEqual(syms, nextByScore.slice(0, 10))
+	assert.ok(syms.every((s) => !listed.has(s)), 'bench never repeats a watchlist name')
+	assert.ok(!syms.includes('NSE:S100-EQ') && !syms.includes('NSE:S095-EQ'))
+	if (syms.length > 0) assert.deepEqual(Object.keys(capped[syms[0]!]!).sort(), ['adr', 'advShares', 'close', 'turnover'])
+	// the real cap holds the bench at 30
+	assert.ok(Object.keys(anomalyUniverse(r, config)).length <= 30)
 })
