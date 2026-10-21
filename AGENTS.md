@@ -1558,6 +1558,20 @@ all negative at 2× cost. V1/V2 capture 13–17% of trend-day moves (the current
 about 5 trades per session. Current Nifty detectors, ungated: Trend Pulse −0.280, ORB −0.313,
 VWAP Reclaim −1.003 R/trade. Nothing live changed.
 
+## 11.15 SHORT direction: history and the real-path test (2026-10-21, branch `test/short-real-path`)
+
+- SHORT was paused in `9b109cb` (2026-09-16) and re-enabled in `f0d51fc` (2026-09-24) on the strength of
+  `tests/shortDirectionGeometry.test.ts`, which imports **no** `src/` code (it re-implements the formulas).
+  The Oct 6 plan item "keep SHORT paused until a real-path test exists" was never put in code.
+- For equities the pipeline **ignores the trigger's SL/T1** (which the EV gate scores) and derives
+  stop = VWAP × 0.998 / × 1.002, target = entry ± 1.5 × risk. The detectors' own levels never reach the trade.
+- `tests/alertPipeline.test.ts` REAL-PATH cases run the real `runAlertPipeline`: entry below / at / above
+  VWAP on both sides. **Known defect, pinned, not fixed:** an entry on the wrong side of VWAP (SHORT above,
+  LONG below) registers and alerts a trade whose stop is on the wrong side of entry; an option trigger
+  with SL on the wrong side passes through unchecked.
+- **Proposed, not wired:** `levelGeometryProblem()` in `src/workers/alertPolicy.ts` (stop and target must
+  bracket entry correctly). If approved it would suppress dispatch, not recording. Behaviour unchanged.
+
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
 The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 

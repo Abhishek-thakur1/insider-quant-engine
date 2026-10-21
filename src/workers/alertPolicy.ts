@@ -183,3 +183,20 @@ ${actionLabel}
 ⚖️ _Paper-trading signal. Respect the levels._
 `.trim()
 }
+
+// ── PROPOSED, NOT WIRED (2026-10-21): level-geometry guard ───────────────────
+// A LONG needs stop < entry < target; a SHORT needs target < entry < stop.
+// runAlertPipeline derives equity levels from the payload VWAP (stop = VWAP ×
+// 0.998 / × 1.002), so an entry on the wrong side of VWAP yields a stop on the
+// wrong side of entry — tests/alertPipeline.test.ts "REAL-PATH SHORT/LONG"
+// pins that this is recorded and alerted today. If the owner approves, the
+// pipeline would call this after computing levels and suppress dispatch
+// (recording unchanged). Nothing calls it yet; behaviour is unchanged.
+export type GeometryProblem = 'STOP_WRONG_SIDE' | 'TARGET_WRONG_SIDE' | 'NON_FINITE'
+
+export const levelGeometryProblem = (o: { side: 'LONG' | 'SHORT'; entry: number; stop: number; target: number }): GeometryProblem | null => {
+	if (![o.entry, o.stop, o.target].every(Number.isFinite)) return 'NON_FINITE'
+	if (o.side === 'LONG' ? !(o.stop < o.entry) : !(o.stop > o.entry)) return 'STOP_WRONG_SIDE'
+	if (o.side === 'LONG' ? !(o.target > o.entry) : !(o.target < o.entry)) return 'TARGET_WRONG_SIDE'
+	return null
+}

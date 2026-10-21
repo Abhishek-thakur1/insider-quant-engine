@@ -2,7 +2,12 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## Unreleased — `fix/signal-log-stall` (not merged, not deployed)
+## Unreleased — `test/short-real-path` (not merged, not deployed; no behaviour change)
+
+- **Real-path direction tests** (AGENTS.md §11.15) in `tests/alertPipeline.test.ts`: SHORT and LONG with entry below, at and above VWAP through the real `runAlertPipeline`. They pin a known defect: a wrong-side entry gets a wrong-side stop and is still alerted.
+- **Proposed, not wired:** `levelGeometryProblem()` in `alertPolicy.ts`.
+
+## `fix/signal-log-stall` — merged (PR #15); deploy pending
 
 - **`signals` writer stall fixed** (AGENTS.md §11.9). After the first flush of an empty queue, `SignalLog` never wrote again and logged nothing. Live on Oct 21 only 1 of 4 fires reached the table. The guard is now released in `.finally()`. Three regression tests reproduce the live sequence and failed before the fix.
 
