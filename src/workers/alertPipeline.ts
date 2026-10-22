@@ -94,6 +94,11 @@ export const runAlertPipeline = async (
 	// Same for the per-detector slot (alert:sent, + the cap count once counted): released when
 	// nothing went out, so an error can't block that detector on that symbol for the day.
 	let releaseDetectorSlot: (() => Promise<unknown>) | null = null
+	// Paper claim: only a fire that is actually ALERTED keeps it (owner, 2026-10-22). Taken before
+	// registerTrade (so a losing row is flagged at insert); released on every path that ends
+	// without a delivered alert — capital skip / zero size, per-detector or symbol duplicate,
+	// cap reached, send failed, any error.
+	let giveBackPaperClaim: (() => Promise<unknown>) | null = null
 	let delivered = false
 
 	try {
@@ -225,8 +230,16 @@ export const runAlertPipeline = async (
 		let paperDuplicateOf: SymbolClaim | null = null
 		if (!geometry && gated) {
 			try {
-				const c = await claimSymbolSide(await deps.getClaimStore(), symKeys.paper, myClaim, isOpen)
+				const paperStore = await deps.getClaimStore()
+				const c = await claimSymbolSide(paperStore, symKeys.paper, myClaim, isOpen)
 				if (!c.first) paperDuplicateOf = c.holder
+				else {
+					const mine = JSON.stringify(myClaim)
+					giveBackPaperClaim = async () => {
+						giveBackPaperClaim = null // once
+						await paperStore.compareAndDelete(symKeys.paper, mine).catch(() => false)
+					}
+				}
 			} catch (err) {
 				console.error(`[DuplicatePolicy] paper claim failed for ${data.symbol} — recorded unflagged:`, err)
 			}
@@ -424,5 +437,7 @@ ${directionEmoji} *Action:* BUY ${data.symbol}
 		note(obs, (o) => {
 			if (!o.suppressed && !o.alertSent) o.suppressed = 'WORKER_ERROR'
 		})
+	} finally {
+		if (!delivered) await giveBackPaperClaim?.()
 	}
 }

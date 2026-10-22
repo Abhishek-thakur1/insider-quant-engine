@@ -24,7 +24,7 @@ import { DAY, NOW, MAX, decision, equity, option, makeClaimStore } from './helpe
 
 const MIN = 60_000
 
-const world = (opts: { clockStepMs?: number; incrThrows?: boolean } = {}) => {
+const world = (opts: { clockStepMs?: number; incrThrows?: boolean; notional?: number; behavior?: string } = {}) => {
 	let now = NOW
 	const kv = new Map<string, string>()
 	const open = new Map<string, OpenPosition>()
@@ -55,7 +55,7 @@ const world = (opts: { clockStepMs?: number; incrThrows?: boolean } = {}) => {
 			return d
 		},
 		getTracker: async () => ({
-			getCurrentNotional: () => 0,
+			getCurrentNotional: () => opts.notional ?? 0,
 			registerTrade: async (pos) => {
 				registered.push(pos)
 				open.set(pos.id, pos)
@@ -71,7 +71,7 @@ const world = (opts: { clockStepMs?: number; incrThrows?: boolean } = {}) => {
 		},
 		sendAdmin: async () => {},
 		now: () => (opts.clockStepMs ? (now += opts.clockStepMs) : now),
-		config: { shadowMode: false, maxAlertsPerDay: MAX, capitalBase: 100000, capitalBehavior: 'REDUCE', hasAdmin: false },
+		config: { shadowMode: false, maxAlertsPerDay: MAX, capitalBase: 100000, get capitalBehavior() { return opts.behavior ?? 'REDUCE' }, hasAdmin: false },
 	}
 	let nextDecision: ReturnType<typeof decision> | null = null
 	const fire = async (p: AlertPayload, shadow = false) => {
@@ -98,6 +98,7 @@ const world = (opts: { clockStepMs?: number; incrThrows?: boolean } = {}) => {
 		closeAll: () => open.clear(),
 		failSends: (b: boolean) => void (failSends = b),
 		incrThrows: (b: boolean) => void (opts.incrThrows = b),
+		capital: (notional: number, behavior: string) => void ((opts.notional = notional), (opts.behavior = behavior)),
 	}
 }
 
@@ -171,7 +172,7 @@ test('SEND FAILURE gives the alert claim back: the next fire on that symbol + si
 	w.failSends(false)
 	const b = await w.fire(vcp)
 	assert.equal(b.alert_sent, true, 'not blocked by a claim that produced no alert')
-	assert.deepEqual(w.registered[1]!.dataQuality, ['duplicate_signal'], 'the paper side still counts the first position once')
+	assert.equal(w.registered[1]!.dataQuality, undefined, 'the failed-send fire released its paper claim: the alerted trade is not the flagged one')
 })
 
 test('STALE HOLDER replaced atomically: two concurrent fires after the window → exactly one wins', async () => {
@@ -270,4 +271,43 @@ test('REVIEW 3rd pass: an error after the per-detector slot is taken (symbol cla
 	assert.equal([...w.kv.keys()].filter((k) => k.startsWith('alert:sent:')).length, 0, 'per-detector slot released')
 	const r = await w.fire({ ...smb, price: 501 })
 	assert.equal(r.alert_sent, true, 'the same detector alerts the same symbol later')
+})
+
+// ── owner decision 2026-10-22 (2nd): ONLY an ALERTED fire keeps the paper claim ──
+
+test('PAPER CLAIM released on CAPITAL SKIP: a later alerted fire on the same symbol + side is not flagged', async () => {
+	const w = world()
+	w.capital(100_000, 'SKIP') // no headroom → passes the filter, skipped for capital
+	const a = await w.fire(vcp)
+	assert.equal(a.alert_suppressed_reason, 'CAPITAL_SKIP')
+	w.capital(0, 'SKIP')
+	const b = await w.fire(smb)
+	assert.equal(b.alert_sent, true)
+	assert.deepEqual(w.registered.map((p) => p.dataQuality ?? []), [[], []], 'neither flagged')
+})
+
+test('PAPER CLAIM released on SEND FAILED: the next alerted fire is not flagged', async () => {
+	const w = world()
+	w.failSends(true)
+	assert.equal((await w.fire(vcp)).alert_suppressed_reason, 'SEND_FAILED')
+	w.failSends(false)
+	assert.equal((await w.fire(smb)).alert_sent, true)
+	assert.deepEqual(w.registered.map((p) => p.dataQuality ?? []), [[], []])
+})
+
+test('PAPER CLAIM released on CAP REACHED: after the cap, a fire on the same symbol + side is not flagged by a capped one', async () => {
+	const w = world()
+	w.kv.set(`alert:count:${DAY}`, String(MAX)) // cap already used up
+	assert.equal((await w.fire(vcp)).alert_suppressed_reason, 'CAP_REACHED')
+	const b = await w.fire(smb)
+	assert.equal(b.alert_suppressed_reason, 'CAP_REACHED')
+	assert.deepEqual(w.registered.map((p) => p.dataQuality ?? []), [[], []], 'the capped fire released its paper claim')
+})
+
+test('PAPER CLAIM kept by the ALERTED fire: a later fire while its position is open is still flagged', async () => {
+	const w = world()
+	assert.equal((await w.fire(vcp)).alert_sent, true)
+	w.advance(5 * MIN)
+	await w.fire(smb)
+	assert.deepEqual(w.registered[1]!.dataQuality, ['duplicate_signal'])
 })
