@@ -35,6 +35,7 @@ import {
 	buildLiquidList,
 	coversReplaySessions,
 	dailyCandidates,
+	MinuteStore,
 	midRunStop,
 	preflight,
 	replayGateConfig,
@@ -61,7 +62,7 @@ const step = arg('step')
 const live = process.argv.includes('--live')
 const dataDir = screenerDataDir()
 const dailyStore = new CandleStore(path.join(dataDir, 'candles', 'D'))
-const minuteStore = new CandleStore(path.join(dataDir, 'candles', '1'), '1')
+const minuteStore = new MinuteStore(path.join(dataDir, 'candles', '1'))
 const replayDir = path.join(dataDir, 'replay')
 const LIQUID_FILE = path.join(replayDir, 'liquid15cr.json')
 const CANDIDATES_FILE = path.join(replayDir, 'daily-candidates.json')

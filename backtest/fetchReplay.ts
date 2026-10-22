@@ -18,6 +18,8 @@
 // Pure functions + an injected runner, so every rule is tested without a network.
 // ============================================================
 
+import fs from 'node:fs'
+import path from 'node:path'
 import type { LedgerState, QuotaConfig, QuotaGate } from '../src/fyers/quota.js'
 import { QuotaStopError } from '../src/fyers/quota.js'
 import { getISTDateString, getISTMinutes } from '../src/utils/marketHours.js'
@@ -320,4 +322,37 @@ export const dailyCandidates = (
 	}
 	quoted.sort((a, b) => b.tv - a.tv || a.s.localeCompare(b.s))
 	return { candidates: [...quoted.map((x) => x.s), ...noQuote], skipped, noQuote: noQuote.length }
+}
+
+// ── 1-minute cache (same file shape as the screener's CandleStore, labelled resolution '1') ──
+
+/**
+ * One JSON file per symbol under `dir`, `{ symbol, resolution: '1', bars, fetchedAt }`,
+ * merged on timestamp and written atomically — the shape backtest/data/store.loadSeries reads.
+ * Kept here (not a src/ change) so this PR touches nothing under src/.
+ */
+export class MinuteStore {
+	constructor(readonly dir: string) {}
+	private file(symbol: string) {
+		return path.join(this.dir, `${symbol.replace(/[:\/]/g, '_')}.json`)
+	}
+	load(symbol: string): Bar[] {
+		try {
+			const j = JSON.parse(fs.readFileSync(this.file(symbol), 'utf8')) as { bars?: Bar[] }
+			return Array.isArray(j.bars) ? j.bars : []
+		} catch {
+			return []
+		}
+	}
+	merge(symbol: string, incoming: Bar[]): number {
+		const byTs = new Map<number, Bar>()
+		for (const b of this.load(symbol)) byTs.set(b.t, b)
+		for (const b of incoming) byTs.set(b.t, b)
+		const bars = [...byTs.values()].sort((a, b) => a.t - b.t)
+		fs.mkdirSync(this.dir, { recursive: true })
+		const tmp = `${this.file(symbol)}.${process.pid}.tmp`
+		fs.writeFileSync(tmp, JSON.stringify({ symbol, resolution: '1', bars, fetchedAt: new Date().toISOString() }))
+		fs.renameSync(tmp, this.file(symbol))
+		return bars.length
+	}
 }
