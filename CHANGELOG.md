@@ -2,6 +2,23 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased — `feat/fetch-replay` (first cut for owner review; not merged, nothing fetched)
+
+- **Liquid-replay fetch, offline tooling only** (`backtest/fetchReplay.ts`, `scripts/fetch_replay.ts`). It doesn't touch the engine, and adds no Redis key or migration.
+- **Dry run by default**, with 0 Fyers calls. A live run needs `--live` plus `--owner-ok <today>`. The preflight refuses before 15:45 IST, on any breach in today's ledger, on an exhausted day, during a cooldown, or once the `backtest` allocation is used up.
+- **Limits:** at most 1,000 requests per evening, most liquid symbols first, stopping on the first quota stop. Runs are resumable: a symbol whose cache holds every replay session is skipped.
+- **Steps:**
+  - `nifty`: one Nifty 1-minute request for Oct 15–22.
+  - `liquid`: no API calls; builds the list of stocks with 30-session average traded value above ₹15 cr as of Oct 14, using daily bars dated on or before Oct 14 only.
+  - `minute`
+- **Cache:** daily candles share the screener's cache (`<data>/candles/D`). 1-minute candles go to `<data>/candles/1`.
+- **Sandbox:** `scripts/replay_sandbox.sh` runs the replay with `--network none` and no env file. `backtest/sandboxGuard.ts` aborts on any credential, a token file, or network access.
+- **Tests:** `tests/fetchReplay.test.ts`, 10 tests.
+- **Still to do on this branch:**
+  - the `daily` step, fed by the 48-call quote pre-filter;
+  - `--universe-list liquid15cr` wiring in `backtest/run.ts`;
+  - the per-setup report, which must state the pre-filter's look-ahead.
+
 ## Unreleased — `feat/geometry-guard` (not merged, not deployed; owner: not before 2026-10-22 close)
 
 - **Geometry guard, scaled-down** (AGENTS.md §11.15): a wrong-side stop or target is recorded, flagged `invalid_geometry` on the paper and signals rows, and logged, but not alerted. No migration, no API or dashboard change. Daily count query in the RUNBOOK. The REAL-PATH tests now expect the trade to be recorded and flagged, with no alert.
