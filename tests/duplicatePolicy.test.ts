@@ -62,6 +62,9 @@ const world = (opts: { clockStepMs?: number; incrThrows?: boolean; notional?: nu
 				return registered.length
 			},
 			getOpenPositions: () => [...open.values()],
+			removeFlag: async (id: string, _tradeId: number | null, flag: string) => {
+				for (const p of registered) if (p.id === id && p.dataQuality) p.dataQuality = p.dataQuality.filter((f) => f !== flag)
+			},
 		}),
 		getAlertStore: async () => store,
 		getClaimStore: async () => claims,
@@ -310,4 +313,18 @@ test('PAPER CLAIM kept by the ALERTED fire: a later fire while its position is o
 	w.advance(5 * MIN)
 	await w.fire(smb)
 	assert.deepEqual(w.registered[1]!.dataQuality, ['duplicate_signal'])
+})
+
+test('CONCURRENT INVERSION (3rd review): holder not alerted (its own per-detector duplicate), the concurrent alerted fire ends up UNflagged', async () => {
+	const w = world()
+	await w.fire(vcp) // 10:30 VCP alerts X LONG
+	w.closeAll()
+	w.advance(90 * MIN)
+	// VCP (already alerted today → per-detector DUPLICATE) and Momentum fire together
+	const [a, b] = await Promise.all([w.fire(vcp), w.fire(smb)])
+	assert.equal(a.alert_suppressed_reason, 'DUPLICATE')
+	assert.equal(b.alert_sent, true)
+	const momentumRow = w.registered.find((p) => p.detectorName === 'Stock Momentum Breakout')!
+	assert.deepEqual(momentumRow.dataQuality ?? [], [], 'the alerted trade is the one counted')
+	assert.ok(!(b.data_quality as string[]).includes('duplicate_signal'), 'its signals row is not flagged either')
 })

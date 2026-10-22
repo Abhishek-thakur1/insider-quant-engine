@@ -31,7 +31,8 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 - **The paper claim is gated only** (owner decision): an ungated fire never takes or tests it, so it can't make a later alerted trade the flagged duplicate.
 - **Per-detector slot released on any error** (third review): an error after the per-detector slot is taken releases it, so that detector isn't blocked on the symbol for the day. CAP_REACHED keeps the slot, as before.
 - **Only an alerted fire keeps the paper claim** (owner decision): on a capital skip, failed send, cap reached, duplicate or error, the claim is released.
-- **Tests:** 18, 339 overall.
+- **Concurrent inversion fixed** (4th review): an alerted fire that was flagged at insert because a concurrent holder was later not alerted re-takes the paper claim and drops its flag (paper row and signals row).
+- **Tests:** 19, 340 overall.
 
 ## `feat/fetch-replay` — merged (PR #20); offline tooling, nothing fetched yet
 

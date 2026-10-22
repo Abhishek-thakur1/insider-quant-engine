@@ -89,6 +89,7 @@ export const positionTracker: PipelineTracker = {
 	getCurrentNotional: () => need(state.tracker, 'tracker').getCurrentNotional(),
 	registerTrade: (pos) => need(state.tracker, 'tracker').registerTrade(pos),
 	getOpenPositions: () => need(state.tracker, 'tracker').getOpenPositions(),
+	removeFlag: (id, tradeId, flag) => need(state.tracker, 'tracker').removeFlag(id, tradeId, flag),
 }
 
 // config/redis.js

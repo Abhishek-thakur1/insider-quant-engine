@@ -48,6 +48,8 @@ export interface PipelineTracker {
 	getCurrentNotional(): number
 	registerTrade(pos: OpenPosition): Promise<number | null>
 	getOpenPositions(): Pick<OpenPosition, 'id'>[]
+	/** Remove one data_quality flag from a registered position (memory, trades:open, the paper row). */
+	removeFlag(positionId: string, tradeId: number | null, flag: string): Promise<void>
 }
 
 export interface PipelineDeps {
@@ -424,6 +426,25 @@ ${directionEmoji} *Action:* BUY ${data.symbol}
 		note(obs, (o) => {
 			o.alertSent = true
 		})
+
+		// Alerted but flagged duplicate_signal: a concurrent fire held the paper claim at insert
+		// time and was then NOT alerted (it has released the claim by now). The alerted trade must
+		// be the one counted (owner decision), so it takes the paper claim now and drops its flag.
+		// If a live holder still has the claim (an earlier ALERTED position), the flag stays.
+		if (paperDuplicateOf) {
+			try {
+				const c = await claimSymbolSide(await deps.getClaimStore(), symKeys.paper, myClaim, isOpen)
+				if (c.first) {
+					await positionTracker.removeFlag(positionId, tradeId, DUPLICATE_SIGNAL_FLAG)
+					note(obs, (o) => {
+						o.duplicateSignal = false
+					})
+					console.log(`🔁 [${data.side}] ${data.symbol} alerted — earlier holder was not alerted; ${DUPLICATE_SIGNAL_FLAG} removed`)
+				}
+			} catch (err) {
+				console.error(`[DuplicatePolicy] could not re-take the paper claim for ${data.symbol} (row stays flagged):`, err)
+			}
+		}
 
 		console.log(
 			`✅ [${data.side}] Alert dispatched for ${data.symbol}${decision ? ` (score ${decision.score}/100)` : ''}`,

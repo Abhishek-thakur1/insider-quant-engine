@@ -304,6 +304,7 @@ export const makeDeps = (sc: Scenario, effects: Effect[], claims: ClaimStore = m
 			return 42
 		},
 		getOpenPositions: () => [],
+		removeFlag: async (id, tradeId, flag) => void effects.push(['removeFlag', id, tradeId, flag]),
 	}),
 	getAlertStore: async () => makeStore(effects, sc),
 	getClaimStore: async () => claims,
