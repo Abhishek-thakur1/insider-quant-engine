@@ -129,8 +129,14 @@ class PositionTracker {
 		// the legacy symbol + entry_time match.
 		if (tradeId !== null) pos.dbId = tradeId
 
-		// Save to Redis for persistence and API access (a Redis error propagates, as before)
-		await redisClient.hSet('trades:open', pos.id, JSON.stringify(pos))
+		// Save to Redis for persistence. The row is already committed, so a Redis error must not
+		// abandon it: still track the position in memory so this session closes it (review of
+		// f16a33d). Only a restart before its exit would lose it.
+		try {
+			await redisClient.hSet('trades:open', pos.id, JSON.stringify(pos))
+		} catch (redisErr) {
+			console.error(`[PositionTracker] ❌ trades:open write failed for ${pos.symbol} (row ${tradeId ?? 'none'}) — tracked in memory only:`, redisErr)
+		}
 		// Track in memory for ultra-fast tick checking
 		this.addToMemory(pos)
 
