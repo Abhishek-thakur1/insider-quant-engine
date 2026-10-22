@@ -24,7 +24,6 @@ import {
 	DUPLICATE_SIGNAL_FLAG,
 	getISTDateString,
 	levelGeometryProblem,
-	releaseAlertSlot,
 	alertKeys,
 	claimDetectorSlot,
 	countAlertSlot,
@@ -92,6 +91,9 @@ export const runAlertPipeline = async (
 	// Duplicate policy: an alert claim taken but not followed by a delivered alert is always
 	// given back, including on an unexpected error (review of PR #22, finding 4).
 	let giveBackAlertClaim: (() => Promise<unknown>) | null = null
+	// Same for the per-detector slot (alert:sent, + the cap count once counted): released when
+	// nothing went out, so an error can't block that detector on that symbol for the day.
+	let releaseDetectorSlot: (() => Promise<unknown>) | null = null
 	let delivered = false
 
 	try {
@@ -302,6 +304,12 @@ export const runAlertPipeline = async (
 			})
 			return
 		}
+		let counted = false
+		releaseDetectorSlot = async () => {
+			releaseDetectorSlot = null // once
+			await alertStore.del(detectorKeys.dedup).catch(() => 0)
+			if (counted) await alertStore.decr(detectorKeys.count).catch(() => 0)
+		}
 
 		// Duplicate policy, alert side: one alert per symbol + side while the first alerted
 		// position is open (equities), or within 60 min. Nothing is sent for a duplicate and it
@@ -310,7 +318,7 @@ export const runAlertPipeline = async (
 		const myAlertClaim = JSON.stringify(myClaim)
 		const alertClaim = await claimSymbolSide(claimStore, symKeys.alert, myClaim, isOpen)
 		if (!alertClaim.first) {
-			await alertStore.del(detectorKeys.dedup).catch(() => 0)
+			await releaseDetectorSlot?.()
 			console.log(
 				`🔕 [${data.side}] ${data.symbol} recorded, not alerted (duplicate of ${alertClaim.holder.positionId}: one alert per symbol and side)`,
 			)
@@ -325,7 +333,11 @@ export const runAlertPipeline = async (
 		}
 
 		const slot = await countAlertSlot(alertStore, detectorKeys, config.maxAlertsPerDay)
-		if (slot.action !== 'SEND') await giveBackAlertClaim?.()
+		counted = true
+		if (slot.action !== 'SEND') {
+			await giveBackAlertClaim?.()
+			releaseDetectorSlot = null // CAP_REACHED keeps the slot and the count, as before
+		}
 		if (slot.action === 'CAP_REACHED') {
 			console.log(
 				`🔕 [${data.side}] ${data.symbol} recorded, not alerted (daily cap ${config.maxAlertsPerDay} reached)`,
@@ -387,7 +399,7 @@ ${directionEmoji} *Action:* BUY ${data.symbol}
 			try {
 				await deps.sendChannel(message.replace(/[*_`]/g, ''), false)
 			} catch (plainErr) {
-				await releaseAlertSlot(alertStore, slotArgs).catch(() => {})
+				await releaseDetectorSlot?.() // = releaseAlertSlot: del the slot, then decr the count
 				await giveBackAlertClaim?.()
 				note(obs, (o) => {
 					o.suppressed = 'SEND_FAILED'
@@ -404,7 +416,10 @@ ${directionEmoji} *Action:* BUY ${data.symbol}
 			`✅ [${data.side}] Alert dispatched for ${data.symbol}${decision ? ` (score ${decision.score}/100)` : ''}`,
 		)
 	} catch (error) {
-		if (giveBackAlertClaim && !delivered) await giveBackAlertClaim()
+		if (!delivered) {
+			await releaseDetectorSlot?.()
+			await giveBackAlertClaim?.()
+		}
 		console.error(`❌ Failed to send Telegram alert:`, error)
 		note(obs, (o) => {
 			if (!o.suppressed && !o.alertSent) o.suppressed = 'WORKER_ERROR'

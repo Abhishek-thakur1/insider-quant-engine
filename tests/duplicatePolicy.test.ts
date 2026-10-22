@@ -254,3 +254,20 @@ test('REVIEW 4: an unexpected error after the claim (reserveAlertSlot throws) gi
 	w.incrThrows(false)
 	assert.equal((await w.fire(vcp)).alert_sent, true, 'not blocked by the claim of a fire that errored')
 })
+
+test('REVIEW 3rd pass: an error after the per-detector slot is taken (symbol claim throws) releases the slot — that detector can still alert that symbol', async () => {
+	const w = world()
+	const realSet = w.claims.set.bind(w.claims)
+	let throwOnce = true
+	w.claims.set = async (k, v, o) => {
+		if (throwOnce && k.startsWith('alert:sym:')) {
+			throwOnce = false
+			throw new Error('redis down')
+		}
+		return realSet(k, v, o)
+	}
+	assert.equal((await w.fire(smb)).alert_suppressed_reason, 'WORKER_ERROR')
+	assert.equal([...w.kv.keys()].filter((k) => k.startsWith('alert:sent:')).length, 0, 'per-detector slot released')
+	const r = await w.fire({ ...smb, price: 501 })
+	assert.equal(r.alert_sent, true, 'the same detector alerts the same symbol later')
+})

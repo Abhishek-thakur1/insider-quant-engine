@@ -29,7 +29,8 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
   - **Tests:** 12.
 - **The per-detector slot is now claimed atomically** before the symbol claim. This replaces the read-only check, which the parity test couldn't see. A single fire makes the same Redis writes as before.
 - **The paper claim is gated only** (owner decision): an ungated fire never takes or tests it, so it can't make a later alerted trade the flagged duplicate.
-- **Tests:** 13, 334 overall.
+- **Per-detector slot released on any error** (third review): an error after the per-detector slot is taken releases it, so that detector isn't blocked on the symbol for the day. CAP_REACHED keeps the slot, as before.
+- **Tests:** 14, 335 overall.
 
 ## `feat/fetch-replay` — merged (PR #20); offline tooling, nothing fetched yet
 
