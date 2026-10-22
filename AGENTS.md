@@ -1658,7 +1658,7 @@ There are two independent atomic claims (`alertPolicy.claimSymbolSide`; Redis SE
 
 | Claim | Taken | The loser |
 |---|---|---|
-| `paper:sym:*` | before `registerTrade`; never by an invalid-geometry row | Still recorded (recording fails open). Paper row and signals row flagged `duplicate_signal`. Excluded from `pnl:daily` (`positionTracker`) and from the API's `/api/today`, `/api/trades/history` and `/api/trades/heatmap` unless `?includeDuplicates=true`. |
+| `paper:sym:*` | before `registerTrade`, **by gated fires only** (owner, 2026-10-22); never by an invalid-geometry row. Ungated rows are never flagged. | Still recorded (recording fails open). Paper row and signals row flagged `duplicate_signal`. Excluded from `pnl:daily` (`positionTracker`) and from the API's `/api/today`, `/api/trades/history` and `/api/trades/heatmap` unless `?includeDuplicates=true`. |
 | `alert:sym:*` | after the gated / capital checks, before the per-detector slot | Nothing sent. No message editing. Uses no cap slot. Signals row `alert_suppressed_reason = 'DUPLICATE'`, an existing reason, so no migration. |
 
 - **Order:** the per-detector dedup (`alert:sent:*`) is checked **before** the symbol claim. A fire its own detector already alerted today never takes the claim, so it can't make a concurrent legitimate fire lose and then hand the claim back.
@@ -1669,7 +1669,8 @@ There are two independent atomic claims (`alertPolicy.claimSymbolSide`; Redis SE
 
   The position id and both claims come from one clock read, so the give-back always matches. Only a process crash between claim and send leaves a claim held (until its position closes, or 60 min).
 - **Errors:** a paper-claim error records the row unflagged (fail open). An alert-claim error propagates to `WORKER_ERROR` (fail closed).
-- **Known edge:** if the first fire was not alerted (ungated) and a later gated fire on the same symbol + side alerts, that alerted trade's paper row is the flagged duplicate. The paper claim belongs to whichever position opened first.
+- **Gated only** (owner decision, 2026-10-22): only a fire that passed the filter takes or tests the paper claim. An ungated fire can therefore never make a later alerted trade the flagged duplicate. The cost is that two ungated fires on the same symbol + side both count in the ungated stats.
+- **Remaining edge:** a gated fire that was capital-skipped still takes the paper claim.
 
 Tests: `tests/duplicatePolicy.test.ts`. `legacyWorkerParity` stays green, because the claim keys go to a non-recording store in `tests/helpers/legacyHarness.ts`.
 

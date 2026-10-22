@@ -27,6 +27,9 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
   - **One clock read:** a single read builds the position id and both claims, so the give-back always matches.
   - **Errors:** the alert claim is given back on any error after it is taken.
   - **Tests:** 12.
+- **The per-detector slot is now claimed atomically** before the symbol claim. This replaces the read-only check, which the parity test couldn't see. A single fire makes the same Redis writes as before.
+- **The paper claim is gated only** (owner decision): an ungated fire never takes or tests it, so it can't make a later alerted trade the flagged duplicate.
+- **Tests:** 13, 334 overall.
 
 ## `feat/fetch-replay` — merged (PR #20); offline tooling, nothing fetched yet
 

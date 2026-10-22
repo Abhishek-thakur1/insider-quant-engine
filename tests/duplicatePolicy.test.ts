@@ -49,7 +49,11 @@ const world = (opts: { clockStepMs?: number; incrThrows?: boolean } = {}) => {
 	}
 	const claims = makeClaimStore()
 	const deps: PipelineDeps = {
-		runFilter: async () => decision(),
+		runFilter: async () => {
+			const d = nextDecision ?? decision()
+			nextDecision = null
+			return d
+		},
 		getTracker: async () => ({
 			getCurrentNotional: () => 0,
 			registerTrade: async (pos) => {
@@ -69,8 +73,10 @@ const world = (opts: { clockStepMs?: number; incrThrows?: boolean } = {}) => {
 		now: () => (opts.clockStepMs ? (now += opts.clockStepMs) : now),
 		config: { shadowMode: false, maxAlertsPerDay: MAX, capitalBase: 100000, capitalBehavior: 'REDUCE', hasAdmin: false },
 	}
-	const fire = async (p: AlertPayload) => {
-		const draft = newSignalDraft(p, { signalId: crypto.randomUUID(), firedAt: now, shadowMode: false })
+	let nextDecision: ReturnType<typeof decision> | null = null
+	const fire = async (p: AlertPayload, shadow = false) => {
+		deps.config.shadowMode = shadow
+		const draft = newSignalDraft(p, { signalId: crypto.randomUUID(), firedAt: now, shadowMode: shadow })
 		const orig = { log: console.log, warn: console.warn, error: console.error }
 		console.log = console.warn = console.error = () => {}
 		try {
@@ -82,6 +88,8 @@ const world = (opts: { clockStepMs?: number; incrThrows?: boolean } = {}) => {
 	}
 	return {
 		fire,
+		/** One fire with a given filter decision (shadow mode so an ungated fire is still recorded). */
+		fireWith: (p: AlertPayload, d: ReturnType<typeof decision>, shadow: boolean) => ((nextDecision = d), fire(p, shadow)),
 		sends,
 		registered,
 		kv,
@@ -184,6 +192,24 @@ test('EXCLUSIONS: pnl:daily skips duplicate_signal rows; the API excludes them f
 	const api = fs.readFileSync('src/api/server.ts', 'utf8')
 	assert.match(api, /const NOT_DUPLICATE = ` AND NOT \('duplicate_signal' = ANY\(COALESCE\(data_quality, '\{\}'\)\)\)`/)
 	assert.equal((api.match(/NOT_DUPLICATE/g) ?? []).length, 4, 'defined once, used by /api/today, /api/trades/history, /api/trades/heatmap')
+})
+
+// ── owner decision 2026-10-22: the paper claim is GATED ONLY ──
+
+test('GATED ONLY: an ungated fire never takes the paper claim — a later gated, alerted fire on the same symbol + side is NOT flagged', async () => {
+	const w = world()
+	const ungated = (p: AlertPayload) => ({ ...p })
+	// ungated fire first (filter not passed, shadow mode records it)
+	const u = await w.fireWith(ungated(vcp), decision({ passed: false, score: 70 }), true)
+	assert.equal(u.alert_sent, false)
+	const g = await w.fire(smb) // gated, same symbol + side, minutes later
+	assert.equal(g.alert_sent, true)
+	assert.equal(w.registered.length, 2)
+	assert.deepEqual(w.registered.map((p) => p.dataQuality ?? []), [[], []], 'neither row flagged: the ungated fire took no claim')
+	// and an ungated fire after a gated one is not flagged either (never tests the claim)
+	const u2 = await w.fireWith(ungated({ ...vcp, detectorName: 'Third' }), decision({ passed: false, score: 60 }), true)
+	assert.equal(u2.alert_sent, false)
+	assert.equal(w.registered[2]!.dataQuality, undefined)
 })
 
 // ── review of PR #22 (independent session, 2026-10-22) ──

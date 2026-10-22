@@ -206,7 +206,10 @@ export const runAlertPipeline = async (
 		// Duplicate policy, paper side: a second fire on the same symbol + side while the
 		// first position is open (or within 60 min) is still recorded, flagged
 		// duplicate_signal so stats count it once. A claim error records it unflagged
-		// (recording fails open). An invalid-geometry row never claims.
+		// (recording fails open). GATED ONLY (owner, 2026-10-22): only a fire that passed the
+		// filter takes or tests the paper claim, so an ungated fire can never make a later
+		// alerted trade the flagged duplicate; ungated rows are never flagged. An
+		// invalid-geometry row never claims.
 		// One clock read for the position id and both claims, so a give-back always matches
 		// the stored claim exactly (review finding 3).
 		const nowMs = deps.now()
@@ -218,7 +221,7 @@ export const runAlertPipeline = async (
 		// all day: for options only the 60-minute window applies (review finding 1, blocking).
 		const isOpen = isOptions ? () => false : (id: string) => positionTracker.getOpenPositions().some((p) => p.id === id)
 		let paperDuplicateOf: SymbolClaim | null = null
-		if (!geometry) {
+		if (!geometry && gated) {
 			try {
 				const c = await claimSymbolSide(await deps.getClaimStore(), symKeys.paper, myClaim, isOpen)
 				if (!c.first) paperDuplicateOf = c.holder
