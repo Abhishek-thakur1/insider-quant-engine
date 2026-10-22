@@ -114,20 +114,25 @@ export const alertKeys = (day: string, detector: string, symbol: string) => ({
 	count: `alert:count:${day}`,
 })
 
+/** Step 1 of reserveAlertSlot — atomic: only the first caller per detector+symbol+day gets true. */
+export const claimDetectorSlot = async (store: AlertStore, keys: ReturnType<typeof alertKeys>): Promise<boolean> =>
+	(await store.set(keys.dedup, String(Date.now()), { NX: true, EX: KEY_TTL_SECONDS })) !== null
+
+/** Step 2 of reserveAlertSlot — count the alert against the daily cap. */
+export const countAlertSlot = async (store: AlertStore, keys: ReturnType<typeof alertKeys>, maxPerDay: number): Promise<SlotDecision> => {
+	const n = await store.incr(keys.count)
+	if (n === 1) await store.expire(keys.count, KEY_TTL_SECONDS)
+	if (n > maxPerDay) return { action: 'CAP_REACHED', notifyCap: n === maxPerDay + 1 }
+	return { action: 'SEND' }
+}
+
 export const reserveAlertSlot = async (
 	store: AlertStore,
 	o: { day: string; detector: string; symbol: string; maxPerDay: number },
 ): Promise<SlotDecision> => {
 	const keys = alertKeys(o.day, o.detector, o.symbol)
-
-	// Atomic claim: only the first caller per detector+symbol+day gets 'OK'.
-	const claimed = await store.set(keys.dedup, String(Date.now()), { NX: true, EX: KEY_TTL_SECONDS })
-	if (claimed === null) return { action: 'DUPLICATE' }
-
-	const n = await store.incr(keys.count)
-	if (n === 1) await store.expire(keys.count, KEY_TTL_SECONDS)
-	if (n > o.maxPerDay) return { action: 'CAP_REACHED', notifyCap: n === o.maxPerDay + 1 }
-	return { action: 'SEND' }
+	if (!(await claimDetectorSlot(store, keys))) return { action: 'DUPLICATE' }
+	return countAlertSlot(store, keys, o.maxPerDay)
 }
 
 // If the Telegram send itself fails, give the slot back so a later signal for
@@ -200,3 +205,79 @@ export const levelGeometryProblem = (o: { side: 'LONG' | 'SHORT'; entry: number;
 	if (o.side === 'LONG' ? !(o.target > o.entry) : !(o.target < o.entry)) return 'TARGET_WRONG_SIDE'
 	return null
 }
+
+// ── One alert / one counted paper position per symbol + side (owner, 2026-10-22) ──
+//
+// Oct 22 11:06: Stock Momentum Breakout and VCP fired on AEQUS LONG in the same
+// minute; both passed, both were alerted and both paper rows counted. Now a second
+// fire on the same symbol + side is a DUPLICATE while the first one's position is
+// still open, or within 60 minutes of it if that position has closed (or never
+// opened: capital-skipped). Two independent claims, each atomic in Redis:
+//   - paper:sym:…  taken before registerTrade → the loser's paper row is flagged
+//                  data_quality 'duplicate_signal' (excluded from pnl:daily and the
+//                  API's stats; still recorded — recording fails open);
+//   - alert:sym:…  taken just before the per-detector slot → the loser is not sent,
+//                  signals row alert_suppressed_reason 'DUPLICATE', no cap slot used.
+// No message editing, nothing sent for a duplicate. Opposite sides never collide;
+// Nifty options share 'NIFTY' (dedupSymbol), side LONG = CE, SHORT = PE.
+
+export const SYMBOL_SIDE_COOLDOWN_MS = 60 * 60_000
+export const DUPLICATE_SIGNAL_FLAG = 'duplicate_signal'
+
+export const symbolSideKeys = (day: string, side: 'LONG' | 'SHORT', symbol: string) => ({
+	paper: `paper:sym:${day}:${side}:${dedupSymbol(symbol)}`,
+	alert: `alert:sym:${day}:${side}:${dedupSymbol(symbol)}`,
+})
+
+/** The subset of Redis the claims need. Production: node-redis get/set + EVAL compare-and-set. */
+export interface ClaimStore {
+	get(key: string): Promise<string | null>
+	set(key: string, value: string, opts: { NX: true; EX: number }): Promise<string | null>
+	/** Atomically replace `expected` with `next` (and reset the TTL); false if the value changed meanwhile. */
+	compareAndSet(key: string, expected: string, next: string, ttlSeconds: number): Promise<boolean>
+	/** Delete only if the value is still `expected` (give back a claim that led to no send). */
+	compareAndDelete(key: string, expected: string): Promise<boolean>
+}
+
+export interface SymbolClaim {
+	ts: number
+	positionId: string
+}
+
+export type ClaimDecision = { first: true } | { first: false; holder: SymbolClaim }
+
+/**
+ * Take the symbol+side claim, or report that an earlier fire holds it. A stale holder
+ * (its position closed and >= 60 min old) is replaced atomically, so two concurrent
+ * fires after the window can't both win.
+ */
+export const claimSymbolSide = async (
+	store: ClaimStore,
+	key: string,
+	mine: SymbolClaim,
+	isOpen: (positionId: string) => boolean,
+): Promise<ClaimDecision> => {
+	const value = JSON.stringify(mine)
+	if ((await store.set(key, value, { NX: true, EX: KEY_TTL_SECONDS })) !== null) return { first: true }
+	const raw = await store.get(key)
+	if (raw === null) {
+		// expired between the two calls: one more NX attempt, otherwise someone else won
+		return (await store.set(key, value, { NX: true, EX: KEY_TTL_SECONDS })) !== null ? { first: true } : { first: false, holder: mine }
+	}
+	let holder: SymbolClaim
+	try {
+		holder = JSON.parse(raw) as SymbolClaim
+	} catch {
+		holder = { ts: 0, positionId: '' }
+	}
+	const live = isOpen(holder.positionId) || mine.ts - holder.ts < SYMBOL_SIDE_COOLDOWN_MS
+	if (live) return { first: false, holder }
+	return (await store.compareAndSet(key, raw, value, KEY_TTL_SECONDS)) ? { first: true } : { first: false, holder }
+}
+
+/** Redis Lua for ClaimStore.compareAndSet (GET == expected → SET EX). */
+export const COMPARE_AND_SET_LUA =
+	"if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3]) return 1 else return 0 end"
+
+/** Redis Lua for ClaimStore.compareAndDelete (GET == expected → DEL). */
+export const COMPARE_AND_DELETE_LUA = "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end"

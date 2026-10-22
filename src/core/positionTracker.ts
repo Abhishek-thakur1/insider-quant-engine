@@ -96,6 +96,20 @@ class PositionTracker {
 
 	// Returns the paper_trades.id of the inserted row (null if the insert failed),
 	// so the signals log can link the signal to its trade.
+	/** Remove one data_quality flag (duplicate policy: an alerted trade is the one counted). */
+	public async removeFlag(positionId: string, tradeId: number | null, flag: string): Promise<void> {
+		// Postgres first: if it fails, nothing else changes (memory, pnl:daily and the row stay consistent).
+		if (tradeId !== null) {
+			await pool.query(`UPDATE paper_trades SET data_quality = array_remove(data_quality, $1) WHERE id = $2`, [flag, tradeId])
+		}
+		for (const list of this.openPositions.values()) {
+			const pos = list.find((p) => p.id === positionId)
+			if (!pos) continue
+			if (pos.dataQuality) pos.dataQuality = pos.dataQuality.filter((f) => f !== flag)
+			await redisClient.hSet('trades:open', pos.id, JSON.stringify(pos))
+		}
+	}
+
 	public async registerTrade(pos: OpenPosition): Promise<number | null> {
 		// Save to Redis for persistence and API access
 		await redisClient.hSet('trades:open', pos.id, JSON.stringify(pos))
@@ -187,8 +201,9 @@ class PositionTracker {
 				const pipeline = redisClient.multi()
 				pipeline.hDel('trades:open', pos.id)
 				pipeline.lPush('trades:history', JSON.stringify(closedPos))
-				// Update daily PnL counter
-				pipeline.incrByFloat('pnl:daily', closedPos.pnl)
+				// Update daily PnL counter — a duplicate_signal row is the same trade counted
+				// twice (owner, 2026-10-22), so it stays out of the daily P&L.
+				if (!pos.dataQuality?.includes('duplicate_signal')) pipeline.incrByFloat('pnl:daily', closedPos.pnl)
 				await pipeline.exec()
 
 				// Update Postgres

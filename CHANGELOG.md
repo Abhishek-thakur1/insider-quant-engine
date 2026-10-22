@@ -2,6 +2,38 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased — `feat/duplicate-alert-policy` (not merged, not deployed; owner: Monday evening at the earliest)
+
+- **One alert per symbol + side** (AGENTS.md §11.18).
+  - **When it applies:** a second fire on the same symbol + side, from any detector, while the first position is open, or within 60 minutes when it's closed.
+  - **Telegram:** nothing is sent and no cap slot is used. The signals row is `DUPLICATE`.
+  - **Paper trade:** still recorded, but flagged `duplicate_signal` on both the paper row and the signals row. It's excluded from `pnl:daily` and from the API's today, history and heatmap endpoints unless `?includeDuplicates=true`.
+  - **Mechanics:** atomic Redis claims (`alert:sym:*`, `paper:sym:*`), with Lua compare-and-set and compare-and-delete. No migration.
+  - **Why:** AEQUS on Oct 22 (two detectors, same minute, two alerts).
+- **Tests:** `tests/duplicatePolicy.test.ts`, 8 tests:
+  - the concurrent pair;
+  - opposite side;
+  - first position still open;
+  - closed with 60 minutes elapsed;
+  - Nifty options;
+  - send failure gives the claim back;
+  - stale holder taken over atomically;
+  - exclusions.
+
+  The parity harness routes the new claim keys to a non-recording store.
+- **Fixes from the independent review** (one finding was blocking). Each has a test that fails on the code before the fix.
+  - **Blocking, options:** only the 60-minute window applies to options. Option paper positions never close in-session, a defect older than this change, so "still open" would have suppressed every later CE or PE alert all day.
+  - **Order:** the per-detector dedup is checked before the symbol claim, so a fire its own detector already alerted can't make a concurrent legitimate fire lose.
+  - **One clock read:** a single read builds the position id and both claims, so the give-back always matches.
+  - **Errors:** the alert claim is given back on any error after it is taken.
+  - **Tests:** 12.
+- **The per-detector slot is now claimed atomically** before the symbol claim. This replaces the read-only check, which the parity test couldn't see. A single fire makes the same Redis writes as before.
+- **The paper claim is gated only** (owner decision): an ungated fire never takes or tests it, so it can't make a later alerted trade the flagged duplicate.
+- **Per-detector slot released on any error** (third review): an error after the per-detector slot is taken releases it, so that detector isn't blocked on the symbol for the day. CAP_REACHED keeps the slot, as before.
+- **Only an alerted fire keeps the paper claim** (owner decision): on a capital skip, failed send, cap reached, duplicate or error, the claim is released.
+- **Concurrent inversion fixed** (4th review): an alerted fire that was flagged at insert because a concurrent holder was later not alerted re-takes the paper claim and drops its flag (paper row and signals row).
+- **Tests:** 19, 340 overall.
+
 ## `feat/fetch-replay` — merged (PR #20); offline tooling, nothing fetched yet
 
 - **Liquid-replay fetch, offline tooling only** (`backtest/fetchReplay.ts`, `scripts/fetch_replay.ts`). It doesn't touch the engine, and adds no Redis key or migration.
