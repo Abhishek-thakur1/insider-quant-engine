@@ -32,7 +32,6 @@ const world = (opts: { clockStepMs?: number; incrThrows?: boolean } = {}) => {
 	const sends: string[] = []
 	let failSends = false
 	const store: AlertStore = {
-		get: async (k) => kv.get(k) ?? null,
 		set: async (k, v, o) => (o.NX && kv.has(k) ? null : (kv.set(k, v), 'OK')),
 		incr: async (k) => {
 			if (opts.incrThrows) throw new Error('redis incr failed')

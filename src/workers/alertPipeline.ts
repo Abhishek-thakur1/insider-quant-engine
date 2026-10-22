@@ -25,8 +25,9 @@ import {
 	getISTDateString,
 	levelGeometryProblem,
 	releaseAlertSlot,
-	reserveAlertSlot,
 	alertKeys,
+	claimDetectorSlot,
+	countAlertSlot,
 	symbolSideKeys,
 	type AlertStore,
 	type ClaimStore,
@@ -284,11 +285,12 @@ export const runAlertPipeline = async (
 			detector: data.detectorName || 'UNKNOWN',
 			symbol: data.symbol,
 		}
-		// Per-detector dedup is checked BEFORE the symbol claim: a fire its own detector already
-		// alerted today must not take the symbol claim, make a concurrent fire lose to it, and
-		// then hand it back with nothing sent (review finding 2). reserveAlertSlot below still
-		// makes the atomic decision; this read only avoids the needless claim.
-		if ((await alertStore.get(alertKeys(slotArgs.day, slotArgs.detector, slotArgs.symbol).dedup)) !== null) {
+		// The per-detector slot is CLAIMED (atomic SET NX, the same write as before) BEFORE the
+		// symbol claim: a fire its own detector already alerted today never takes the symbol
+		// claim, so it can't make a concurrent legitimate fire lose (review finding 2). If the
+		// symbol claim then loses, the per-detector slot is handed back.
+		const detectorKeys = alertKeys(slotArgs.day, slotArgs.detector, slotArgs.symbol)
+		if (!(await claimDetectorSlot(alertStore, detectorKeys))) {
 			console.log(
 				`🔕 [${data.side}] ${data.symbol} recorded, not alerted (already alerted today for ${slotArgs.detector})`,
 			)
@@ -305,6 +307,7 @@ export const runAlertPipeline = async (
 		const myAlertClaim = JSON.stringify(myClaim)
 		const alertClaim = await claimSymbolSide(claimStore, symKeys.alert, myClaim, isOpen)
 		if (!alertClaim.first) {
+			await alertStore.del(detectorKeys.dedup).catch(() => 0)
 			console.log(
 				`🔕 [${data.side}] ${data.symbol} recorded, not alerted (duplicate of ${alertClaim.holder.positionId}: one alert per symbol and side)`,
 			)
@@ -318,20 +321,8 @@ export const runAlertPipeline = async (
 			await claimStore.compareAndDelete(symKeys.alert, myAlertClaim).catch(() => false)
 		}
 
-		const slot = await reserveAlertSlot(alertStore, {
-			...slotArgs,
-			maxPerDay: config.maxAlertsPerDay,
-		})
+		const slot = await countAlertSlot(alertStore, detectorKeys, config.maxAlertsPerDay)
 		if (slot.action !== 'SEND') await giveBackAlertClaim?.()
-		if (slot.action === 'DUPLICATE') {
-			console.log(
-				`🔕 [${data.side}] ${data.symbol} recorded, not alerted (already alerted today for ${slotArgs.detector})`,
-			)
-			note(obs, (o) => {
-				o.suppressed = 'DUPLICATE'
-			})
-			return
-		}
 		if (slot.action === 'CAP_REACHED') {
 			console.log(
 				`🔕 [${data.side}] ${data.symbol} recorded, not alerted (daily cap ${config.maxAlertsPerDay} reached)`,

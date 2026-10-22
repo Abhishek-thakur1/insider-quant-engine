@@ -239,11 +239,6 @@ export const makeStore = (effects: Effect[], sc: Scenario): AlertStore => {
 	if (sc.preClaimed) data.set(keys.dedup, '1')
 	if (sc.preCount !== undefined) data.set(keys.count, String(sc.preCount))
 	return {
-		// A read, not a policy write: not recorded (the pre-hook worker never read, and
-		// parity compares the policy's writes; see legacyHarness for the claim keys).
-		async get(key) {
-			return data.get(key) ?? null
-		},
 		async set(key, value, opts) {
 			effects.push(['redis.set', key])
 			if (opts.NX && data.has(key)) return null

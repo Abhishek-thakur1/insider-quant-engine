@@ -97,8 +97,6 @@ export const dispatchBlockReason = (o: {
 
 // The subset of node-redis v5 the policy needs. Injected for tests.
 export interface AlertStore {
-	/** Read-only peek (the per-detector dedup check before the symbol claim). */
-	get(key: string): Promise<string | null>
 	set(key: string, value: string, opts: { NX: true; EX: number }): Promise<string | null>
 	incr(key: string): Promise<number>
 	expire(key: string, seconds: number): Promise<number | boolean>
@@ -116,20 +114,25 @@ export const alertKeys = (day: string, detector: string, symbol: string) => ({
 	count: `alert:count:${day}`,
 })
 
+/** Step 1 of reserveAlertSlot — atomic: only the first caller per detector+symbol+day gets true. */
+export const claimDetectorSlot = async (store: AlertStore, keys: ReturnType<typeof alertKeys>): Promise<boolean> =>
+	(await store.set(keys.dedup, String(Date.now()), { NX: true, EX: KEY_TTL_SECONDS })) !== null
+
+/** Step 2 of reserveAlertSlot — count the alert against the daily cap. */
+export const countAlertSlot = async (store: AlertStore, keys: ReturnType<typeof alertKeys>, maxPerDay: number): Promise<SlotDecision> => {
+	const n = await store.incr(keys.count)
+	if (n === 1) await store.expire(keys.count, KEY_TTL_SECONDS)
+	if (n > maxPerDay) return { action: 'CAP_REACHED', notifyCap: n === maxPerDay + 1 }
+	return { action: 'SEND' }
+}
+
 export const reserveAlertSlot = async (
 	store: AlertStore,
 	o: { day: string; detector: string; symbol: string; maxPerDay: number },
 ): Promise<SlotDecision> => {
 	const keys = alertKeys(o.day, o.detector, o.symbol)
-
-	// Atomic claim: only the first caller per detector+symbol+day gets 'OK'.
-	const claimed = await store.set(keys.dedup, String(Date.now()), { NX: true, EX: KEY_TTL_SECONDS })
-	if (claimed === null) return { action: 'DUPLICATE' }
-
-	const n = await store.incr(keys.count)
-	if (n === 1) await store.expire(keys.count, KEY_TTL_SECONDS)
-	if (n > o.maxPerDay) return { action: 'CAP_REACHED', notifyCap: n === o.maxPerDay + 1 }
-	return { action: 'SEND' }
+	if (!(await claimDetectorSlot(store, keys))) return { action: 'DUPLICATE' }
+	return countAlertSlot(store, keys, o.maxPerDay)
 }
 
 // If the Telegram send itself fails, give the slot back so a later signal for
