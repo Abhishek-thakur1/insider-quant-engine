@@ -98,14 +98,15 @@ class PositionTracker {
 	// so the signals log can link the signal to its trade.
 	/** Remove one data_quality flag (duplicate policy: an alerted trade is the one counted). */
 	public async removeFlag(positionId: string, tradeId: number | null, flag: string): Promise<void> {
+		// Postgres first: if it fails, nothing else changes (memory, pnl:daily and the row stay consistent).
+		if (tradeId !== null) {
+			await pool.query(`UPDATE paper_trades SET data_quality = array_remove(data_quality, $1) WHERE id = $2`, [flag, tradeId])
+		}
 		for (const list of this.openPositions.values()) {
 			const pos = list.find((p) => p.id === positionId)
 			if (!pos) continue
 			if (pos.dataQuality) pos.dataQuality = pos.dataQuality.filter((f) => f !== flag)
 			await redisClient.hSet('trades:open', pos.id, JSON.stringify(pos))
-		}
-		if (tradeId !== null) {
-			await pool.query(`UPDATE paper_trades SET data_quality = array_remove(data_quality, $1) WHERE id = $2`, [flag, tradeId])
 		}
 	}
 
