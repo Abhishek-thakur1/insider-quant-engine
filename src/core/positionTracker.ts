@@ -101,13 +101,14 @@ class PositionTracker {
 	// Returns the paper_trades.id of the inserted row (null if the insert failed),
 	// so the signals log can link the signal to its trade.
 	public async registerTrade(pos: OpenPosition): Promise<number | null> {
-		// Save to Redis for persistence and API access
-		await redisClient.hSet('trades:open', pos.id, JSON.stringify(pos))
-		// Track in memory for ultra-fast tick checking
-		this.addToMemory(pos)
-
-		// Insert into Postgres. Capital-skipped signals (actual size 0) go in as
-		// SKIPPED, not OPEN — they are not positions (see positionStatus.ts).
+		// Postgres FIRST, then one Redis write and the in-memory entry (2026-10-22). Writing
+		// trades:open before the INSERT and again after it let a tick close the position during
+		// the INSERT, and the second write then resurrected it as a ghost in trades:open. A
+		// position only becomes visible to processTick once its row id is known, so every close
+		// addresses exactly its own row.
+		//
+		// Capital-skipped signals (actual size 0) go in as SKIPPED, not OPEN — they are not
+		// positions (see positionStatus.ts).
 		const { status, dataQuality: statusFlags } = insertStatusFor(pos)
 		const dataQuality = [...statusFlags, ...(pos.dataQuality ?? [])]
 		let tradeId: number | null = null
@@ -120,15 +121,18 @@ class PositionTracker {
 				[pos.symbol, pos.detectorName, pos.side, pos.entryPrice, pos.timestamp, pos.stopLoss, pos.target, pos.regimeClass || null, pos.gated || false, pos.size, pos.capitalGated || false, pos.actualSize ?? pos.size, pos.durationClass || 'INTRADAY', status, dataQuality]
 			)
 			tradeId = (ins.rows[0]?.id as number | undefined) ?? null
-			if (tradeId !== null) {
-				// Persist the row's primary key with the position, so closes and orphan marking
-				// address exactly this row (also after a restart reloads trades:open).
-				pos.dbId = tradeId
-				await redisClient.hSet('trades:open', pos.id, JSON.stringify(pos))
-			}
 		} catch (dbErr) {
 			console.error('[PositionTracker] ❌ Postgres insert error:', dbErr)
 		}
+		// The row's primary key travels with the position (closes and orphan marking address
+		// exactly this row, also after a restart reloads trades:open). Insert failed → no dbId →
+		// the legacy symbol + entry_time match.
+		if (tradeId !== null) pos.dbId = tradeId
+
+		// Save to Redis for persistence and API access (a Redis error propagates, as before)
+		await redisClient.hSet('trades:open', pos.id, JSON.stringify(pos))
+		// Track in memory for ultra-fast tick checking
+		this.addToMemory(pos)
 
 		// Publish signal_event for open
 		redisClient.publish('sse:events', JSON.stringify({

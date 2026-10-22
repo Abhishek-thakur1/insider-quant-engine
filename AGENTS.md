@@ -1651,7 +1651,7 @@ Tests: `tests/bootCleanup.test.ts`.
 
 **Now:**
 - `positionStatus.newPositionId` builds `trade_<ms>_<symbol>_<detector slug>_<6 hex>`.
-- After the INSERT, the row's primary key is stored on the position as `dbId` and written back to `trades:open`, so it survives a restart.
+- **Order:** registration is INSERT, then `dbId`, then **one** `trades:open` write, then the in-memory entry. A position is invisible to `processTick` until its row id is known. That way a close can't race the INSERT, and no second write can resurrect a closed position as a ghost (the independent review found this). `dbId` survives a restart.
 - The close UPDATE and the orphan UPDATE target `id = dbId` (`positionStatus.rowMatch`). Positions registered before this change still use the legacy symbol + entry_time match.
 - The API and dashboard never parse the id. The API returns `paper_trades.id`; SSE events carry the position object and are only compared for equality.
 

@@ -76,7 +76,17 @@ test('ROW ADDRESSING: with the row id known, UPDATEs target exactly that row; le
 
 test('WIRING: the tracker persists dbId after INSERT and both UPDATEs go through rowMatch; nothing parses the id', () => {
 	const tracker = fs.readFileSync('src/core/positionTracker.ts', 'utf8')
-	assert.match(tracker, /pos\.dbId = tradeId\s+await redisClient\.hSet\('trades:open', pos\.id, JSON\.stringify\(pos\)\)/)
+	// ORDER (review of 145c5ba, blocking): INSERT → dbId → ONE hSet → addToMemory. A position is
+	// invisible to processTick until its row id is known, so a close can't race the INSERT and no
+	// second write can resurrect a closed position.
+	const reg = tracker.slice(tracker.indexOf('public async registerTrade'), tracker.indexOf('// Publish signal_event for open'))
+	const at = (re: RegExp) => reg.search(re)
+	const insert = at(/INSERT INTO paper_trades/)
+	const setDbId = at(/pos\.dbId = tradeId/)
+	const hset = at(/redisClient\.hSet\('trades:open'/)
+	const mem = at(/this\.addToMemory\(pos\)/)
+	assert.ok(insert > 0 && insert < setDbId && setDbId < hset && hset < mem, `order INSERT(${insert}) < dbId(${setDbId}) < hSet(${hset}) < addToMemory(${mem})`)
+	assert.equal((reg.match(/redisClient\.hSet\('trades:open'/g) ?? []).length, 1, 'exactly one trades:open write per registration')
 	assert.equal((tracker.match(/rowMatch\(pos, /g) ?? []).length, 2, 'close and orphan UPDATEs')
 	assert.doesNotMatch(tracker, /WHERE symbol = \$\d+ AND status IN/, 'no UPDATE matches by symbol + entry_time directly')
 	// the id is only ever used as an opaque key (hSet/hDel/hKeys) — never split or pattern-matched
