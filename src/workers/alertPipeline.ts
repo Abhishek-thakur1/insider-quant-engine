@@ -26,6 +26,7 @@ import {
 	levelGeometryProblem,
 	releaseAlertSlot,
 	reserveAlertSlot,
+	alertKeys,
 	symbolSideKeys,
 	type AlertStore,
 	type ClaimStore,
@@ -87,6 +88,10 @@ export const runAlertPipeline = async (
 
 	// ── CONFIRMATION ENGINE GATE ─────────────────────────────────────────────
 	let decision: FilterDecision | null = null
+	// Duplicate policy: an alert claim taken but not followed by a delivered alert is always
+	// given back, including on an unexpected error (review of PR #22, finding 4).
+	let giveBackAlertClaim: (() => Promise<unknown>) | null = null
+	let delivered = false
 
 	try {
 		decision = await deps.runFilter(data)
@@ -201,13 +206,20 @@ export const runAlertPipeline = async (
 		// first position is open (or within 60 min) is still recorded, flagged
 		// duplicate_signal so stats count it once. A claim error records it unflagged
 		// (recording fails open). An invalid-geometry row never claims.
-		const positionId = `trade_${deps.now()}_${data.symbol}`
-		const symKeys = symbolSideKeys(getISTDateString(deps.now()), data.side, data.symbol)
-		const isOpen = (id: string) => positionTracker.getOpenPositions().some((p) => p.id === id)
+		// One clock read for the position id and both claims, so a give-back always matches
+		// the stored claim exactly (review finding 3).
+		const nowMs = deps.now()
+		const positionId = `trade_${nowMs}_${data.symbol}`
+		const symKeys = symbolSideKeys(getISTDateString(nowMs), data.side, data.symbol)
+		const myClaim: SymbolClaim = { ts: nowMs, positionId }
+		// Option paper positions never close in-session (registered as 'NIFTY 22650 CE', ticks
+		// arrive as NSE:NIFTY…CE — a separate, pre-existing defect), so "still open" would hold
+		// all day: for options only the 60-minute window applies (review finding 1, blocking).
+		const isOpen = isOptions ? () => false : (id: string) => positionTracker.getOpenPositions().some((p) => p.id === id)
 		let paperDuplicateOf: SymbolClaim | null = null
 		if (!geometry) {
 			try {
-				const c = await claimSymbolSide(await deps.getClaimStore(), symKeys.paper, { ts: deps.now(), positionId }, isOpen)
+				const c = await claimSymbolSide(await deps.getClaimStore(), symKeys.paper, myClaim, isOpen)
 				if (!c.first) paperDuplicateOf = c.holder
 			} catch (err) {
 				console.error(`[DuplicatePolicy] paper claim failed for ${data.symbol} — recorded unflagged:`, err)
@@ -229,7 +241,7 @@ export const runAlertPipeline = async (
 			entryPrice: entry,
 			stopLoss,
 			target: target1, // We track Target 1 for the PnL hit
-			timestamp: deps.now(),
+			timestamp: nowMs,
 			detectorName: data.detectorName || 'UNKNOWN',
 			size: sizing.qty, // Full unconstrained size for historical significance testing
 			regimeClass: data.regimeClass || decision?.regime || 'UNIVERSAL',
@@ -266,12 +278,32 @@ export const runAlertPipeline = async (
 			return
 		}
 
+		const alertStore = await deps.getAlertStore()
+		const slotArgs = {
+			day: getISTDateString(deps.now()),
+			detector: data.detectorName || 'UNKNOWN',
+			symbol: data.symbol,
+		}
+		// Per-detector dedup is checked BEFORE the symbol claim: a fire its own detector already
+		// alerted today must not take the symbol claim, make a concurrent fire lose to it, and
+		// then hand it back with nothing sent (review finding 2). reserveAlertSlot below still
+		// makes the atomic decision; this read only avoids the needless claim.
+		if ((await alertStore.get(alertKeys(slotArgs.day, slotArgs.detector, slotArgs.symbol).dedup)) !== null) {
+			console.log(
+				`🔕 [${data.side}] ${data.symbol} recorded, not alerted (already alerted today for ${slotArgs.detector})`,
+			)
+			note(obs, (o) => {
+				o.suppressed = 'DUPLICATE'
+			})
+			return
+		}
+
 		// Duplicate policy, alert side: one alert per symbol + side while the first alerted
-		// position is open, or within 60 min. Nothing is sent for a duplicate and it uses
-		// no slot of the daily cap. A claim error propagates (alerting fails closed).
+		// position is open (equities), or within 60 min. Nothing is sent for a duplicate and it
+		// uses no slot of the daily cap. A claim error propagates (alerting fails closed).
 		const claimStore = await deps.getClaimStore()
-		const myAlertClaim = JSON.stringify({ ts: deps.now(), positionId })
-		const alertClaim = await claimSymbolSide(claimStore, symKeys.alert, { ts: deps.now(), positionId }, isOpen)
+		const myAlertClaim = JSON.stringify(myClaim)
+		const alertClaim = await claimSymbolSide(claimStore, symKeys.alert, myClaim, isOpen)
 		if (!alertClaim.first) {
 			console.log(
 				`🔕 [${data.side}] ${data.symbol} recorded, not alerted (duplicate of ${alertClaim.holder.positionId}: one alert per symbol and side)`,
@@ -281,19 +313,16 @@ export const runAlertPipeline = async (
 			})
 			return
 		}
-		const giveBackAlertClaim = () => claimStore.compareAndDelete(symKeys.alert, myAlertClaim).catch(() => false)
-
-		const alertStore = await deps.getAlertStore()
-		const slotArgs = {
-			day: getISTDateString(deps.now()),
-			detector: data.detectorName || 'UNKNOWN',
-			symbol: data.symbol,
+		giveBackAlertClaim = async () => {
+			giveBackAlertClaim = null // once
+			await claimStore.compareAndDelete(symKeys.alert, myAlertClaim).catch(() => false)
 		}
+
 		const slot = await reserveAlertSlot(alertStore, {
 			...slotArgs,
 			maxPerDay: config.maxAlertsPerDay,
 		})
-		if (slot.action !== 'SEND') await giveBackAlertClaim()
+		if (slot.action !== 'SEND') await giveBackAlertClaim?.()
 		if (slot.action === 'DUPLICATE') {
 			console.log(
 				`🔕 [${data.side}] ${data.symbol} recorded, not alerted (already alerted today for ${slotArgs.detector})`,
@@ -365,13 +394,14 @@ ${directionEmoji} *Action:* BUY ${data.symbol}
 				await deps.sendChannel(message.replace(/[*_`]/g, ''), false)
 			} catch (plainErr) {
 				await releaseAlertSlot(alertStore, slotArgs).catch(() => {})
-				await giveBackAlertClaim()
+				await giveBackAlertClaim?.()
 				note(obs, (o) => {
 					o.suppressed = 'SEND_FAILED'
 				})
 				throw plainErr
 			}
 		}
+		delivered = true
 		note(obs, (o) => {
 			o.alertSent = true
 		})
@@ -380,6 +410,7 @@ ${directionEmoji} *Action:* BUY ${data.symbol}
 			`✅ [${data.side}] Alert dispatched for ${data.symbol}${decision ? ` (score ${decision.score}/100)` : ''}`,
 		)
 	} catch (error) {
+		if (giveBackAlertClaim && !delivered) await giveBackAlertClaim()
 		console.error(`❌ Failed to send Telegram alert:`, error)
 		note(obs, (o) => {
 			if (!o.suppressed && !o.alertSent) o.suppressed = 'WORKER_ERROR'

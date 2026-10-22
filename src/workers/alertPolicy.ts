@@ -97,6 +97,8 @@ export const dispatchBlockReason = (o: {
 
 // The subset of node-redis v5 the policy needs. Injected for tests.
 export interface AlertStore {
+	/** Read-only peek (the per-detector dedup check before the symbol claim). */
+	get(key: string): Promise<string | null>
 	set(key: string, value: string, opts: { NX: true; EX: number }): Promise<string | null>
 	incr(key: string): Promise<number>
 	expire(key: string, seconds: number): Promise<number | boolean>

@@ -28,6 +28,9 @@ const makeStore = (): AlertStore & { data: Map<string, string> } => {
 	const data = new Map<string, string>()
 	return {
 		data,
+		async get(key) {
+			return data.get(key) ?? null
+		},
 		async set(key, value, opts) {
 			if (opts.NX && data.has(key)) return null
 			data.set(key, value)

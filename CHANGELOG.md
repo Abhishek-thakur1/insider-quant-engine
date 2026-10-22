@@ -21,6 +21,12 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
   - exclusions.
 
   The parity harness routes the new claim keys to a non-recording store.
+- **Fixes from the independent review** (one finding was blocking). Each has a test that fails on the code before the fix.
+  - **Blocking, options:** only the 60-minute window applies to options. Option paper positions never close in-session, a defect older than this change, so "still open" would have suppressed every later CE or PE alert all day.
+  - **Order:** the per-detector dedup is checked before the symbol claim, so a fire its own detector already alerted can't make a concurrent legitimate fire lose.
+  - **One clock read:** a single read builds the position id and both claims, so the give-back always matches.
+  - **Errors:** the alert claim is given back on any error after it is taken.
+  - **Tests:** 12.
 
 ## `feat/fetch-replay` — merged (PR #20); offline tooling, nothing fetched yet
 

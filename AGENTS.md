@@ -1652,7 +1652,7 @@ Tests: `tests/bootCleanup.test.ts`.
 - the earlier fire's position is still open, or
 - the earlier fire was less than 60 minutes ago (`SYMBOL_SIDE_COOLDOWN_MS`). This covers a position that has closed or never opened.
 
-Opposite sides never collide. Nifty options dedup on `NIFTY` per side.
+Opposite sides never collide. Nifty options dedup on `NIFTY` per side, and for options **only the 60-minute window applies**. Option paper positions never close in-session: they're registered as `NIFTY 22650 CE`, but ticks arrive as `NSE:NIFTY…CE`, a separate defect from before this change. "Still open" would therefore hold all day.
 
 There are two independent atomic claims (`alertPolicy.claimSymbolSide`; Redis SET NX, and a stale holder is replaced with Lua compare-and-set, so concurrent fires can't both win):
 
@@ -1661,7 +1661,13 @@ There are two independent atomic claims (`alertPolicy.claimSymbolSide`; Redis SE
 | `paper:sym:*` | before `registerTrade`; never by an invalid-geometry row | Still recorded (recording fails open). Paper row and signals row flagged `duplicate_signal`. Excluded from `pnl:daily` (`positionTracker`) and from the API's `/api/today`, `/api/trades/history` and `/api/trades/heatmap` unless `?includeDuplicates=true`. |
 | `alert:sym:*` | after the gated / capital checks, before the per-detector slot | Nothing sent. No message editing. Uses no cap slot. Signals row `alert_suppressed_reason = 'DUPLICATE'`, an existing reason, so no migration. |
 
-- **Claim given back:** the alert claim is returned (compare-and-delete) when no alert went out, i.e. the per-detector slot said duplicate or cap reached, or the send failed.
+- **Order:** the per-detector dedup (`alert:sent:*`) is checked **before** the symbol claim. A fire its own detector already alerted today never takes the claim, so it can't make a concurrent legitimate fire lose and then hand the claim back.
+- **Claim given back:** the alert claim is returned (compare-and-delete) whenever no alert went out:
+  - the per-detector slot said duplicate or cap reached;
+  - the send failed;
+  - **any** error after the claim.
+
+  The position id and both claims come from one clock read, so the give-back always matches. Only a process crash between claim and send leaves a claim held (until its position closes, or 60 min).
 - **Errors:** a paper-claim error records the row unflagged (fail open). An alert-claim error propagates to `WORKER_ERROR` (fail closed).
 - **Known edge:** if the first fire was not alerted (ungated) and a later gated fire on the same symbol + side alerts, that alerted trade's paper row is the flagged duplicate. The paper claim belongs to whichever position opened first.
 

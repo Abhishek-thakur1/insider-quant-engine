@@ -24,7 +24,7 @@ import { DAY, NOW, MAX, decision, equity, option, makeClaimStore } from './helpe
 
 const MIN = 60_000
 
-const world = () => {
+const world = (opts: { clockStepMs?: number; incrThrows?: boolean } = {}) => {
 	let now = NOW
 	const kv = new Map<string, string>()
 	const open = new Map<string, OpenPosition>()
@@ -32,8 +32,10 @@ const world = () => {
 	const sends: string[] = []
 	let failSends = false
 	const store: AlertStore = {
+		get: async (k) => kv.get(k) ?? null,
 		set: async (k, v, o) => (o.NX && kv.has(k) ? null : (kv.set(k, v), 'OK')),
 		incr: async (k) => {
+			if (opts.incrThrows) throw new Error('redis incr failed')
 			const n = Number(kv.get(k) ?? 0) + 1
 			kv.set(k, String(n))
 			return n
@@ -65,7 +67,7 @@ const world = () => {
 			sends.push(text)
 		},
 		sendAdmin: async () => {},
-		now: () => now,
+		now: () => (opts.clockStepMs ? (now += opts.clockStepMs) : now),
 		config: { shadowMode: false, maxAlertsPerDay: MAX, capitalBase: 100000, capitalBehavior: 'REDUCE', hasAdmin: false },
 	}
 	const fire = async (p: AlertPayload) => {
@@ -88,6 +90,7 @@ const world = () => {
 		advance: (ms: number) => void (now += ms),
 		closeAll: () => open.clear(),
 		failSends: (b: boolean) => void (failSends = b),
+		incrThrows: (b: boolean) => void (opts.incrThrows = b),
 	}
 }
 
@@ -182,4 +185,47 @@ test('EXCLUSIONS: pnl:daily skips duplicate_signal rows; the API excludes them f
 	const api = fs.readFileSync('src/api/server.ts', 'utf8')
 	assert.match(api, /const NOT_DUPLICATE = ` AND NOT \('duplicate_signal' = ANY\(COALESCE\(data_quality, '\{\}'\)\)\)`/)
 	assert.equal((api.match(/NOT_DUPLICATE/g) ?? []).length, 4, 'defined once, used by /api/today, /api/trades/history, /api/trades/heatmap')
+})
+
+// ── review of PR #22 (independent session, 2026-10-22) ──
+
+test('REVIEW 1 (blocking): Nifty OPTION positions never close in-session, so options use only the 60-min window — a CE alert does not suppress CE alerts all day', async () => {
+	const w = world()
+	await w.fire({ ...option, symbol: 'NIFTY 22650 CE', detectorName: 'Nifty Trend Pulse' }) // position stays "open" forever (tracker never closes it)
+	w.advance(30 * MIN)
+	assert.equal((await w.fire({ ...option, symbol: 'NIFTY 22700 CE', detectorName: 'Nifty VWAP Reclaim' })).alert_suppressed_reason, 'DUPLICATE', 'inside 60 min: duplicate')
+	w.advance(31 * MIN) // 61 min after the first alert, first "position" still open
+	const r = await w.fire({ ...option, symbol: 'NIFTY 22750 CE', detectorName: 'Delta Hedging Pressure (Gamma Squeeze)' })
+	assert.equal(r.alert_sent, true, 'after 60 min an option alert goes out even though the first option position never closed')
+	// equities keep the "while open" rule
+	const e = world()
+	await e.fire(smb)
+	e.advance(61 * MIN)
+	assert.equal((await e.fire(vcp)).alert_suppressed_reason, 'DUPLICATE')
+})
+
+test('REVIEW 2: a fire its own detector already alerted today does not take the symbol claim, so a concurrent legitimate fire still alerts', async () => {
+	const w = world()
+	await w.fire(vcp) // VCP alerts AEQUS LONG at 10:30 (alert:sent for VCP is set for the day)
+	w.closeAll()
+	w.advance(90 * MIN)
+	const [a, b] = await Promise.all([w.fire(vcp), w.fire(smb)]) // VCP again (per-detector duplicate) + Momentum, same minute
+	assert.equal(a.alert_suppressed_reason, 'DUPLICATE', "VCP's own per-day duplicate")
+	assert.equal(b.alert_sent, true, 'Momentum was legitimate and is sent')
+	assert.equal(w.sends.length, 2)
+})
+
+test('REVIEW 3: one clock read — with a clock that moves on every read, a failed send still gives the claim back', async () => {
+	const w = world({ clockStepMs: 1 })
+	w.failSends(true)
+	assert.equal((await w.fire(smb)).alert_suppressed_reason, 'SEND_FAILED')
+	w.failSends(false)
+	assert.equal((await w.fire(vcp)).alert_sent, true, 'claim was given back exactly')
+})
+
+test('REVIEW 4: an unexpected error after the claim (reserveAlertSlot throws) gives the claim back', async () => {
+	const w = world({ incrThrows: true })
+	assert.equal((await w.fire(smb)).alert_suppressed_reason, 'WORKER_ERROR')
+	w.incrThrows(false)
+	assert.equal((await w.fire(vcp)).alert_sent, true, 'not blocked by the claim of a fire that errored')
 })
