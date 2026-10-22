@@ -187,8 +187,9 @@ class PositionTracker {
 				const pipeline = redisClient.multi()
 				pipeline.hDel('trades:open', pos.id)
 				pipeline.lPush('trades:history', JSON.stringify(closedPos))
-				// Update daily PnL counter
-				pipeline.incrByFloat('pnl:daily', closedPos.pnl)
+				// Update daily PnL counter — a duplicate_signal row is the same trade counted
+				// twice (owner, 2026-10-22), so it stays out of the daily P&L.
+				if (!pos.dataQuality?.includes('duplicate_signal')) pipeline.incrByFloat('pnl:daily', closedPos.pnl)
 				await pipeline.exec()
 
 				// Update Postgres

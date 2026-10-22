@@ -18,13 +18,18 @@ import type { AlertPayload } from './telegramWorker.js'
 import type { SignalDraft } from '../db/signalRecord.js'
 import {
 	buildEquityMessage,
+	claimSymbolSide,
 	computeSizing,
 	dispatchBlockReason,
+	DUPLICATE_SIGNAL_FLAG,
 	getISTDateString,
 	levelGeometryProblem,
 	releaseAlertSlot,
 	reserveAlertSlot,
+	symbolSideKeys,
 	type AlertStore,
+	type ClaimStore,
+	type SymbolClaim,
 } from './alertPolicy.js'
 
 // Gates that represent a structural/mathematical disqualification of the
@@ -41,6 +46,7 @@ const HARD_GATES = new Set(['REGIME', 'BAYESIAN', 'EV', 'KELLY'])
 export interface PipelineTracker {
 	getCurrentNotional(): number
 	registerTrade(pos: OpenPosition): Promise<number | null>
+	getOpenPositions(): Pick<OpenPosition, 'id'>[]
 }
 
 export interface PipelineDeps {
@@ -48,6 +54,8 @@ export interface PipelineDeps {
 	// Lazily resolved, exactly when the original code dynamically imported them.
 	getTracker(): Promise<PipelineTracker>
 	getAlertStore(): Promise<AlertStore>
+	/** Symbol+side duplicate claims (alertPolicy.claimSymbolSide). */
+	getClaimStore(): Promise<ClaimStore>
 	sendChannel(text: string, markdown: boolean): Promise<unknown>
 	sendAdmin(text: string): Promise<unknown>
 	now(): number
@@ -189,9 +197,33 @@ export const runAlertPipeline = async (
 
 		const gated = decision?.passed ?? false
 
+		// Duplicate policy, paper side: a second fire on the same symbol + side while the
+		// first position is open (or within 60 min) is still recorded, flagged
+		// duplicate_signal so stats count it once. A claim error records it unflagged
+		// (recording fails open). An invalid-geometry row never claims.
+		const positionId = `trade_${deps.now()}_${data.symbol}`
+		const symKeys = symbolSideKeys(getISTDateString(deps.now()), data.side, data.symbol)
+		const isOpen = (id: string) => positionTracker.getOpenPositions().some((p) => p.id === id)
+		let paperDuplicateOf: SymbolClaim | null = null
+		if (!geometry) {
+			try {
+				const c = await claimSymbolSide(await deps.getClaimStore(), symKeys.paper, { ts: deps.now(), positionId }, isOpen)
+				if (!c.first) paperDuplicateOf = c.holder
+			} catch (err) {
+				console.error(`[DuplicatePolicy] paper claim failed for ${data.symbol} — recorded unflagged:`, err)
+			}
+		}
+		if (paperDuplicateOf) {
+			console.log(`🔁 [${data.side}] ${data.symbol} duplicate of ${paperDuplicateOf.positionId} — paper row flagged ${DUPLICATE_SIGNAL_FLAG}`)
+			note(obs, (o) => {
+				o.duplicateSignal = true
+			})
+		}
+		const extraFlags = [...(geometry ? ['invalid_geometry'] : []), ...(paperDuplicateOf ? [DUPLICATE_SIGNAL_FLAG] : [])]
+
 		// Record EVERY trade that reaches this point, before any alert decision.
 		const tradeId = await positionTracker.registerTrade({
-			id: `trade_${deps.now()}_${data.symbol}`,
+			id: positionId,
 			symbol: data.symbol,
 			side: data.side,
 			entryPrice: entry,
@@ -205,7 +237,7 @@ export const runAlertPipeline = async (
 			capitalGated: sizing.capitalGated,
 			actualSize: sizing.actualSize,
 			durationClass,
-			...(geometry ? { dataQuality: ['invalid_geometry'] } : {}),
+			...(extraFlags.length > 0 ? { dataQuality: extraFlags } : {}),
 		})
 		note(obs, (o) => {
 			o.tradeRegistered = true
@@ -234,6 +266,23 @@ export const runAlertPipeline = async (
 			return
 		}
 
+		// Duplicate policy, alert side: one alert per symbol + side while the first alerted
+		// position is open, or within 60 min. Nothing is sent for a duplicate and it uses
+		// no slot of the daily cap. A claim error propagates (alerting fails closed).
+		const claimStore = await deps.getClaimStore()
+		const myAlertClaim = JSON.stringify({ ts: deps.now(), positionId })
+		const alertClaim = await claimSymbolSide(claimStore, symKeys.alert, { ts: deps.now(), positionId }, isOpen)
+		if (!alertClaim.first) {
+			console.log(
+				`🔕 [${data.side}] ${data.symbol} recorded, not alerted (duplicate of ${alertClaim.holder.positionId}: one alert per symbol and side)`,
+			)
+			note(obs, (o) => {
+				o.suppressed = 'DUPLICATE'
+			})
+			return
+		}
+		const giveBackAlertClaim = () => claimStore.compareAndDelete(symKeys.alert, myAlertClaim).catch(() => false)
+
 		const alertStore = await deps.getAlertStore()
 		const slotArgs = {
 			day: getISTDateString(deps.now()),
@@ -244,6 +293,7 @@ export const runAlertPipeline = async (
 			...slotArgs,
 			maxPerDay: config.maxAlertsPerDay,
 		})
+		if (slot.action !== 'SEND') await giveBackAlertClaim()
 		if (slot.action === 'DUPLICATE') {
 			console.log(
 				`🔕 [${data.side}] ${data.symbol} recorded, not alerted (already alerted today for ${slotArgs.detector})`,
@@ -315,6 +365,7 @@ ${directionEmoji} *Action:* BUY ${data.symbol}
 				await deps.sendChannel(message.replace(/[*_`]/g, ''), false)
 			} catch (plainErr) {
 				await releaseAlertSlot(alertStore, slotArgs).catch(() => {})
+				await giveBackAlertClaim()
 				note(obs, (o) => {
 					o.suppressed = 'SEND_FAILED'
 				})

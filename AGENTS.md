@@ -1164,6 +1164,8 @@ version live in `backtest/core/symbolClass.ts`, with a test pinning the five aff
 | `HTF_TREND:{sym}` | `BULLISH\|BEARISH` | — | **nothing** | `BaseDetector.isDailyTrendAligned` |
 | `alert:sent:{IST-date}:{detector}:{symbol}` | timestamp (SET NX) | 36 h | `alertPolicy.reserveAlertSlot` | itself — one Telegram alert per detector+symbol per day. Nifty option symbols dedup on `NIFTY`. **Never cleared at boot.** |
 | `alert:count:{IST-date}` | counter | 36 h | `alertPolicy.reserveAlertSlot` | itself — daily cap. **Never cleared at boot.** |
+| `alert:sym:{IST-date}:{LONG\|SHORT}:{symbol}` | JSON `{ts, positionId}` (SET NX; stale holder replaced by Lua compare-and-set) | 36 h | `alertPolicy.claimSymbolSide` (alert side, just before the per-detector slot) | itself — one alert per symbol + side while the first alerted position is open, else 60 min (§11.18). Given back (compare-and-delete) when no alert went out. Options dedup on `NIFTY`. **Never cleared at boot.** |
+| `paper:sym:{IST-date}:{LONG\|SHORT}:{symbol}` | JSON `{ts, positionId}` | 36 h | `alertPolicy.claimSymbolSide` (before `registerTrade`) | itself — the losing fire's paper and signals rows are flagged `duplicate_signal` (§11.18). **Never cleared at boot.** |
 | `ema_shadow:nifty:bars5` | list of closed 5-min Nifty candles (JSON `{t,o,h,l,c}`), capped at 1,500 | none | `NiftyEmaShadow` (`redisBarStore`) | itself at boot — EMA warm-up history. **Never cleared at boot** (listed in the boot-cleanup comment). |
 
 > **2026-10-06:** cooldown keys (`cooldown:*`, `v2:cooldown:*`, `v2:session_open:*`) are **no
@@ -1391,6 +1393,7 @@ happens before any alert decision.**
 | Gated only | Only `decision.passed === true` is sent. A filter **error** records the trade as ungated and sends nothing (this replaces the old "fail open = send unfiltered"). |
 | Capital | Full skip (`actualSize = 0`) → never sent. REDUCE → normal alert with the reduced qty; no capital wording anywhere in the channel. |
 | Dedup | One alert per detector + symbol per IST day (`alert:sent:*`, survives restarts). |
+| One per symbol + side (2026-10-22, §11.18) | A second fire on the same symbol + side, from any detector, is a duplicate if the first alerted position is still open, or if it was alerted less than 60 min ago (`alert:sym:*`). Nothing is sent for it and it uses no cap slot. Its signals row is `DUPLICATE`. |
 | Daily cap | `TELEGRAM_MAX_ALERTS_PER_DAY` (default **20** — a noise-control choice, not validated). First overflow sends one notice to `TELEGRAM_ADMIN_ID`; then silence. |
 | Levels | SL/T1/T2/qty in the message are the same values written to Postgres (equity SL is still VWAP ± 0.2 %, not the detector's candle SL — open item). |
 | Watchdog | Exits on a silent socket only during 09:15–15:30 IST (`utils/marketHours.ts`). |
@@ -1640,6 +1643,29 @@ The regime then restarted from zero. Worse, the regime engine reads only its **i
 - the EMA shadow's half-built candle.
 
 Tests: `tests/bootCleanup.test.ts`.
+
+## 11.18 Duplicate policy: one alert per symbol + side (2026-10-22, branch `feat/duplicate-alert-policy`)
+
+**Why:** on Oct 22 at 11:06 Stock Momentum Breakout (score 85) and VCP (88) fired on AEQUS LONG in the same minute. They ran concurrently, because `websocket.ts` dispatches detectors with `Promise.all`. Both were alerted and both paper rows were counted: double exposure for one trade.
+
+**Rule (owner decisions):** a fire is a **duplicate** if an earlier fire on the same symbol + side holds the claim, and either:
+- the earlier fire's position is still open, or
+- the earlier fire was less than 60 minutes ago (`SYMBOL_SIDE_COOLDOWN_MS`). This covers a position that has closed or never opened.
+
+Opposite sides never collide. Nifty options dedup on `NIFTY` per side.
+
+There are two independent atomic claims (`alertPolicy.claimSymbolSide`; Redis SET NX, and a stale holder is replaced with Lua compare-and-set, so concurrent fires can't both win):
+
+| Claim | Taken | The loser |
+|---|---|---|
+| `paper:sym:*` | before `registerTrade`; never by an invalid-geometry row | Still recorded (recording fails open). Paper row and signals row flagged `duplicate_signal`. Excluded from `pnl:daily` (`positionTracker`) and from the API's `/api/today`, `/api/trades/history` and `/api/trades/heatmap` unless `?includeDuplicates=true`. |
+| `alert:sym:*` | after the gated / capital checks, before the per-detector slot | Nothing sent. No message editing. Uses no cap slot. Signals row `alert_suppressed_reason = 'DUPLICATE'`, an existing reason, so no migration. |
+
+- **Claim given back:** the alert claim is returned (compare-and-delete) when no alert went out, i.e. the per-detector slot said duplicate or cap reached, or the send failed.
+- **Errors:** a paper-claim error records the row unflagged (fail open). An alert-claim error propagates to `WORKER_ERROR` (fail closed).
+- **Known edge:** if the first fire was not alerted (ungated) and a later gated fire on the same symbol + side alerts, that alerted trade's paper row is the flagged duplicate. The paper claim belongs to whichever position opened first.
+
+Tests: `tests/duplicatePolicy.test.ts`. `legacyWorkerParity` stays green, because the claim keys go to a non-recording store in `tests/helpers/legacyHarness.ts`.
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 

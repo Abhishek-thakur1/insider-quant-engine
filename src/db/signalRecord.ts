@@ -47,6 +47,8 @@ export interface SignalDraft {
 	alertSent?: boolean
 	/** Stop or target on the wrong side of entry (alert blocked; row flagged invalid_geometry). */
 	invalidGeometry?: boolean
+	/** Same symbol + side as an earlier fire still open or < 60 min old (paper row flagged; row flagged duplicate_signal). */
+	duplicateSignal?: boolean
 }
 
 export const newSignalDraft = (
@@ -250,6 +252,7 @@ export const buildSignalRow = (
 	if (!lv.parsed) flags.push('levels_default_rr')
 	if (g.regime_guessed) flags.push('regime_guessed')
 	if (d.invalidGeometry) flags.push('invalid_geometry')
+	if (d.duplicateSignal) flags.push('duplicate_signal')
 
 	return {
 		signal_id: d.signalId,
