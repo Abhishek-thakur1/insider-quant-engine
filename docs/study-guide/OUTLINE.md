@@ -12,7 +12,7 @@ Every section uses the same shape:
 Levels: **L1** beginner · **L2** working knowledge · **L3** senior deep dive, collapsed by default.
 
 Two things run through the whole guide:
-- **The worked example**, followed from start to finish: the **JSLL SHORT on 22 Oct**. Stock Momentum Breakout fires at 14:13 with a score of 85. The trade has real stop and target levels, a Telegram alert, and a 15:15 time exit at 0.00R. It's chosen because it touches every stage. AEQUS (two detectors in the same millisecond) is the counter-example in Part 8.
+- **The worked example** (owner, 22 Oct): **AEQUS 11:06 LONG**, before the restart, is the main example. **JSLL SHORT 14:13**, after the restart, is the counter-example. Revisit after Friday's saved logs. The JSLL details: Stock Momentum Breakout fires at 14:13 with a score of 85. The trade has real stop and target levels, a Telegram alert, and a 15:15 time exit at 0.00R. It's chosen because it touches every stage. AEQUS (two detectors in the same millisecond) is the counter-example in Part 8.
 - **The evidence badge** on every claim: **Proven** (tested and observed live), **Tested on paper** (unit or parity tests only), or **Unverified**.
 
 ## Part 0: Start here
@@ -84,6 +84,14 @@ Each technology gets the same four parts: what it is, why it's used here, the al
 6. **The same-millisecond position-id collision:** AEQUS, with a ghost race found in review.
 7. **The duplicate alert:** two detectors on one stock, and atomic claims.
 8. **The wrong-side stop:** the geometry guard (optional).
+
+## Part 8b: Security and secrets (L2)
+- The token flow: auth bridge → token volume → 17:15 purge. Secrets live only in `.env`. The dashboard has no login yet.
+
+## Part 8c: Cost (L1)
+- EC2 and credits. Figures to be verified.
+
+**Status labels** used throughout: the screener job is *built, not running*; the in-play re-rank is *design only*; Part D and the mobile backend are *planned*.
 
 ## Part 9: Trade-offs and what I'd do differently
 - **9.1 The honest limits** (L2): a single host, Redis as live state, stops derived from VWAP, no per-minute history yet, only 5 live detectors, no proven edge.
