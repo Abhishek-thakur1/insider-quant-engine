@@ -11,7 +11,15 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
 import { BOOT_DAY_KEY, runBootCleanup, describeBootCleanup, type BootCleanupRedis } from '../src/core/bootCleanup.js'
-import { regimeReturnsSnapshot, restoreRegimeReturns, resetRegimeState } from '../src/utils/regimeDetector.js'
+
+// regimeDetector → config/env.ts exits without credentials: stub them (as regimeGate.test.ts does)
+// so this file also passes on a fresh clone with no .env.
+process.env.TELEGRAM_BOT_TOKEN ??= 'test-token'
+process.env.TELEGRAM_CHANNEL_ID ??= '-1000000000000'
+process.env.FYERS_APP_ID ??= 'TEST-APP-ID'
+process.env.FYERS_SECRET_ID ??= 'test-secret'
+process.env.FYERS_REDIRECT_URI ??= 'http://localhost:3000/callback'
+const { regimeReturnsSnapshot, restoreRegimeReturns, resetRegimeState } = await import('../src/utils/regimeDetector.js')
 
 const fakeRedis = (initial: Record<string, string>) => {
 	const kv = new Map(Object.entries(initial))
