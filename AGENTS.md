@@ -1143,7 +1143,8 @@ version live in `backtest/core/symbolClass.ts`, with a test pinning the five aff
 |---|---|---|---|---|
 | `vwap:{symbol}:{YYYY-MM-DD}` | JSON `VwapState` | none | `updateVwap`, `vwapSeeder` | `getVwap`, `warnIfVwapMissing` |
 | `market:nifty:bias` | `bullish\|bearish\|neutral` | none | `updateNiftyBias` | `getMarketBias` |
-| `regime:nifty:returns_1min` | list of return % | none | `pushNiftyReturn` (mirror) | (mirror only) |
+| `regime:nifty:returns_1min` | list of return % | none | `pushNiftyReturn` (mirror) | engine boot on a **same-day restart** only: `restoreRegimeReturns` re-loads it into memory (§11.17) |
+| `engine:boot_day` | IST date of the last engine boot | 7 d | boot cleanup (`core/bootCleanup.ts`) | boot cleanup: same day → keep session state; older/missing → clear it (§11.17). **Never cleared at boot.** |
 | `regime:nifty:current` | JSON `RegimeState` | 60 s | `pushNiftyReturn`, `getMarketRegime` | `getMarketRegime` |
 | `jsfilter:decisions` | list, capped at 5000 | none | `persistDecision` | `getRecentDecisions`. Each record has its own `ts`. **Never cleared at boot** (since 2026-10-20). |
 | `jsfilter:stats:{IST-date}` | hash `fired`/`blocked` | 30 d | `persistDecision` | `getFilterStats`. Per-day bucket, so a restart can't reset it. Replaces the un-dated `jsfilter:stats`. |
@@ -1171,16 +1172,17 @@ version live in `backtest/core/symbolClass.ts`, with a test pinning the five aff
 | `session_open:{sym}` | price | 8 h | Multitimeframebreakout (dormant) | itself |
 | `armed:vcp:{sym}`, `memory:vcp:*`, `baseline:vcp:*` | flag / lists | 8 h / none | vcpDetector (dormant) | itself |
 
-Boot cleanup in `websocket.ts` deletes, per symbol: `cooldown:v2:momentum:*`, `v2:session_open:*`,
-`v2:cooldown:vcp:*`, `v2:cooldown:gapgo:*`, `v2:vcp_history:*`; and globally:
-`cooldown:v2:nifty_pulse`, `cooldown:v2:vwap_reclaim`, `cooldown:v2:nifty_ore`, `cooldown:oi_sweep`,
-`cooldown:delta_squeeze`, `market:nifty:bias`, `regime:nifty:returns_1min`, `regime:nifty:current`,
-`jsfilter:stats` (the legacy un-dated hash only), `pnl:daily`.
+Boot cleanup (`core/bootCleanup.ts`, day-aware since 2026-10-22, §11.17):
+- **Every boot:** deletes `jsfilter:stats` (the legacy un-dated hash only).
+- **New-day boot** (`engine:boot_day` missing or older than today, IST): also deletes `market:nifty:bias`, `regime:nifty:returns_1min`, `regime:nifty:current`, `pnl:daily` and **every** `v2:vcp_history:*`, including symbols no longer on the watchlist.
+- **Same-day restart:** keeps all of them, and re-loads the regime returns into memory.
+- **Never deleted:** cooldown and session-open keys. They are TTL'd, and anomaly promotion no longer deletes anything either.
 
 > **2026-10-20:** `jsfilter:decisions` is **no longer deleted at boot**, and stats moved to per-day
 > `jsfilter:stats:{IST-date}`. A mid-session watchdog restart used to wipe the day's filter evidence
 > (the Oct 16 anomaly). `engine:restarts:{IST-date}` is deliberately not cleaned either: it is the
-> restart budget. Note `pnl:daily` and `market:nifty:bias` are still reset by every restart.
+> restart budget. (Until 2026-10-22, `pnl:daily` and `market:nifty:bias` were still reset by every
+> restart; the day-aware cleanup, §11.17, fixed that.)
 
 > **2026-10-18:** `trades:open` is **no longer deleted at boot**. The delete ran *after*
 > `positionTracker.init()` had loaded it, so every position still open at the next boot was lost
@@ -1613,6 +1615,31 @@ The published study (§11.14) includes those artifacts; the effect on its tables
 
 First live session (2026-10-22) has **no stored candles** (the code did not run on Oct 21), so every row
 that day is `warmup_partial`; EMAs seed from that day's first 20–21 candles (≈ 10:55).
+
+## 11.17 Day-aware boot cleanup (2026-10-22, branch `fix/day-aware-boot-cleanup`)
+
+**Why:** on Oct 22 at 11:46 a watchdog restart (34 s of feed silence) deleted, mid-session:
+- the regime returns;
+- the Nifty bias;
+- `pnl:daily`;
+- every VCP history.
+
+The regime then restarted from zero. Worse, the regime engine reads only its **in-memory** window: the Redis list is a mirror that nothing ever read back. So even keeping the key would not have kept the regime.
+
+**Now** (`src/core/bootCleanup.ts`, wired in `websocket.ts`): `engine:boot_day` stores the IST date of the last boot.
+- **New day:** clears the previous session's keys (§7).
+- **Same day:** keeps them, and `restoreRegimeReturns()` re-loads the mirror into memory (newest-first list → oldest-first window, capped at 20).
+- **Boot line** says which case ran:
+  - `🧹 Boot cleanup: same-day restart (…) — kept regime (N returns restored), …`
+  - `🧹 Boot cleanup: new day … — cleared N keys …`
+- **First boot after deploy:** there is no marker yet, so it behaves as a new day, exactly as before.
+
+**Still lost on a restart:**
+- in-memory candle buffers and detector instance state, including the Opening Range Explosion range;
+- the per-symbol volume tracker: the first tick after the restart is dropped, and gap volume never reaches VWAP;
+- the EMA shadow's half-built candle.
+
+Tests: `tests/bootCleanup.test.ts`.
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 

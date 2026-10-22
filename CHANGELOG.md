@@ -2,6 +2,18 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased — `fix/day-aware-boot-cleanup` (not merged, not deployed)
+
+- **Boot cleanup is now day-aware** (AGENTS.md §11.17).
+  - **Same-day restart:** keeps `market:nifty:bias`, `regime:nifty:returns_1min`, `regime:nifty:current`, `pnl:daily` and every `v2:vcp_history:*`, and re-loads the regime returns into memory. The regime engine computes from memory, so keeping the key alone wouldn't help.
+  - **New-day boot:** clears those keys from previous sessions. That includes stale `v2:vcp_history:*` of symbols no longer subscribed.
+  - **Marker:** the new key `engine:boot_day` (7-day TTL).
+- **Anomaly promotion** no longer deletes the symbol's VCP history.
+- **Unchanged:** cooldowns, alert keys, `trades:open`, `jsfilter:decisions`, `vwap:*`, `ema_shadow`, and the ledger are still never cleared. No migration. No threshold or gate change.
+- **Why:** the Oct 22 11:46 watchdog restart wiped the regime, the bias, `pnl:daily` and the VCP histories mid-session.
+- **Tests:** `tests/bootCleanup.test.ts` covers a same-day restart, a new-day boot, the first boot without a marker, the regime restore order, the boot line, and the wiring.
+- **RUNBOOK:** deploy step 0 now saves the engine log before any recreate.
+
 ## Unreleased — `feat/geometry-guard` (not merged, not deployed; owner: not before 2026-10-22 close)
 
 - **Geometry guard, scaled-down** (AGENTS.md §11.15): a wrong-side stop or target is recorded, flagged `invalid_geometry` on the paper and signals rows, and logged, but not alerted. No migration, no API or dashboard change. Daily count query in the RUNBOOK. The REAL-PATH tests now expect the trade to be recorded and flagged, with no alert.

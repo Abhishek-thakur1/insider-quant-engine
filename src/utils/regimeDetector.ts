@@ -48,6 +48,23 @@ export const resetRegimeState = (): void => {
 	inMemoryReturns.length = 0
 }
 
+/**
+ * Same-day restart (core/bootCleanup.ts): re-load the Redis mirror into memory, so a
+ * watchdog restart doesn't start the regime from zero. The mirror is LPUSHed, so it
+ * arrives newest first. Returns how many returns were restored.
+ */
+export const restoreRegimeReturns = (newestFirst: string[]): number => {
+	inMemoryReturns.length = 0
+	for (const v of newestFirst.slice(0, RETURNS_WINDOW).reverse()) {
+		const n = Number(v)
+		if (Number.isFinite(n)) inMemoryReturns.push(n)
+	}
+	return inMemoryReturns.length
+}
+
+/** Copy of the in-memory window, oldest first (tests and diagnostics). */
+export const regimeReturnsSnapshot = (): number[] => [...inMemoryReturns]
+
 export interface RegimeState {
 	regime: MarketRegime
 	entropy: number

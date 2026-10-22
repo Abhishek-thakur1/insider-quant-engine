@@ -21,9 +21,11 @@ import { NiftyEmaShadow, emaShadowEnabled, jsonlWriter, redisBarStore } from '..
 import { describePlan, planSubscription, subscriptionCapFromEnv } from '../core/subscriptionPlan.js'
 import { exitIfNotTradingDay } from '../core/tradingDayGate.js'
 import { notifyAdmin } from '../utils/adminNotify.js'
+import { getISTDateString } from '../utils/marketHours.js'
 
 // [NEW] Regime detector feed
-import { pushNiftyReturn } from '../utils/regimeDetector.js'
+import { pushNiftyReturn, restoreRegimeReturns } from '../utils/regimeDetector.js'
+import { describeBootCleanup, runBootCleanup } from '../core/bootCleanup.js'
 
 // Nifty detectors
 import { OiLiquiditySweepDetector } from '../detectors/oiLiquiditySweepDetector.js'
@@ -241,29 +243,40 @@ export const startLiveEngine = async () => {
 
 		strategyRouter.set(symbol, buildEquityStack(symbol))
 
-		// Cooldown / session-open keys carry TTLs and are deliberately NOT deleted:
-		// after a restart a symbol is promoted again, and wiping its cooldown let
-		// the same setup re-alert. Only the TTL-less VCP history is reset.
-		await redisClient.del(`v2:vcp_history:${symbol}`)
+		// Nothing is deleted on promotion (2026-10-22): cooldown / session-open keys are
+		// TTL'd, and a v2:vcp_history key can only be today's — the new-day boot cleanup
+		// (core/bootCleanup.ts) wipes every v2:vcp_history:*, and a same-day restart that
+		// re-promotes the symbol must keep the history it built before the restart.
 
 		// bot.telegram.sendMessage(ENV.TELEGRAM_CHANNEL_ID, `🚀 *DYNAMIC PROMOTION*\nSymbol: \`${symbol}\`\nReason: ${reason}\nStatus: Full detectors engaged.`, { parse_mode: 'Markdown' }).catch(console.error)
 	}
 	anomalyScanner.start(activeUniverseSet)
 
 	// ── Boot Cleanup & Strategy Routing ──────────────────────────────────────
-	await Promise.all(
-		activeUniverse.map(async (symbol) => {
-			strategyRouter.set(symbol, buildEquityStack(symbol))
+	for (const symbol of activeUniverse) strategyRouter.set(symbol, buildEquityStack(symbol))
 
-			// Cooldown and session-open keys all have TTLs (≤ 8 h), so yesterday's
-			// have expired by morning. They are NOT deleted at boot: a mid-session
-			// restart (watchdog exit → Docker restart) used to wipe every cooldown
-			// and let the same setups re-alert. Only TTL-less state is reset.
-			await redisClient.del(`v2:vcp_history:${symbol}`)
-		}),
+	// Day-aware (core/bootCleanup.ts, owner 2026-10-22): a NEW-DAY boot clears the previous
+	// session's regime returns, bias, pnl:daily and every v2:vcp_history:*; a SAME-DAY restart
+	// (watchdog) keeps them and re-loads the regime returns into memory. Cooldown and
+	// session-open keys are TTL'd (≤ 8 h) and never deleted here: wiping them on a restart
+	// let the same setups re-alert.
+	const today = getISTDateString()
+	const cleanup = await runBootCleanup(
+		{
+			get: (k) => redisClient.get(k),
+			set: (k, v, o) => redisClient.set(k, v, o),
+			del: (ks) => redisClient.del(ks),
+			keys: async (pattern) => {
+				const out: string[] = []
+				for await (const batch of redisClient.scanIterator({ MATCH: pattern, COUNT: 500 })) out.push(...batch)
+				return out
+			},
+		},
+		today,
 	)
+	const restoredReturns = cleanup.sameDay ? restoreRegimeReturns(await redisClient.lRange('regime:nifty:returns_1min', 0, -1)) : 0
+	console.log(describeBootCleanup(cleanup, today, restoredReturns))
 
-	// Clear regime data from previous session so today starts fresh
 	// Nifty cooldown keys (cooldown:v2:nifty_pulse, cooldown:v2:vwap_reclaim,
 	// cooldown:v2:nifty_ore, cooldown:oi_sweep, cooldown:delta_squeeze) are TTL'd
 	// and intentionally survive restarts — see the per-symbol note above.
@@ -272,19 +285,12 @@ export const startLiveEngine = async () => {
 	// trades:open is NOT cleared: positionTracker.init() (above) already loaded
 	// it, and deleting it orphaned every position still open at the next boot.
 	// SWING positions now carry over; prior-day INTRADAY ones are marked ORPHANED.
-	await Promise.all([
-		redisClient.del('market:nifty:bias'),
-		redisClient.del('regime:nifty:returns_1min'),
-		redisClient.del('regime:nifty:current'),
-		// jsfilter:decisions is NOT cleared: a mid-session restart used to wipe
-		// the day's filter evidence (Oct 16). Stats are per-day keys
-		// (jsfilter:stats:YYYY-MM-DD, 30-day TTL); this removes the legacy
-		// un-dated hash only.
-		redisClient.del('jsfilter:stats'),
-		redisClient.del('pnl:daily'),
-		// ema_shadow:nifty:bars5 is NOT cleared: it is the EMA shadow's warm-up
-		// history (its own closed 5-min candles, capped at MAX_STORED_BARS).
-	])
+	// jsfilter:decisions is NOT cleared: a mid-session restart used to wipe the day's
+	// filter evidence (Oct 16). Stats are per-day keys (jsfilter:stats:YYYY-MM-DD); the
+	// cleanup above removes only the legacy un-dated jsfilter:stats hash.
+	// ema_shadow:nifty:bars5 is NOT cleared: it is the EMA shadow's warm-up history
+	// (its own closed 5-min candles, capped at MAX_STORED_BARS).
+	// engine:boot_day is the cleanup's own marker (IST date of the last boot, 7-day TTL).
 
 	// EMA trend study in SHADOW (owner spec 2026-10-21): no alerts, no filter,
 	// no paper trades. Kill switch EMA_SHADOW_ENABLED=false.
