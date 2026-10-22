@@ -100,6 +100,15 @@ const tradingDays = (limit?: number): string[] => {
 	return limit ? unique.slice(-limit) : unique
 }
 
+/** A JSON array of symbols, or an object with `liquid: [{ symbol }]` (backtest/fetchReplay.ts). */
+const readUniverseFile = (file: string): string[] => {
+	const j = JSON.parse(fs.readFileSync(file, 'utf8')) as unknown
+	const list = Array.isArray(j) ? j : ((j as { liquid?: { symbol: string }[] }).liquid ?? []).map((r) => r.symbol)
+	const out = [...new Set(list.filter((s): s is string => typeof s === 'string' && s.length > 0))]
+	if (out.length === 0) throw new Error(`${file}: no symbols (expected a JSON array or { liquid: [{ symbol }] })`)
+	return out
+}
+
 // ── run ─────────────────────────────────────────────────────────────────────
 interface RunAccumulator {
 	signalsUngated: Map<string, number>
@@ -123,6 +132,13 @@ interface RunOptions {
 	to?: string
 	/** Warm-start variant: pre-load the previous session's last N five-minute candles into the candle buffer. */
 	warmCandles?: number
+	/**
+	 * A fixed symbol list from a file (a JSON array, or fetch-replay's liquid15cr.json with
+	 * `liquid[].symbol`), used for every session. Point-in-time only if the file was built so.
+	 */
+	universeFile?: string
+	/** Explicit IST session dates (e.g. the fetch-replay sessions); no daily Nifty cache needed. */
+	sessions?: string[]
 }
 
 const cmdRun = async (dayLimit?: number, targetDetectors?: string[], opts: RunOptions = {}): Promise<void> => {
@@ -141,13 +157,14 @@ const cmdRun = async (dayLimit?: number, targetDetectors?: string[], opts: RunOp
 		if (!perDay) throw new Error(`list "${opts.universeList}" not in ${UNIVERSES_JSON} (have: ${Object.keys(set.lists).join(', ')})`)
 	}
 	const listed = perDay
-	const symbols = listed ? [...new Set(Object.values(listed).flat())] : loadWatchlist()
-	const allDays = listed ? tradingDays().filter((d) => listed[d]) : tradingDays(dayLimit)
+	const fileSymbols = opts.universeFile ? readUniverseFile(opts.universeFile) : null
+	const symbols = listed ? [...new Set(Object.values(listed).flat())] : (fileSymbols ?? loadWatchlist())
+	const allDays = opts.sessions ?? (listed ? tradingDays().filter((d) => listed[d]) : tradingDays(dayLimit))
 	const windowed = allDays.filter((d) => (!opts.from || d >= opts.from) && (!opts.to || d <= opts.to))
 	const days = dayLimit ? windowed.slice(-dayLimit) : windowed
-	const allTradingDays = tradingDays()
+	const allTradingDays = opts.sessions ?? tradingDays()
 	const multiday = opts.multiday === true
-	console.log(`[run] universe: ${opts.universeList ?? 'watchlist.json (static)'} · ${DATA.intradayResolution}-minute bars · multi-day SMB ledger ${multiday ? 'ON' : 'OFF'}`)
+	console.log(`[run] universe: ${opts.universeList ?? (opts.universeFile ? `${opts.universeFile} (${symbols.length} symbols, static)` : 'watchlist.json (static)')} · ${DATA.intradayResolution}-minute bars · multi-day SMB ledger ${multiday ? 'ON' : 'OFF'}`)
 
 	let specs = REGISTRY.filter((s) => s.backtestable)
 	if (targetDetectors && targetDetectors.length > 0) {
@@ -485,7 +502,7 @@ const main = async (): Promise<void> => {
 	const daysFlag = rest.indexOf('--days')
 	const dayLimit = daysFlag >= 0 ? Number(rest[daysFlag + 1]) : undefined
 	const detFlag = rest.indexOf('--detectors')
-	const targetDetectors = detFlag >= 0 ? rest[detFlag + 1]?.split(',') : undefined
+	const targetDetectors = detFlag >= 0 ? rest[detFlag + 1]?.split(/[\s,]+/).filter(Boolean) : undefined
 	const flag = (name: string) => (rest.indexOf(name) >= 0 ? rest[rest.indexOf(name) + 1] : undefined)
 	const runOpts: RunOptions = { multiday: rest.includes('--multiday') }
 	const ul = flag('--universe-list')
@@ -498,6 +515,10 @@ const main = async (): Promise<void> => {
 	if (fr) runOpts.from = fr
 	if (tt) runOpts.to = tt
 	if (wc) runOpts.warmCandles = Number(wc)
+	const uf = flag('--universe-file')
+	const ss = flag('--sessions')
+	if (uf) runOpts.universeFile = uf
+	if (ss) runOpts.sessions = ss.split(/[\s,]+/).filter(Boolean).sort()
 
 	if (['fetch', 'fetch-daily-all', 'fetch-intraday'].includes(cmd ?? '') && !rest.includes('--allow-market-hours')) {
 		const why = marketWindowViolation(Date.now())

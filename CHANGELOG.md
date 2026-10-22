@@ -2,7 +2,42 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## Unreleased — `fix/day-aware-boot-cleanup` (not merged, not deployed)
+## `feat/fetch-replay` — merged (PR #20); offline tooling, nothing fetched yet
+
+- **Liquid-replay fetch, offline tooling only** (`backtest/fetchReplay.ts`, `scripts/fetch_replay.ts`). It doesn't touch the engine, and adds no Redis key or migration.
+- **Dry run by default**, with 0 Fyers calls. A live run needs `--live` plus `--owner-ok <today>`. The preflight refuses before 15:45 IST, on any breach in today's ledger, on an exhausted day, during a cooldown, or once the `backtest` allocation is used up.
+- **Limits:** at most 1,000 requests per evening, most liquid symbols first, stopping on the first quota stop. Runs are resumable: a symbol whose cache holds every replay session is skipped.
+- **Steps:**
+  - `nifty`: one Nifty 1-minute request for Oct 15–22.
+  - `liquid`: no API calls; builds the list of stocks with 30-session average traded value above ₹15 cr as of Oct 14, using daily bars dated on or before Oct 14 only.
+  - `minute`
+- **Cache:** daily candles share the screener's cache (`<data>/candles/D`). 1-minute candles go to `<data>/candles/1`.
+- **Sandbox:** `scripts/replay_sandbox.sh` runs the replay with `--network none` and no env file. `backtest/sandboxGuard.ts` aborts on any credential, a token file, or network access.
+- **Tests:** `tests/fetchReplay.test.ts`, 10 tests.
+- **Second commit:** the missing steps, the replay wiring and the report.
+  - `--step quotes`: the NSE_CM master in batches of 50 (about 45 calls), using the screener's own pre-filter thresholds. The quotes are from the fetch day, which is look-ahead; the output records it.
+  - `--step daily`: fills the screener's own cache with its cold-start ranges, up to 2 requests per symbol. That's about 2,000–2,600 requests, not 1,000–1,300 as planned, because the screener's 300-bar EMA needs about 460 days of history.
+  - **Request guard:** a fetch that tries more requests than it declared is stopped, so the cap can't be overrun.
+  - `backtest/run.ts`: new flags `--universe-file`, which reads `liquid15cr.json` or a JSON array, and `--sessions`.
+  - **Gate detail:** each simulated trade now carries `gateRejectedAt`.
+  - `backtest/replayReport.ts`: per setup and per day, with `n` on every row and every fire listed (time, stock, outcome, reason). It states the caveats: far too few sessions, options not replayable, and the pre-filter look-ahead. It gives no aggregate win rates.
+  - **Sandbox:** the replay runs only the 5 replayable live detectors.
+- **Tests:** 13.
+- **Third commit: fixes from the independent quota review of `cd789c1`.**
+  - **First throttle stops the run.** The job's gate uses `maxBreachesPerDay` 1 and `maxRetries` 0 (`replayGateConfig`). The review had found that one throttle led to a retry and the run carrying on, with production config.
+  - **The 1,000 cap is per evening, not per run.** It's computed as 1,000 minus the `backtest` requests already in today's ledger, so retries count too.
+  - **Every request re-checks the live ledger** (`midRunStop`). It stops on:
+    - any breach, including one by another job;
+    - an exhausted day;
+    - the cap reached by ledger count;
+    - a change of IST day;
+    - 16:25 IST.
+  - **Fetch window:** a run starts only between 15:45 and 16:15 IST, clear of the 16:30 screener's own pacer and the 17:15 token purge.
+  - **Failure stop:** an auth or token error ends the run at once, and so do 3 consecutive other failures. The review had found an expired token could burn the whole budget.
+  - **Quotes** now go through the same guarded runner.
+  - **Tests:** 16, including the first-stop test against the real `config/fyers_quota.json`.
+
+## `fix/day-aware-boot-cleanup` — merged (PR #21); deployed 2026-10-22 evening (image b210b5c7, built from ab5b573)
 
 - **Boot cleanup is now day-aware** (AGENTS.md §11.17).
   - **Same-day restart:** keeps `market:nifty:bias`, `regime:nifty:returns_1min`, `regime:nifty:current`, `pnl:daily` and every `v2:vcp_history:*`, and re-loads the regime returns into memory. The regime engine computes from memory, so keeping the key alone wouldn't help.
