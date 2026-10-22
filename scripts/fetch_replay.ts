@@ -5,10 +5,12 @@
 // verdict, and makes ZERO Fyers calls. A live run needs BOTH:
 //   --live                   and
 //   --owner-ok YYYY-MM-DD    equal to today (IST): the owner's OK for THIS evening.
-// Preflight also refuses before 15:45 IST, on any breach in today's ledger, on an
-// exhausted day, during a cooldown, or with the 'backtest' allocation used up; a run
-// never makes more than min(1,000, allocation left) requests and stops on the first
-// quota stop. Everything goes through the shared Redis ledger as job 'backtest'.
+// Preflight refuses outside 15:45–16:15 IST, on any breach in today's ledger, on an
+// exhausted day, during a cooldown, or with no requests left. The cap is per EVENING:
+// min(1,000 − backtest requests already in today's ledger, allocation left). Mid-run,
+// every request re-checks the live ledger (any breach, exhausted, cap by ledger count,
+// IST day change, 16:25 window end); the FIRST throttle ends the run (no retries); an
+// auth error or 3 consecutive failures end it. All through the Redis ledger, job 'backtest'.
 //
 // Steps, in order (run in the screener image with the screener_data volume):
 //   --step nifty    1 request: Nifty 1-minute, 2026-10-15 → 2026-10-22
@@ -33,7 +35,9 @@ import {
 	buildLiquidList,
 	coversReplaySessions,
 	dailyCandidates,
+	midRunStop,
 	preflight,
+	replayGateConfig,
 	runFetch,
 	type Bar,
 	type FetchTask,
@@ -44,7 +48,7 @@ import { plannedRanges } from '../src/screener/fetchDaily.js'
 import { CM_URL, parseCashUniverse } from '../src/screener/masters.js'
 import { batches, parseQuotes, QUOTE_BATCH } from '../src/screener/prefilter.js'
 import { screenerDataDir } from '../src/screener/paths.js'
-import { RedisLedger, QuotaStopError, createQuotaGate, loadQuotaConfig } from '../src/fyers/quota.js'
+import { RedisLedger, createQuotaGate, loadQuotaConfig } from '../src/fyers/quota.js'
 import { getISTDateString } from '../src/utils/marketHours.js'
 
 type History = { s: string; candles?: number[][]; message?: string }
@@ -130,7 +134,9 @@ const main = async (): Promise<number> => {
 	const api = new fyers.fyersModel({ path: './', enableLogging: false })
 	api.setAppId(ENV.FYERS_APP_ID)
 	api.setAccessToken(fs.readFileSync('/app/token/access_token.txt', 'utf8').trim())
-	const gate = createQuotaGate({ job: 'backtest', config: cfg, ledger })
+	// First throttle ends the run (replayGateConfig); every request re-checks the live ledger.
+	const gate = createQuotaGate({ job: 'backtest', config: replayGateConfig(cfg), ledger })
+	const checkBeforeCall = async () => midRunStop(await ledger.state(getISTDateString()), { nowMs: Date.now(), startDay: today })
 	const history = async (symbol: string, resolution: string, from: string, to: string): Promise<Bar[]> => {
 		const res = (await api.getHistory({ symbol, resolution, date_format: '1', range_from: from, range_to: to, cont_flag: '1' })) as History
 		if (res.s === 'no_data') return []
@@ -142,34 +148,31 @@ const main = async (): Promise<number> => {
 		// The quote batches are all-or-nothing for the candidate list: refuse unless the budget covers them.
 		if (needed > pf.budget) return (console.error(`[fetch-replay] quotes need ${needed} requests > budget ${pf.budget}; refusing`), await redisClient.quit(), 3)
 		const quotes = new Map<string, { lp: number; volume: number }>()
-		let requests = 0
-		let stopped: string | null = null
-		for (const b of batches(universe, QUOTE_BATCH)) {
-			try {
-				requests++
-				const r = await gate.call(async () => {
-					const x = (await api.getQuotes(b)) as { s?: string }
-					if (x?.s !== 'ok') throw x
+		const byLabel = new Map(batches(universe, QUOTE_BATCH).map((b, i) => [`quotes#${i + 1} (${b.length} symbols)`, b]))
+		const qr = await runFetch(todo, pf.budget, {
+			gate,
+			checkBeforeCall,
+			isComplete: () => false,
+			save: () => {},
+			fetchOne: async (label, gated) => {
+				const r = await gated(async () => {
+					const x = (await api.getQuotes(byLabel.get(label)!)) as { s?: string }
+					if (x?.s !== 'ok') throw x // the gate classifies throttle / daily-limit bodies
 					return x
 				})
-				for (const [s, q] of parseQuotes(r)) quotes.set(s, q)
-			} catch (err) {
-				if (err instanceof QuotaStopError) {
-					stopped = err.message
-					break
-				}
-				console.warn(`[fetch-replay] quote batch failed (its symbols stay candidates): ${(err as { message?: string })?.message ?? JSON.stringify(err)}`)
-			}
-		}
-		if (stopped) {
-			console.error(`[fetch-replay] ⛔ quota stop after ${requests} quote requests: ${stopped}. No candidate list written.`)
+				for (const [sym, q] of parseQuotes(r)) quotes.set(sym, q)
+				return []
+			},
+		})
+		if (qr.stoppedBy) {
+			console.error(`[fetch-replay] ⛔ stopped after ${qr.requested} quote requests: ${qr.stoppedBy}. No candidate list written.`)
 			await redisClient.quit().catch(() => {})
 			return 4
 		}
 		const pfCfg = (JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'config', 'screener.json'), 'utf8')) as { prefilter: { minPrice: number; minTradedValueRupees: number } }).prefilter
 		const c = dailyCandidates(universe, quotes, pfCfg)
-		writeJson(CANDIDATES_FILE, { builtAt: new Date().toISOString(), quoteDay: today, lookAhead: `quotes are from ${today}, after the Oct 14 ranking date`, prefilter: pfCfg, universe: universe.length, quoted: quotes.size, ...c })
-		console.log(`[fetch-replay] quotes: ${requests} requests; ${c.candidates.length} candidates (${c.noQuote} without a quote), ${c.skipped} skipped → ${CANDIDATES_FILE}`)
+		writeJson(CANDIDATES_FILE, { builtAt: new Date().toISOString(), quoteDay: today, lookAhead: `quotes are from ${today}, after the Oct 14 ranking date`, prefilter: pfCfg, universe: universe.length, quoted: quotes.size, failedBatches: Object.keys(qr.failed).length, ...c })
+		console.log(`[fetch-replay] quotes: ${qr.requested} requests (${Object.keys(qr.failed).length} failed batches: their symbols stay candidates); ${c.candidates.length} candidates (${c.noQuote} without a quote), ${c.skipped} skipped → ${CANDIDATES_FILE}`)
 		console.log(`[fetch-replay] ledger now: ${JSON.stringify(await ledger.state(today))}`)
 		await redisClient.quit().catch(() => {})
 		return 0
@@ -189,6 +192,7 @@ const main = async (): Promise<number> => {
 			: (symbol, gated) => gated(() => history(symbol, '1', REPLAY_FROM, REPLAY_TO))
 	const report = await runFetch(todo, pf.budget, {
 		gate,
+		checkBeforeCall,
 		isComplete,
 		fetchOne,
 		save: step === 'daily' ? () => {} : (s, bars) => void minuteStore.merge(s, bars),

@@ -18,7 +18,7 @@
 // Pure functions + an injected runner, so every rule is tested without a network.
 // ============================================================
 
-import type { LedgerState, QuotaGate } from '../src/fyers/quota.js'
+import type { LedgerState, QuotaConfig, QuotaGate } from '../src/fyers/quota.js'
 import { QuotaStopError } from '../src/fyers/quota.js'
 import { getISTDateString, getISTMinutes } from '../src/utils/marketHours.js'
 
@@ -30,6 +30,12 @@ export const LIQUID_LOOKBACK_SESSIONS = 30
 export const LIQUID_MIN_TURNOVER_CR = 15
 export const EVENING_REQUEST_CAP = 1000
 export const EARLIEST_FETCH_IST_MIN = 15 * 60 + 45
+/** No run starts after 16:15 IST (the EOD screener starts 16:30 with its own pacer; token purged 17:15). */
+export const LATEST_START_IST_MIN = 16 * 60 + 15
+/** Hard stop: no request at or after 16:25 IST, so the run never overlaps the 16:30 screener. */
+export const FETCH_WINDOW_END_IST_MIN = 16 * 60 + 25
+/** Consecutive non-quota failures that end a run (an expired token must not burn the budget). */
+export const MAX_CONSECUTIVE_FAILURES = 3
 export const NIFTY_SYMBOL = 'NSE:NIFTY50-INDEX'
 
 const IST_MS = 330 * 60_000
@@ -61,7 +67,11 @@ export interface PreflightInput {
 export interface PreflightResult {
 	ok: boolean
 	refusals: string[]
-	/** Requests this run may make (0 when refused). */
+	/**
+	 * Requests this run may make (0 when refused): min(1,000 − backtest requests already in
+	 * today's ledger, allocation left). The cap is per EVENING across runs, since the
+	 * 'backtest' job on EC2 has no other user; retries are in the ledger, so they count.
+	 */
 	budget: number
 	today: string
 }
@@ -71,14 +81,48 @@ export const preflight = (i: PreflightInput): PreflightResult => {
 	const refusals: string[] = []
 	if (i.ownerOkDay !== today)
 		refusals.push(`no owner OK for ${today} (got --owner-ok ${i.ownerOkDay ?? 'none'}); each evening needs its own explicit OK`)
-	if (getISTMinutes(i.nowMs) < EARLIEST_FETCH_IST_MIN) refusals.push('before 15:45 IST: fetches run only after the close')
+	const m = getISTMinutes(i.nowMs)
+	if (m < EARLIEST_FETCH_IST_MIN) refusals.push('before 15:45 IST: fetches run only after the close')
+	if (m >= LATEST_START_IST_MIN) refusals.push('after 16:15 IST: a run would overlap the 16:30 screener (or the 17:15 token purge)')
 	if (i.ledger.breaches > 0) refusals.push(`today's ledger shows ${i.ledger.breaches} breach(es): no Fyers calls on a day with any breach`)
 	if (i.ledger.exhausted) refusals.push("today's ledger is marked exhausted (Fyers daily limit)")
 	if (i.ledger.cooldownUntil > i.nowMs) refusals.push(`a throttle cooldown is active until ${new Date(i.ledger.cooldownUntil).toISOString()}`)
-	const left = Math.max(0, i.backtestAllocation - (i.ledger.used.backtest ?? 0))
-	if (left === 0) refusals.push(`the 'backtest' allocation (${i.backtestAllocation}) is used up for ${today}`)
+	const used = i.ledger.used.backtest ?? 0
+	const left = Math.max(0, Math.min((i.eveningCap ?? EVENING_REQUEST_CAP) - used, i.backtestAllocation - used))
+	if (left === 0) refusals.push(`no requests left for ${today}: ${used} 'backtest' requests already in the ledger (evening cap ${i.eveningCap ?? EVENING_REQUEST_CAP}, allocation ${i.backtestAllocation})`)
 	const ok = refusals.length === 0
-	return { ok, refusals, budget: ok ? Math.min(i.eveningCap ?? EVENING_REQUEST_CAP, left) : 0, today }
+	return { ok, refusals, budget: ok ? left : 0, today }
+}
+
+/**
+ * The gate config for this job: the shared pacing and allocation, but the FIRST throttle
+ * stops the run (owner's rule) — maxBreachesPerDay 1 makes the gate throw BreachLimitError
+ * on breach 1, and maxRetries 0 means nothing is retried.
+ */
+export const replayGateConfig = (shared: QuotaConfig): QuotaConfig => ({ ...shared, maxBreachesPerDay: 1, maxRetries: 0 })
+
+/**
+ * Checked against the LIVE ledger before every request, so the run stops on anything that
+ * happens mid-run: a breach by any job, an exhausted day, the IST day changing, the evening
+ * cap reached by ledger count (retries included), or the 16:25 window end.
+ */
+export const midRunStop = (st: LedgerState, o: { nowMs: number; startDay: string; eveningCap?: number }): string | null => {
+	const day = getISTDateString(o.nowMs)
+	if (day !== o.startDay) return `the IST day changed (${o.startDay} → ${day}); the owner's OK was for ${o.startDay}`
+	if (st.breaches > 0) return `a throttle breach is in today's ledger (${st.breaches})`
+	if (st.exhausted) return "today's ledger is marked exhausted"
+	const used = st.used.backtest ?? 0
+	if (used >= (o.eveningCap ?? EVENING_REQUEST_CAP)) return `the evening cap is reached by the ledger count (${used} backtest requests today)`
+	if (getISTMinutes(o.nowMs) >= FETCH_WINDOW_END_IST_MIN) return 'it is 16:25 IST: stopping before the 16:30 screener'
+	return null
+}
+
+/** Fyers auth / token errors: no point retrying the next symbol with the same token. */
+export const isAuthShaped = (err: unknown): boolean => {
+	const e = err as { code?: unknown; s?: unknown; message?: unknown } | null
+	const code = Number(e?.code)
+	if ([-8, -15, -16, -17, 401, 403].includes(code)) return true
+	return /token|auth|unauthori[sz]ed|login/i.test(String(e?.message ?? ''))
 }
 
 // ── The liquid universe (as of Oct 14, from daily candles only) ─────────────
@@ -148,8 +192,13 @@ export interface RunDeps {
 	isComplete: (symbol: string) => boolean
 	/** Persist bars as they land, so a stop never loses fetched data. */
 	save: (symbol: string, bars: Bar[]) => void
+	/** Before EVERY request: a reason to stop the run (production: midRunStop on the live ledger), or null. */
+	checkBeforeCall?: () => Promise<string | null>
 	log?: Pick<Console, 'log' | 'warn' | 'error'>
 }
+
+/** Thrown from `gated` when checkBeforeCall says stop; ends the run like a quota stop. */
+export class RunStopError extends QuotaStopError {}
 
 export interface RunReport {
 	requested: number
@@ -165,6 +214,7 @@ export interface RunReport {
 export const runFetch = async (tasks: FetchTask[], budget: number, deps: RunDeps): Promise<RunReport> => {
 	const log = deps.log ?? console
 	const r: RunReport = { requested: 0, fetched: [], noData: [], failed: {}, skippedComplete: 0, remaining: [], stoppedBy: null }
+	let consecutiveFailures = 0
 	for (let i = 0; i < tasks.length; i++) {
 		const task = tasks[i]!
 		if (deps.isComplete(task.symbol)) {
@@ -180,13 +230,16 @@ export const runFetch = async (tasks: FetchTask[], budget: number, deps: RunDeps
 			// The budget check above used the task's declared count; a fetchOne that tries
 			// more requests than it declared is stopped here, so the cap can't be overrun.
 			let made = 0
-			const gated: Gated = (fn) => {
-				if (made >= task.requests) return Promise.reject(new Error(`${task.symbol}: more than the ${task.requests} declared request(s)`))
+			const gated: Gated = async (fn) => {
+				if (made >= task.requests) throw new Error(`${task.symbol}: more than the ${task.requests} declared request(s)`)
+				const stop = deps.checkBeforeCall ? await deps.checkBeforeCall() : null
+				if (stop) throw new RunStopError(stop)
 				made++
 				r.requested++
 				return deps.gate.call(fn)
 			}
 			const bars = await deps.fetchOne(task.symbol, gated)
+			consecutiveFailures = 0
 			if (bars.length === 0) r.noData.push(task.symbol)
 			else {
 				deps.save(task.symbol, bars)
@@ -194,11 +247,22 @@ export const runFetch = async (tasks: FetchTask[], budget: number, deps: RunDeps
 			}
 		} catch (err) {
 			if (err instanceof QuotaStopError) {
-				r.stoppedBy = `quota stop: ${err.message}`
+				r.stoppedBy = `${err instanceof RunStopError ? 'stop' : 'quota stop'}: ${err.message}`
 				r.remaining.push(...tasks.slice(i).map((t) => t.symbol))
 				break
 			}
-			r.failed[task.symbol] = (err as Error)?.message ?? String(err)
+			r.failed[task.symbol] = (err as Error)?.message ?? JSON.stringify(err)
+			consecutiveFailures++
+			const why = isAuthShaped(err)
+				? `auth/token error at ${task.symbol}`
+				: consecutiveFailures >= MAX_CONSECUTIVE_FAILURES
+					? `${consecutiveFailures} consecutive failures (last: ${r.failed[task.symbol]})`
+					: null
+			if (why) {
+				r.stoppedBy = why
+				r.remaining.push(...tasks.slice(i + 1).map((t) => t.symbol))
+				break
+			}
 		}
 		const done = r.fetched.length + r.noData.length
 		if (done > 0 && done % 100 === 0) log.log(`[fetch-replay] … ${r.requested}/${budget} requests, ${r.fetched.length} fetched`)

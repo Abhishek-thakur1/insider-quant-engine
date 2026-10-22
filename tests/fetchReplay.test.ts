@@ -27,14 +27,19 @@ import { MemoryLedger, createQuotaGate, type LedgerState, type QuotaConfig } fro
 const IST = 330 * 60_000
 const at = (day: string, hhmm: string) => Date.parse(`${day}T${hhmm}:00Z`) - IST
 const clean: LedgerState = { used: {}, breaches: 0, exhausted: false, cooldownUntil: 0 }
-const EVENING = at('2026-10-23', '16:00')
+const EVENING = at('2026-10-23', '15:50')
 
-test('PREFLIGHT: clean ledger, after 15:45, OK for today → budget = min(1000, allocation left)', () => {
+test('PREFLIGHT: clean ledger, 15:45–16:15, OK for today → budget = 1,000 minus backtest requests already in today’s ledger', () => {
 	const r = preflight({ nowMs: EVENING, ledger: clean, backtestAllocation: 1500, ownerOkDay: '2026-10-23' })
 	assert.deepEqual(r.refusals, [])
 	assert.equal(r.budget, EVENING_REQUEST_CAP)
-	const r2 = preflight({ nowMs: EVENING, ledger: { ...clean, used: { backtest: 1200 } }, backtestAllocation: 1500, ownerOkDay: '2026-10-23' })
-	assert.equal(r2.budget, 300)
+	// a second run the same evening gets what is left of the EVENING's 1,000, not a fresh 1,000 (review fix 3)
+	const r2 = preflight({ nowMs: EVENING, ledger: { ...clean, used: { backtest: 600 } }, backtestAllocation: 1500, ownerOkDay: '2026-10-23' })
+	assert.equal(r2.budget, 400)
+	const r3 = preflight({ nowMs: EVENING, ledger: { ...clean, used: { backtest: 1000 } }, backtestAllocation: 1500, ownerOkDay: '2026-10-23' })
+	assert.equal(r3.ok, false)
+	assert.match(r3.refusals.join(), /no requests left/)
+	assert.equal(preflight({ nowMs: EVENING, ledger: { ...clean, used: { backtest: 100 } }, backtestAllocation: 300, ownerOkDay: '2026-10-23' }).budget, 200, 'allocation still binds')
 })
 
 test('PREFLIGHT refuses on ANY breach today (even 1, below the gate stop of 2)', () => {
@@ -50,9 +55,11 @@ test('PREFLIGHT refuses: no owner OK, yesterday’s OK, before 15:45, exhausted,
 	assert.match(preflight({ ...base, ownerOkDay: '2026-10-22' }).refusals.join(), /no owner OK for 2026-10-23/)
 	assert.match(preflight({ ...base, nowMs: at('2026-10-23', '15:44') }).refusals.join(), /before 15:45/)
 	assert.equal(preflight({ ...base, nowMs: at('2026-10-23', '15:45') }).ok, true)
+	assert.equal(preflight({ ...base, nowMs: at('2026-10-23', '16:14') }).ok, true)
+	assert.match(preflight({ ...base, nowMs: at('2026-10-23', '16:15') }).refusals.join(), /after 16:15 IST.*screener/)
 	assert.match(preflight({ ...base, ledger: { ...clean, exhausted: true } }).refusals.join(), /exhausted/)
 	assert.match(preflight({ ...base, ledger: { ...clean, cooldownUntil: EVENING + 60_000 } }).refusals.join(), /cooldown/)
-	assert.match(preflight({ ...base, ledger: { ...clean, used: { backtest: 1500 } } }).refusals.join(), /allocation/)
+	assert.match(preflight({ ...base, ledger: { ...clean, used: { backtest: 1500 } } }).refusals.join(), /allocation 1500/)
 })
 
 // ── liquid list ──
@@ -221,4 +228,75 @@ test('REPORT: n on every row, caveats stated, every fire listed with time, stock
 	assert.match(md, /\| 14:33 \| NSE:A-EQ \| vcp \| LONG \| 49 \| rejected EV \|/)
 	assert.equal(outcomeOf(t({ gatePassed: false, gateRejectedAt: null })), 'rejected SCORE < 78')
 	assert.doesNotMatch(md, /win rate:|expectancy:|average R/i, 'no aggregate performance numbers')
+})
+
+// ── review fixes (independent quota review of cd789c1) ──
+import { loadQuotaConfig } from '../src/fyers/quota.js'
+import { MAX_CONSECUTIVE_FAILURES, midRunStop, replayGateConfig } from '../backtest/fetchReplay.js'
+
+test('FIRST THROTTLE STOPS THE RUN with the PRODUCTION config (config/fyers_quota.json through replayGateConfig): no retry, no 2nd breach', async () => {
+	const prod = replayGateConfig(loadQuotaConfig())
+	assert.equal(prod.maxBreachesPerDay, 1)
+	assert.equal(prod.maxRetries, 0)
+	const h = harness({ throttleAt: 5 })
+	const gate = createQuotaGate({ job: 'backtest', config: prod, ledger: h.ledger, clock: fakeClock(), log: quiet })
+	const t = tasks(20)
+	const r = await runFetch(t, 1000, { ...h.deps, gate })
+	assert.equal(h.calls.length, 5, 'the throttled call is the last call')
+	assert.match(r.stoppedBy!, /quota stop/)
+	const st = await h.ledger.state('2026-10-23')
+	assert.equal(st.breaches, 1)
+	assert.equal(st.used.backtest, 5, 'ledger and run agree: nothing retried')
+	assert.equal(r.requested, 5)
+})
+
+test('NON-QUOTA FAILURES: an auth error stops at once; 3 consecutive other failures stop; a success resets the count', async () => {
+	const failing = (shape: (n: number) => unknown | null) => {
+		const h = harness()
+		let n = 0
+		return { h, deps: { ...h.deps, fetchOne: (s: string, gated: <T>(fn: () => Promise<T>) => Promise<T>) => gated(async () => {
+			const e = shape(++n)
+			if (e) throw e
+			return bars1m()
+		}) } }
+	}
+	const a = failing(() => ({ code: -16, message: 'Could not authenticate the user' }))
+	const ra = await runFetch(tasks(50), 1000, a.deps)
+	assert.equal(ra.requested, 1)
+	assert.match(ra.stoppedBy!, /auth\/token error/)
+	const b = failing(() => ({ code: -50, message: 'Invalid input' }))
+	const rb = await runFetch(tasks(50), 1000, b.deps)
+	assert.equal(rb.requested, MAX_CONSECUTIVE_FAILURES)
+	assert.match(rb.stoppedBy!, /3 consecutive failures/)
+	const c = failing((n) => (n % 2 === 0 ? { code: -50, message: 'Invalid input' } : null)) // alternating: never 3 in a row
+	const rc = await runFetch(tasks(10), 1000, c.deps)
+	assert.equal(rc.requested, 10)
+	assert.equal(rc.stoppedBy, null)
+})
+
+test('MID-RUN: a breach by ANOTHER job, an IST day change, the 16:25 window end, or the cap by LEDGER count stop the run before the next request', async () => {
+	const base = { used: {}, breaches: 0, exhausted: false, cooldownUntil: 0 }
+	const day = '2026-10-23'
+	assert.equal(midRunStop(base, { nowMs: at(day, '16:00'), startDay: day }), null)
+	assert.match(midRunStop({ ...base, breaches: 1 }, { nowMs: at(day, '16:00'), startDay: day })!, /breach/)
+	assert.match(midRunStop(base, { nowMs: at('2026-10-24', '00:01'), startDay: day })!, /IST day changed/)
+	assert.match(midRunStop(base, { nowMs: at(day, '16:25'), startDay: day })!, /16:25/)
+	assert.match(midRunStop({ ...base, used: { backtest: 1000 } }, { nowMs: at(day, '16:00'), startDay: day })!, /evening cap/)
+	assert.match(midRunStop({ ...base, exhausted: true }, { nowMs: at(day, '16:00'), startDay: day })!, /exhausted/)
+
+	// wired: another job's throttle lands in the ledger after our 3rd request → no 4th request
+	const h = harness()
+	const r = await runFetch(tasks(20), 1000, {
+		...h.deps,
+		checkBeforeCall: async () => midRunStop(await h.ledger.state(day), { nowMs: at(day, '16:00'), startDay: day }),
+		fetchOne: (s, gated) =>
+			gated(async () => {
+				h.calls.push(s)
+				if (h.calls.length === 3) await h.ledger.breach(day, 0) // the screener (say) got throttled
+				return bars1m()
+			}),
+	})
+	assert.equal(h.calls.length, 3)
+	assert.match(r.stoppedBy!, /^stop: a throttle breach/)
+	assert.equal((await h.ledger.state(day)).used.backtest, 3)
 })

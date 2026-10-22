@@ -23,6 +23,19 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
   - `backtest/replayReport.ts`: per setup and per day, with `n` on every row and every fire listed (time, stock, outcome, reason). It states the caveats: far too few sessions, options not replayable, and the pre-filter look-ahead. It gives no aggregate win rates.
   - **Sandbox:** the replay runs only the 5 replayable live detectors.
 - **Tests:** 13.
+- **Third commit: fixes from the independent quota review of `cd789c1`.**
+  - **First throttle stops the run.** The job's gate uses `maxBreachesPerDay` 1 and `maxRetries` 0 (`replayGateConfig`). The review had found that one throttle led to a retry and the run carrying on, with production config.
+  - **The 1,000 cap is per evening, not per run.** It's computed as 1,000 minus the `backtest` requests already in today's ledger, so retries count too.
+  - **Every request re-checks the live ledger** (`midRunStop`). It stops on:
+    - any breach, including one by another job;
+    - an exhausted day;
+    - the cap reached by ledger count;
+    - a change of IST day;
+    - 16:25 IST.
+  - **Fetch window:** a run starts only between 15:45 and 16:15 IST, clear of the 16:30 screener's own pacer and the 17:15 token purge.
+  - **Failure stop:** an auth or token error ends the run at once, and so do 3 consecutive other failures. The review had found an expired token could burn the whole budget.
+  - **Quotes** now go through the same guarded runner.
+  - **Tests:** 16, including the first-stop test against the real `config/fyers_quota.json`.
 
 ## Unreleased — `feat/geometry-guard` (not merged, not deployed; owner: not before 2026-10-22 close)
 
