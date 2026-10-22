@@ -2,7 +2,7 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## Unreleased — `feat/fetch-replay` (first cut for owner review; not merged, nothing fetched)
+## `feat/fetch-replay` — merged (PR #20); offline tooling, nothing fetched yet
 
 - **Liquid-replay fetch, offline tooling only** (`backtest/fetchReplay.ts`, `scripts/fetch_replay.ts`). It doesn't touch the engine, and adds no Redis key or migration.
 - **Dry run by default**, with 0 Fyers calls. A live run needs `--live` plus `--owner-ok <today>`. The preflight refuses before 15:45 IST, on any breach in today's ledger, on an exhausted day, during a cooldown, or once the `backtest` allocation is used up.
@@ -37,7 +37,7 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
   - **Quotes** now go through the same guarded runner.
   - **Tests:** 16, including the first-stop test against the real `config/fyers_quota.json`.
 
-## Unreleased — `fix/day-aware-boot-cleanup` (not merged, not deployed)
+## `fix/day-aware-boot-cleanup` — merged (PR #21); deployed 2026-10-22 evening (image b210b5c7, built from ab5b573)
 
 - **Boot cleanup is now day-aware** (AGENTS.md §11.17).
   - **Same-day restart:** keeps `market:nifty:bias`, `regime:nifty:returns_1min`, `regime:nifty:current`, `pnl:daily` and every `v2:vcp_history:*`, and re-loads the regime returns into memory. The regime engine computes from memory, so keeping the key alone wouldn't help.
