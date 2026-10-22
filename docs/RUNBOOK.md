@@ -34,6 +34,9 @@ docker inspect -f '{{.Name}} restarts={{.RestartCount}} started={{.State.Started
 
 Do this outside market hours (09:00–15:30 IST).
 
+0. **Save the engine log first.** A recreate deletes the old container and its whole log; this happened on 2026-10-22, when that day's log was lost.
+   `d=$(TZ=Asia/Kolkata date +%F); mkdir -p ~/evidence/$d && docker logs -t quant_engine > ~/evidence/$d/engine_pre_recreate_$(date +%H%M).log 2>&1 && docker inspect quant_engine > ~/evidence/$d/engine_inspect_pre_recreate.json`
+   A host cron also exports it daily at 15:35 IST (10:05 UTC), once the owner approves that line.
 1. **Back up first** (see below), then `git pull origin v2 && git log --oneline -1`.
 2. Rebuild only the images whose code changed:
    - `quant_api`, `quant_engine` and `quant_auth` all build from `Dockerfile` with `COPY . .`.
