@@ -1,10 +1,13 @@
 import { redisClient } from '../config/redis.js'
 import { pool } from '../config/db.js'
 import type { TickData } from './types.js'
-import { insertStatusFor, isOrphanedAtBoot, istDate } from './positionStatus.js'
+import { insertStatusFor, isOrphanedAtBoot, istDate, rowMatch } from './positionStatus.js'
 
 export interface OpenPosition {
+	/** Unique: `trade_<ms>_<symbol>_<detector>_<6 hex>` (positionStatus.newPositionId); legacy `trade_<ms>_<symbol>` rows still load. */
 	id: string
+	/** paper_trades primary key, set right after the INSERT; UPDATEs target it (positionStatus.rowMatch). */
+	dbId?: number | null
 	symbol: string
 	side: 'LONG' | 'SHORT'
 	entryPrice: number
@@ -65,12 +68,13 @@ class PositionTracker {
 
 	private async markOrphaned(pos: OpenPosition) {
 		try {
+			const m = rowMatch(pos, 1)
 			await pool.query(
 				`UPDATE paper_trades
 				 SET status = 'ORPHANED',
 				     data_quality = CASE WHEN 'orphaned' = ANY(data_quality) THEN data_quality ELSE array_append(data_quality, 'orphaned') END
-				 WHERE symbol = $1 AND status IN ('OPEN', 'SKIPPED') AND entry_time = to_timestamp($2 / 1000.0)`,
-				[pos.symbol, pos.timestamp],
+				 WHERE ${m.where} AND status IN ('OPEN', 'SKIPPED')`,
+				m.params,
 			)
 			await redisClient.hDel('trades:open', pos.id)
 			console.warn(`[PositionTracker] 👻 ${pos.symbol} ${pos.side} from ${istDate(pos.timestamp)} was never closed — marked ORPHANED (no exit recorded).`)
@@ -116,6 +120,12 @@ class PositionTracker {
 				[pos.symbol, pos.detectorName, pos.side, pos.entryPrice, pos.timestamp, pos.stopLoss, pos.target, pos.regimeClass || null, pos.gated || false, pos.size, pos.capitalGated || false, pos.actualSize ?? pos.size, pos.durationClass || 'INTRADAY', status, dataQuality]
 			)
 			tradeId = (ins.rows[0]?.id as number | undefined) ?? null
+			if (tradeId !== null) {
+				// Persist the row's primary key with the position, so closes and orphan marking
+				// address exactly this row (also after a restart reloads trades:open).
+				pos.dbId = tradeId
+				await redisClient.hSet('trades:open', pos.id, JSON.stringify(pos))
+			}
 		} catch (dbErr) {
 			console.error('[PositionTracker] ❌ Postgres insert error:', dbErr)
 		}
@@ -207,12 +217,13 @@ class PositionTracker {
 						? Number(r_multiple_raw.toFixed(4))
 						: null
 
+					const m = rowMatch(pos, 6)
 					await pool.query(
 						`UPDATE paper_trades 
 						 SET exit_price = $1, exit_time = to_timestamp($2 / 1000.0), realized_pnl = $3, r_multiple = $4, exit_reason = $5,
 						     status = CASE WHEN status = 'SKIPPED' THEN 'SKIPPED' ELSE 'CLOSED' END
-						 WHERE symbol = $6 AND status IN ('OPEN', 'SKIPPED') AND entry_time = to_timestamp($7 / 1000.0)`,
-						[closedPos.exitPrice, closedPos.exitTimestamp, closedPos.pnl, r_multiple, exitReason, pos.symbol, pos.timestamp]
+						 WHERE ${m.where} AND status IN ('OPEN', 'SKIPPED')`,
+						[closedPos.exitPrice, closedPos.exitTimestamp, closedPos.pnl, r_multiple, exitReason, ...m.params]
 					)
 				} catch (dbErr) {
 					console.error('[PositionTracker] ❌ Postgres update error:', dbErr)

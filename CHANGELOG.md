@@ -2,6 +2,13 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased — `fix/position-id` (not merged, not deployed; owner: Friday after the close if review is clean)
+
+- **Unique position ids** (AGENTS.md §11.19): `trade_<ms>_<symbol>_<detector slug>_<6 hex>`. Same-millisecond fires on one symbol no longer overwrite each other in `trades:open`. That happened to AEQUS on Oct 22, and `pnl:daily` counted it once.
+- **Closes and orphan marking target the row's own primary key** (`dbId`, persisted with the position). Before, they matched by symbol + entry_time, which hits every same-millisecond row. Legacy positions keep the old match.
+- **Unchanged:** the API, the dashboard and the DB schema. No migration.
+- **Tests:** `tests/positionId.test.ts`, 4 tests. The same-millisecond pipeline test fails on the old id. Parity checks that the new id extends the old one.
+
 ## `feat/fetch-replay` — merged (PR #20); offline tooling, nothing fetched yet
 
 - **Liquid-replay fetch, offline tooling only** (`backtest/fetchReplay.ts`, `scripts/fetch_replay.ts`). It doesn't touch the engine, and adds no Redis key or migration.
