@@ -13,7 +13,11 @@ import type { DailyBar } from './indicators.js'
 export const safeFileName = (symbol: string): string => symbol.replace(/[:\\/]/g, '_')
 
 export class CandleStore {
-	constructor(readonly dir: string) {}
+	/** `resolution` is only the label written into each file (the backtest reads the same shape). */
+	constructor(
+		readonly dir: string,
+		readonly resolution = 'D',
+	) {}
 
 	private file(symbol: string) {
 		return path.join(this.dir, `${safeFileName(symbol)}.json`)
@@ -36,7 +40,7 @@ export class CandleStore {
 		const bars = [...byTs.values()].sort((a, b) => a.t - b.t)
 		fs.mkdirSync(this.dir, { recursive: true })
 		const tmp = `${this.file(symbol)}.${process.pid}.tmp`
-		fs.writeFileSync(tmp, JSON.stringify({ symbol, resolution: 'D', bars, fetchedAt: new Date().toISOString() }))
+		fs.writeFileSync(tmp, JSON.stringify({ symbol, resolution: this.resolution, bars, fetchedAt: new Date().toISOString() }))
 		fs.renameSync(tmp, this.file(symbol))
 		return bars.length
 	}

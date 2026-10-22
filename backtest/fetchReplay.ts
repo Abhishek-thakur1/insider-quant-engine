@@ -134,10 +134,16 @@ export interface FetchTask {
 	requests: number
 }
 
+/** Runs one Fyers request through the quota gate (pacing, ledger, stops). */
+export type Gated = <T>(fn: () => Promise<T>) => Promise<T>
+
 export interface RunDeps {
 	gate: QuotaGate
-	/** One Fyers request for one symbol; returns the bars it got (saved by the caller). */
-	fetchOne: (symbol: string) => Promise<Bar[]>
+	/**
+	 * The symbol's Fyers request(s), each through `gated` — exactly `task.requests` of them
+	 * (1 for the 1-minute window; 1–2 for a daily fill). Returns the bars it got.
+	 */
+	fetchOne: (symbol: string, gated: Gated) => Promise<Bar[]>
 	/** Already complete on disk? (resume) */
 	isComplete: (symbol: string) => boolean
 	/** Persist bars as they land, so a stop never loses fetched data. */
@@ -171,8 +177,16 @@ export const runFetch = async (tasks: FetchTask[], budget: number, deps: RunDeps
 			break
 		}
 		try {
-			r.requested += task.requests
-			const bars = await deps.gate.call(() => deps.fetchOne(task.symbol))
+			// The budget check above used the task's declared count; a fetchOne that tries
+			// more requests than it declared is stopped here, so the cap can't be overrun.
+			let made = 0
+			const gated: Gated = (fn) => {
+				if (made >= task.requests) return Promise.reject(new Error(`${task.symbol}: more than the ${task.requests} declared request(s)`))
+				made++
+				r.requested++
+				return deps.gate.call(fn)
+			}
+			const bars = await deps.fetchOne(task.symbol, gated)
 			if (bars.length === 0) r.noData.push(task.symbol)
 			else {
 				deps.save(task.symbol, bars)
@@ -210,4 +224,36 @@ export const sandboxViolations = (env: Record<string, string | undefined>, token
 	for (const k of Object.keys(env)) if (env[k] && FORBIDDEN_ENV.test(k)) v.push(`credential-like env var present: ${k}`)
 	if (tokenFileExists) v.push('a Fyers access token file is reachable')
 	return v
+}
+
+// ── Daily-candle candidates from the quote pre-filter (LOOK-AHEAD: fetch-day quotes) ──
+
+export interface QuoteLike {
+	lp: number
+	volume: number
+}
+
+/**
+ * Which symbols get a daily history, most liquid first. Uses the screener's own lenient
+ * pre-filter thresholds (config/screener.json `prefilter`: price ≥ ₹20, traded value ≥ ₹2 cr)
+ * on the FETCH DAY's quotes. That is look-ahead relative to the Oct 14 ranking (a name
+ * liquid on Oct 14 but quiet on the fetch day is skipped); the replay report must state it.
+ * Symbols without a quote are kept (lenient), after all quoted ones.
+ */
+export const dailyCandidates = (
+	universe: string[],
+	quotes: Map<string, QuoteLike>,
+	pf: { minPrice: number; minTradedValueRupees: number },
+): { candidates: string[]; skipped: number; noQuote: number } => {
+	const quoted: { s: string; tv: number }[] = []
+	const noQuote: string[] = []
+	let skipped = 0
+	for (const s of universe) {
+		const q = quotes.get(s)
+		if (!q) noQuote.push(s)
+		else if (q.lp >= pf.minPrice && q.lp * q.volume >= pf.minTradedValueRupees) quoted.push({ s, tv: q.lp * q.volume })
+		else skipped++
+	}
+	quoted.sort((a, b) => b.tv - a.tv || a.s.localeCompare(b.s))
+	return { candidates: [...quoted.map((x) => x.s), ...noQuote], skipped, noQuote: noQuote.length }
 }

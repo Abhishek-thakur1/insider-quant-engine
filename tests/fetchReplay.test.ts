@@ -14,6 +14,7 @@ import {
 	EVENING_REQUEST_CAP,
 	REPLAY_SESSIONS,
 	buildLiquidList,
+	dailyCandidates,
 	coversReplaySessions,
 	preflight,
 	runFetch,
@@ -109,11 +110,12 @@ const harness = (opts: { throttleAt?: number; done?: Set<string> } = {}) => {
 	const deps = {
 		gate,
 		log: quiet,
-		fetchOne: async (s: string) => {
-			calls.push(s)
-			if (opts.throttleAt !== undefined && calls.length === opts.throttleAt) throw { code: 429, message: 'request limit reached' }
-			return bars1m()
-		},
+		fetchOne: (s: string, gated: <T>(fn: () => Promise<T>) => Promise<T>) =>
+			gated(async () => {
+				calls.push(s)
+				if (opts.throttleAt !== undefined && calls.length === opts.throttleAt) throw { code: 429, message: 'request limit reached' }
+				return bars1m()
+			}),
 		isComplete: (s: string) => coversReplaySessions(disk.get(s) ?? []),
 		save: (s: string, b: Bar[]) => void disk.set(s, b),
 	}
@@ -171,4 +173,52 @@ test('SANDBOX: refuses any credential, a token file, or BACKTEST_MODE unset', ()
 	assert.equal(v.length, 7)
 	assert.ok(v.some((x) => /BACKTEST_MODE/.test(x)))
 	assert.ok(v.some((x) => /token file/.test(x)))
+})
+
+test('RUNNER: a fetch that tries more requests than it declared is stopped (the cap cannot be overrun)', async () => {
+	const h = harness()
+	const r = await runFetch([{ symbol: 'NSE:GREEDY-EQ', requests: 1 }], 1000, {
+		...h.deps,
+		fetchOne: async (s, gated) => {
+			await gated(async () => bars1m())
+			await gated(async () => bars1m()) // a second, undeclared request
+			return bars1m()
+		},
+	})
+	assert.equal(r.requested, 1)
+	assert.match(r.failed['NSE:GREEDY-EQ']!, /more than the 1 declared/)
+	assert.equal((await h.ledger.state('2026-10-23')).used.backtest, 1, 'only the declared request reached the ledger')
+})
+
+test('DAILY CANDIDATES: screener pre-filter thresholds on fetch-day quotes, most traded value first, unquoted kept last', () => {
+	const quotes = new Map([
+		['NSE:A-EQ', { lp: 100, volume: 300_000 }], // ₹3 cr
+		['NSE:B-EQ', { lp: 1000, volume: 500_000 }], // ₹50 cr
+		['NSE:C-EQ', { lp: 15, volume: 10_000_000 }], // price < 20: skipped
+		['NSE:D-EQ', { lp: 100, volume: 100_000 }], // ₹1 cr: skipped
+	])
+	const r = dailyCandidates(['NSE:A-EQ', 'NSE:B-EQ', 'NSE:C-EQ', 'NSE:D-EQ', 'NSE:E-EQ'], quotes, { minPrice: 20, minTradedValueRupees: 20_000_000 })
+	assert.deepEqual(r.candidates, ['NSE:B-EQ', 'NSE:A-EQ', 'NSE:E-EQ'])
+	assert.equal(r.skipped, 2)
+	assert.equal(r.noQuote, 1)
+})
+
+// ── report ──
+import { buildReplayReport, outcomeOf, type ReplayTrade } from '../backtest/replayReport.js'
+
+test('REPORT: n on every row, caveats stated, every fire listed with time, stock, setup, outcome and reason', () => {
+	const t = (o: Partial<ReplayTrade>): ReplayTrade => ({ detectorId: 'vcp', sessionDate: '2026-10-15', symbol: 'NSE:A-EQ', side: 'LONG', entryTs: Date.parse('2026-10-15T05:36:00Z'), r: -1.02, exitReason: 'stop', gateScore: 88, gatePassed: true, gateRejectedAt: null, ...o })
+	const md = buildReplayReport(
+		{ vcp: [t({}), t({ gatePassed: false, gateRejectedAt: 'EV', gateScore: 49, sessionDate: '2026-10-16', entryTs: Date.parse('2026-10-16T09:03:00Z') })], smb: [t({ detectorId: 'smb', gatePassed: false, gateRejectedAt: null, gateScore: 77 })] },
+		{ sessions: ['2026-10-15', '2026-10-16'], liquidCount: 640, liquidAsOf: '2026-10-14', quoteDay: '2026-10-23' },
+	)
+	assert.match(md, /Far too few sessions for any edge conclusion.*n = 3 fires/)
+	assert.match(md, /Options are not replayable/)
+	assert.match(md, /Look-ahead in the pre-filter.*2026-10-23/)
+	assert.match(md, /640 stocks .* as of 2026-10-14/)
+	assert.match(md, /\| vcp \| n = 1 \(1 passed\) \| n = 1 \(0 passed\) \| n = 2 \(1 passed\) \|/)
+	assert.match(md, /\| 11:06 \| NSE:A-EQ \| vcp \| LONG \| 88 \| PASSED \| -1\.02 \| stop \|/)
+	assert.match(md, /\| 14:33 \| NSE:A-EQ \| vcp \| LONG \| 49 \| rejected EV \|/)
+	assert.equal(outcomeOf(t({ gatePassed: false, gateRejectedAt: null })), 'rejected SCORE < 78')
+	assert.doesNotMatch(md, /win rate:|expectancy:|average R/i, 'no aggregate performance numbers')
 })

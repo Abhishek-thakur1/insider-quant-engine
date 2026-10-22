@@ -14,10 +14,15 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 - **Cache:** daily candles share the screener's cache (`<data>/candles/D`). 1-minute candles go to `<data>/candles/1`.
 - **Sandbox:** `scripts/replay_sandbox.sh` runs the replay with `--network none` and no env file. `backtest/sandboxGuard.ts` aborts on any credential, a token file, or network access.
 - **Tests:** `tests/fetchReplay.test.ts`, 10 tests.
-- **Still to do on this branch:**
-  - the `daily` step, fed by the 48-call quote pre-filter;
-  - `--universe-list liquid15cr` wiring in `backtest/run.ts`;
-  - the per-setup report, which must state the pre-filter's look-ahead.
+- **Second commit:** the missing steps, the replay wiring and the report.
+  - `--step quotes`: the NSE_CM master in batches of 50 (about 45 calls), using the screener's own pre-filter thresholds. The quotes are from the fetch day, which is look-ahead; the output records it.
+  - `--step daily`: fills the screener's own cache with its cold-start ranges, up to 2 requests per symbol. That's about 2,000–2,600 requests, not 1,000–1,300 as planned, because the screener's 300-bar EMA needs about 460 days of history.
+  - **Request guard:** a fetch that tries more requests than it declared is stopped, so the cap can't be overrun.
+  - `backtest/run.ts`: new flags `--universe-file`, which reads `liquid15cr.json` or a JSON array, and `--sessions`.
+  - **Gate detail:** each simulated trade now carries `gateRejectedAt`.
+  - `backtest/replayReport.ts`: per setup and per day, with `n` on every row and every fire listed (time, stock, outcome, reason). It states the caveats: far too few sessions, options not replayable, and the pre-filter look-ahead. It gives no aggregate win rates.
+  - **Sandbox:** the replay runs only the 5 replayable live detectors.
+- **Tests:** 13.
 
 ## Unreleased — `feat/geometry-guard` (not merged, not deployed; owner: not before 2026-10-22 close)
 

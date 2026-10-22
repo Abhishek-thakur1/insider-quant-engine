@@ -68,6 +68,8 @@ export interface SimulatedTrade {
 	t2Reached: boolean
 	gateScore: number
 	gatePassed: boolean
+	/** Which gate rejected it (REGIME / BAYESIAN / EV / KELLY / SCORE …); null when passed or unscored. */
+	gateRejectedAt?: string | null
 }
 
 /**
@@ -175,6 +177,7 @@ export const simulateExit = (
 			t2Reached: false,
 			gateScore: signal.gate?.score ?? 0,
 			gatePassed: signal.gate?.passed ?? false,
+			gateRejectedAt: signal.gate?.rejectedAt ?? null,
 		}
 	}
 
@@ -259,5 +262,6 @@ export const simulateExit = (
 		t2Reached,
 		gateScore: signal.gate?.score ?? 0,
 		gatePassed: signal.gate?.passed ?? false,
+		gateRejectedAt: signal.gate?.rejectedAt ?? null,
 	}
 }
