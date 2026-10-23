@@ -756,3 +756,171 @@ The monitor runs from the **host** crontab, so it doesn't depend on the containe
 </details>
 
 **Interviewer might ask:** *"How do you deploy without downtime?"* A strong answer: "I don't need zero downtime, so I chose zero risk instead. Deploys only happen after the close: back up, tag a rollback image, rebuild only the engine and leave it stopped. The morning cron starts the new build, and a monitor checks the boot at 09:03 and 09:25. Rollback is one command."
+
+---
+
+## Part 7: Testing and evidence
+
+### 7.1 The backtest harness · Level 2
+- **What:** it replays historical **1-minute candles** through the **real detector classes** (`backtest/replay/engine.ts`).
+  - Each candle becomes 4 synthetic ticks, in the order O→L→H→C or O→H→L→C (`backtest/replay/barToTicks.ts`). Volume is split evenly across the 4.
+  - The filter scores each fire at the instant it fired. Exits are simulated with the stop checked first and a 15:15 time exit (`backtest/sim/exit.ts`).
+- **Mental model:** an end-to-end test that feeds recorded network responses into your real app code, instead of mocking the screens.
+- **Honest limits:**
+  - Synthetic ticks are not real ticks: there's no real order of trades inside a minute.
+  - Option detectors can't be replayed (no option-chain OI).
+  - Live VWAP includes pre-open ticks, but the backtest starts at 09:15 (finding from 22 Oct).
+
+### 7.2 Biases that fool you · Level 2
+- **Look-ahead bias:** using information that wasn't available at decision time.
+  - **Repo example:** the replay fetch's pre-filter uses **fetch-day quotes** to choose which stocks get history. That's after the ranking date, so the report states it plainly (`backtest/replayReport.ts`).
+  - The liquid ranking itself uses only bars dated on or before 14 Oct, and a test proves it (`tests/fetchReplay.test.ts`, "NO LOOK-AHEAD").
+- **Survivorship bias:** testing only on stocks that still exist or still look good today.
+  - Point-in-time universes are built in `backtest/universes.ts`.
+  - A static list such as `watchlist.json` is labelled as look-ahead.
+
+### 7.3 Why small samples mean nothing · Level 2
+- **Think first:** you flip a coin 10 times and get 7 heads. Is the coin biased?
+
+  <details><summary>Answer</summary>Probably not. 7 or more heads in 10 fair flips happens about 17% of the time. Ten trades with a 70% win rate is the same story.</details>
+- **Day-block bootstrap** (`backtest/compare.ts`):
+  - resample **whole days** with replacement, thousands of times;
+  - recompute the average R each time;
+  - read the 2.5% and 97.5% quantiles as a confidence interval.
+- **Why whole days?** Trades on the same day are correlated (same market). Resampling single trades would overstate certainty.
+- **House rule:** `n` on every row, and a "small sample, not an edge" note wherever n is small. The redesigned dashboard follows this too.
+
+### 7.4 The EMA study, start to finish · Level 3
+1. **Pre-registration** (`backtest/studies/nifty-ema-trend/PREREGISTRATION.md`, committed **before any run**):
+   - the variants V0, V1 and V2;
+   - the parameters (`config/nifty_ema_study.json`);
+   - the costs (2.3 points);
+   - the analysis plan.
+
+   No tuning afterwards.
+2. **Result** (`SUMMARY.md`): every variant was positive on trend days and negative on choppy days, and **about 0 net**.
+3. **Correction:** the comparison baselines had been charged a different cost (5 bps per leg). A labelled correction re-costed everything on one assumption.
+   - With 2.3 points, Trend Pulse showed +0.078R.
+   - Under a **futures cost model, everything is negative**.
+   - Neither cost model is validated.
+4. **What it taught:** the honest answer to "does it work?" is "not on this evidence". The value is in the method:
+   - pre-register;
+   - cost everything the same way;
+   - report the null.
+
+### 7.5 Parity tests · Level 3
+**Why:** if live code and backtest code drift apart, backtest results say nothing about live behaviour.
+
+| Test | Claim | Evidence |
+|---|---|---|
+| `tests/niftyEmaShadow.test.ts` | The live EMA shadow, fed tick by tick, produces the **same trades** as the study engine | 177 trades identical across 15 sessions. On the full local cache, 14,839 of 14,839 were identical once both sides had the same cleaned input. |
+| `tests/legacyWorkerParity.test.ts` | The current alert worker behaves exactly like the old one for every scenario | It runs both versions' real code side by side and compares every Redis write, send and log line |
+| `tests/alertPipeline.test.ts` | The signals hook is purely observational | Behaviour is identical with no hook, a real hook, and a hook that throws |
+
+<details><summary>Part 7 mini quiz</summary>
+
+1. Why resample days, not trades? **Same-day trades are correlated.**
+2. What makes pre-registration valuable? **You can't tune to the data after seeing it.**
+3. What did the EMA study conclude? **No edge after costs: about 0 net, and negative under the futures model.**
+</details>
+
+---
+
+## Part 8: Engineering stories (situation → task → what I found → what I did → what I learned)
+
+Each story is real, with sources in the repo, `CHANGELOG.md` and `AGENTS.md`.
+
+### 8.1 The holiday crash loop
+- **Situation.** 20 Oct was an NSE holiday. The engine started anyway and kept dying.
+- **Found.** The watchdog exited 1 when the socket stayed silent (there was no market), and Docker restarted it again: **415 restarts** (`src/core/sessionGuard.ts` header).
+- **Did.**
+  - A trading-day gate at boot, using the holiday file shared with the scheduler.
+  - A watchdog policy: at most 6 restarts a day, exponential backoff, and stand down (exit 0) after 15:15.
+- **Learned.** A restart policy is code too: "restart on failure" plus "the failure is permanent" makes a loop.
+
+### 8.2 The 100-symbol blindness
+See §5.3. **Learned:** measure what arrives, not what you asked for.
+
+### 8.3 The signals-writer stall
+- **Situation.** One fire was in the logs but missing from the `signals` table.
+- **Found.** Calling `flush()` with an empty queue left a `flushing` promise set forever, so later writes queued behind a promise that never resolved.
+- **Did.**
+  1. Wrote **failing tests first**: three STALL tests failed with actual 1, expected 3.
+  2. Fixed `flush()` to clear its promise when it finishes.
+  3. Backfilled the lost rows from the logs, flagged `recovered_from_log`.
+- **Learned.** Write the failing test before the fix. And mark recovered data as recovered.
+
+### 8.4 The SIGKILL shutdown (exit 137)
+- **Situation.** Every 15:30 stop ended with exit code 137, which means killed.
+- **Found.** `sh` was PID 1 and ignored SIGTERM. Docker waited 10 s and sent SIGKILL, so the shutdown handler (flush the signals, close the socket) never ran.
+- **Did.** Proved it on a throwaway stub container:
+  - with `exec npx`, npm exited in 0.6 s without waiting for its child;
+  - with `exec node`, the handler ran and the stub exited 0 in 5.1 s.
+
+  Then shipped `exec node --import tsx …` plus `stop_grace_period: 20s`.
+- **Learned.** Containers have an init-process story. Prove the fix on a stub before touching production.
+
+### 8.5 The mid-session restart that wiped state
+- **Situation.** 22 Oct, 11:46: the feed went silent for 34 s and the watchdog restarted the engine.
+- **Found.** The boot cleanup deleted the regime, the bias, `pnl:daily` and VCP histories on **every** boot. The dashboard's daily P&L dropped to only the closes after 11:46. An independent review then found that **the regime engine never read Redis back**, so just keeping the key wouldn't have been enough.
+- **Did.** A day-aware cleanup (a `engine:boot_day` marker), plus re-loading the regime into memory. Reviewed independently and deployed after the close.
+- **Learned.** Ask "what survives a restart?" for every piece of state.
+
+### 8.6 The same-millisecond position-id collision
+- **Situation.** AEQUS, 11:06:28.169: two detectors fired in the same millisecond.
+- **Found.** The id was `trade_<ms>_<symbol>`, so both positions shared it. One overwrote the other in Redis. After the restart only one was counted, and the Postgres close matched **both** rows.
+- **Did.**
+  - Unique ids (detector slug + random suffix).
+  - Closes target the row's primary key.
+  - The review found a **blocking ghost race**: a second Redis write could resurrect an already-closed position. Fixed by writing to Postgres first, then making one Redis write.
+- **Learned.** Ids built from timestamps aren't unique under concurrency. Independent review catches races that tests miss.
+
+### 8.7 The duplicate alert, and atomic claims
+- **Situation.** AEQUS produced two Telegram alerts for one setup.
+- **Did.** Per-symbol-and-side atomic claims (§4.4). The reviews found a **blocking** bug: option positions never close in-session, so "while open" would have suppressed option alerts all day. The fix uses the 60-minute window for options.
+- **Learned.** Every assumption ("positions close") needs checking against the real data paths.
+
+### 8.8 (Optional) The wrong-side stop
+An audit found **0 of 1,584** paper trades with a stop on the wrong side. A guard was still added: such a fire is recorded, flagged `invalid_geometry`, and never alerted.
+- **Learned.** Defend the invariants the data says hold today.
+
+---
+
+## Part 8b: Security and secrets · Level 2
+
+**The token flow:**
+1. At 07:45 `quant_auth` starts and pings the owner on Telegram.
+2. The owner completes the Fyers login.
+3. The auth bridge writes the day's access token to the `token_store` volume.
+4. The engine reads it at boot.
+5. At **17:15** the token is purged.
+
+So a stolen token is only useful until the evening.
+
+**Secrets:**
+- They live only in `.env` on the host: Telegram bot token, channel and admin ids, and the Fyers app credentials.
+- They're never committed. `.env` was removed from the dashboard repo in commit `5097247`.
+- The monitor reads the bot token at send time and passes it to curl on stdin, so it never appears in logs or the process list.
+
+**Honest gaps (say these in an interview before you're asked):**
+- **The dashboard has no login.** Anyone with the URL sees the paper P&L. Authentication is *planned* with the mobile backend.
+- **The API is read-only but unauthenticated**, and allows any origin (CORS `*`).
+- **The production dashboard calls the API over plain HTTP at the host's address.** That puts the address in the JS bundle, and browsers block the calls as mixed content. Found 23 Oct. The fix is the owner's decision: remove `VITE_API_URL` from the Vercel environment, so the app uses the relative `/api` proxy.
+
+**Interviewer might ask:** *"What's your biggest security risk?"* A strong answer: "An unauthenticated read API and a dashboard without login. The data is paper-only and read-only, so the blast radius is information exposure, not money. But it's the first thing I'd fix: put auth in front of the API, serve it only through the HTTPS proxy, and stop baking the backend address into the bundle."
+
+---
+
+## Part 8c: Cost · Level 1
+
+| Item | What it is | Cost |
+|---|---|---|
+| EC2 | one **t3.small** (2 vCPU, 1.9 GiB of memory, 16 GB disk) in **ap-south-1** (Mumbai), checked from instance metadata on 23 Oct | **Unverified:** check the AWS billing console. On-demand pricing for t3.small is published by AWS. |
+| AWS credits | — | **Unverified:** owner to confirm |
+| Vercel | dashboard hosting | **Unverified:** plan to be confirmed |
+| Fyers API | market data | **Unverified:** depends on the account plan |
+| Telegram | bot API | free |
+
+**Why a t3.small is enough:** on 22 Oct the engine used about **110 MB of memory and about 4% CPU** (monitor log). The bottleneck is Fyers' limits, not compute.
+
+**Interviewer might ask:** *"How would costs scale?"* A strong answer: "Compute isn't the constraint. Data rights and API limits are. Scaling to more symbols means a higher Fyers plan or another data vendor before it means a bigger instance."
