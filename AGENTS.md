@@ -1164,6 +1164,7 @@ version live in `backtest/core/symbolClass.ts`, with a test pinning the five aff
 | `HTF_TREND:{sym}` | `BULLISH\|BEARISH` | — | **nothing** | `BaseDetector.isDailyTrendAligned` |
 | `alert:sent:{IST-date}:{detector}:{symbol}` | timestamp (SET NX) | 36 h | `alertPolicy.reserveAlertSlot` | itself — one Telegram alert per detector+symbol per day. Nifty option symbols dedup on `NIFTY`. **Never cleared at boot.** |
 | `alert:count:{IST-date}` | counter | 36 h | `alertPolicy.reserveAlertSlot` | itself — daily cap. **Never cleared at boot.** |
+| `trades:open` | hash `<position id>` → JSON `OpenPosition` | none | `positionTracker.registerTrade` (and again with `dbId` after the INSERT) | `positionTracker.init` at boot. Id = `trade_<ms>_<symbol>_<detector slug>_<6 hex>` since 2026-10-22 (§11.19); legacy `trade_<ms>_<symbol>` entries still load. The id is opaque: nothing parses it. **Never cleared at boot.** |
 | `ema_shadow:nifty:bars5` | list of closed 5-min Nifty candles (JSON `{t,o,h,l,c}`), capped at 1,500 | none | `NiftyEmaShadow` (`redisBarStore`) | itself at boot — EMA warm-up history. **Never cleared at boot** (listed in the boot-cleanup comment). |
 
 > **2026-10-06:** cooldown keys (`cooldown:*`, `v2:cooldown:*`, `v2:session_open:*`) are **no
@@ -1640,6 +1641,23 @@ The regime then restarted from zero. Worse, the regime engine reads only its **i
 - the EMA shadow's half-built candle.
 
 Tests: `tests/bootCleanup.test.ts`.
+
+## 11.19 Unique position ids, row-addressed closes (2026-10-22, branch `fix/position-id`)
+
+**Why:** on Oct 22 at 11:06 two detectors fired AEQUS LONG in the same millisecond. Both positions got the id `trade_<ms>_NSE:AEQUS-EQ`.
+- The second overwrote the first in `trades:open`.
+- After the 11:46 restart only one was reloaded, so `pnl:daily` counted one close.
+- Postgres rows were closed with `WHERE symbol AND entry_time`, which matches **both** same-millisecond rows.
+
+**Now:**
+- `positionStatus.newPositionId` builds `trade_<ms>_<symbol>_<detector slug>_<6 hex>`.
+- **Order:** registration is INSERT, then `dbId`, then **one** `trades:open` write, then the in-memory entry. A position is invisible to `processTick` until its row id is known. That way a close can't race the INSERT, and no second write can resurrect a closed position as a ghost (the independent review found this). `dbId` survives a restart.
+- The close UPDATE and the orphan UPDATE target `id = dbId` (`positionStatus.rowMatch`). Positions registered before this change still use the legacy symbol + entry_time match.
+- The API and dashboard never parse the id. The API returns `paper_trades.id`; SSE events carry the position object and are only compared for equality.
+
+**Parity:** `legacyWorkerParity` checks that the new id extends the old one, then compares everything else exactly.
+
+Tests: `tests/positionId.test.ts`.
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
