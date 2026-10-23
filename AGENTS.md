@@ -1660,8 +1660,11 @@ Pure logic lives in `src/api/publicData.ts`, wired in `src/api/server.ts`. There
   - `stocksSeenToday`: the count of `vwap:*:{today}` keys, excluding the index.
   - `ticksPer5m`: currently `null`. The engine logs it but doesn't publish it, so a later engine change is needed.
   - **No** quota, monitor, restart or host details.
+- **`/api/events` keep-alive** (`src/api/sseHeartbeat.ts`): an SSE comment `: ping <ms>` every 25 s (`SSE_HEARTBEAT_MS`), stopped on client close. EventSource ignores comments, so no client change is needed.
+  - **Why:** the Vercel `/api` rewrite closed the idle stream after 151 s on both production domains (measured 2026-10-23 10:16 IST with no position open; re-measured 19:10 IST, 150 s, 0 pings).
+  - **Unverified:** whether the cut is an idle timeout (the heartbeat fixes it) or a hard cap (it doesn't). After the API deploy, run `scripts/sse_soak.sh` (one read-only GET through ninefifteen's `/api`, 300 s). PASS means the stream held past 151 s with pings arriving.
 
-Tests: `tests/publicData.test.ts`.
+Tests: `tests/publicData.test.ts`, and `tests/sseHeartbeat.test.ts`. The latter puts a local proxy that cuts idle connections at 300 ms in front of the stream: it reproduces the cut without the heartbeat, and the stream survives 4× that window with it. That's an emulation; the real check is the soak script.
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 

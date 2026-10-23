@@ -3,6 +3,7 @@ import { redisClient, bootRedis } from '../config/redis.js'
 import { pool } from '../config/db.js'
 import { schemaProblem } from '../db/migrate.js'
 import { coarseHealth, mapSignalRow, signalsQuery } from './publicData.js'
+import { startSseHeartbeat } from './sseHeartbeat.js'
 import { loadHolidays } from '../core/sessionGuard.js'
 import { getISTDateString } from '../utils/marketHours.js'
 
@@ -215,12 +216,15 @@ fastify.get('/api/events', (request, reply) => {
 	})
 
 	reply.raw.write('retry: 3000\n\n')
+	// keep-alive comment every 25 s so an idle-timeout proxy (the Vercel /api rewrite) keeps the stream open
+	const stopHeartbeat = startSseHeartbeat((chunk) => reply.raw.write(chunk))
 
 	const clientObj = { reply, includeUngated }
 	clients.add(clientObj)
 	console.log(`[SSE] Client connected. Active clients: ${clients.size} (includeUngated: ${includeUngated})`)
 
 	request.raw.on('close', () => {
+		stopHeartbeat()
 		clients.delete(clientObj)
 		console.log(`[SSE] Client disconnected. Active clients: ${clients.size}`)
 	})

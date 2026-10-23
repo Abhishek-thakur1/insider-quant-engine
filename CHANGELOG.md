@@ -11,6 +11,7 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 - **Additive read-only fields:**
   - `/api/trades/history` adds `target`, `stopLoss` and `dataQuality`;
   - `/api/today` open trades add `gated`, `regimeClass` and `dataQuality`.
+- **Stream keep-alive** (AGENTS.md §11.20): `/api/events` sends an SSE comment every 25 s, so the Vercel `/api` rewrite stops cutting the idle stream at 151 s. This is unverified until the deploy; `scripts/sse_soak.sh` is the post-deploy check. `tests/sseHeartbeat.test.ts` has 5 tests, including one through an emulated idle-timeout proxy.
 - **Tests:** `tests/publicData.test.ts`, 6 tests. They check:
   - the SQL is SELECT-only, parameterised and capped;
   - which columns are exposed;
