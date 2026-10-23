@@ -12,6 +12,7 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
   - `/api/trades/history` adds `target`, `stopLoss` and `dataQuality`;
   - `/api/today` open trades add `gated`, `regimeClass` and `dataQuality`.
 - **Stream keep-alive** (AGENTS.md §11.20): `/api/events` sends an SSE comment every 25 s, so the Vercel `/api` rewrite stops cutting the idle stream at 151 s. This is unverified until the deploy; `scripts/sse_soak.sh` is the post-deploy check. `tests/sseHeartbeat.test.ts` has 5 tests, including one through an emulated idle-timeout proxy.
+- **`quant_api` uses the image's own `node_modules`** (AGENTS.md §11.20). The anonymous `/app/node_modules` volume is removed from compose; compose had been carrying a 9 Sep volume into every recreate. The old volume is removed by id after the deploy, with the three checks. Engine, auth and screener follow on separate evenings.
 - **Tests:** `tests/publicData.test.ts`, 6 tests. They check:
   - the SQL is SELECT-only, parameterised and capped;
   - which columns are exposed;
