@@ -535,7 +535,7 @@ Both were fixed in place. That's a good interview story about reading your own c
 | STRUCTURE | 20 | Is the breakout clean (a fresh break of structure)? | no |
 | LIQUIDITY | 18 | Is there room to the next liquidity pool? | no |
 | ORDER_FLOW | 15 | Was it an aggressive candle (body and volume)? | no |
-| BAYESIAN | 25 | Posterior P(win) from the evidence (bias, volume, momentum, time window) | yes, a hard gate when it fails |
+| BAYESIAN | 25 | Posterior P(win) from the evidence (bias, volume, momentum, time window) | listed in `HARD_GATES` (`alertPipeline.ts`), but the filter never rejects at it today: it only contributes points |
 | EV_KELLY | 10 | Expected value after slippage, and half-Kelly sizing | **yes**: EV below 0 gives `rejectedAt: 'EV'` (`MIN_EV_PTS = 0`) |
 
 **Pass:** score ≥ **78** (`CONFIRMATION_THRESHOLD`, which can be changed through the environment). The weights add up to 100.
@@ -613,7 +613,7 @@ It is **not yet live**.
 <details><summary>Part 4 mini quiz</summary>
 
 1. What's the pass score? **78 out of 100.**
-2. Which gates block regardless of the score? **REGIME, BAYESIAN, EV and KELLY.**
+2. Which gates actually block regardless of the score? **REGIME and EV.** These are the only `rejectedAt` values the filter sets. `HARD_GATES` also lists BAYESIAN and KELLY, ready for the day the filter rejects at them.
 3. Why is a flat day labelled "trending"? **Low entropy means the returns are concentrated, which a flat day also produces. Entropy doesn't measure direction.**
 4. Why `SET NX` rather than GET-then-SET? **Atomicity: two concurrent callers can't both win.**
 5. Why give a claim back? **So a fire that sent nothing doesn't block a legitimate alert later.**
