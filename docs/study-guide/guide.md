@@ -514,3 +514,109 @@ Both were fixed in place. That's a good interview story about reading your own c
 </details>
 
 **Interviewer might ask:** *"Which of your strategies works best?"* A strong answer: "I don't know yet, and I'd be lying if I picked one. The samples are tiny, and the only study I pre-registered showed no edge after costs. What I can show is that every fire is recorded with its full filter breakdown, so that question can be answered honestly once there's enough data."
+
+---
+
+## Part 4: The filter and the alert policy
+
+### 4.1 The score and its gates · Level 2
+
+**Why it matters.** Detectors are eager: on 22 Oct they fired **21 times**, and only **3** became alerts [Proven, `signals` table]. The filter decides which fires are worth your attention.
+
+**Mental model.** Picture a pull-request review with blocking checks and a quality score:
+- **Hard gates** are like failing CI: they block no matter what the score is.
+- The **score** (out of 100) is like a reviewer's confidence. Below the bar, the change doesn't ship.
+
+**How it works here** (`src/detectors/janeStreetFilter.ts`):
+
+| Component | Max points | What it asks | Hard gate? |
+|---|---|---|---|
+| REGIME | 12 | Does the market's current "mode" suit this detector type? | **yes**: an incompatible regime gives score 0 and `rejectedAt: 'REGIME'` |
+| STRUCTURE | 20 | Is the breakout clean (a fresh break of structure)? | no |
+| LIQUIDITY | 18 | Is there room to the next liquidity pool? | no |
+| ORDER_FLOW | 15 | Was it an aggressive candle (body and volume)? | no |
+| BAYESIAN | 25 | Posterior P(win) from the evidence (bias, volume, momentum, time window) | yes, a hard gate when it fails |
+| EV_KELLY | 10 | Expected value after slippage, and half-Kelly sizing | **yes**: EV below 0 gives `rejectedAt: 'EV'` (`MIN_EV_PTS = 0`) |
+
+**Pass:** score ≥ **78** (`CONFIRMATION_THRESHOLD`, which can be changed through the environment). The weights add up to 100.
+
+**Worked example [Proven]:**
+- **AEQUS VCP scored 88.**
+
+  REGIME 12/12 + STRUCTURE 20/20 + LIQUIDITY 10.8/18 + ORDER_FLOW 15/15 + BAYESIAN 20.2/25 (P = 81%) + EV_KELLY 10/10.
+- **JTLIND scored 77** at 10:15, one point under the bar, and was rejected at SCORE.
+- **MRPL scored 49** and was rejected at **EV**. It had negative expected value after slippage, so it's blocked even in shadow mode.
+
+**Why the weights are what they are:** the honest answer is **they're assumptions**. `CLAUDE.md` says: "Every `L=` ratio, score weight and win-rate comment is an assumption." Changing the threshold changes how often alerts fire in a non-linear way, so the repo rule is to collect decisions in `SHADOW_MODE` first and reason from the logged distribution (`jsfilter:decisions`).
+
+### 4.2 How the filter misbehaves: the regime-entropy finding · Level 3
+
+**What the regime detector does** (`src/utils/regimeDetector.ts`):
+1. It takes the last **20 one-minute Nifty returns**. It needs at least 8.
+2. It puts each return into one of **5 buckets** by size: < −0.3%, < −0.05%, ±0.05%, ≤ +0.3%, > +0.3%.
+3. It computes the **Shannon entropy** H of that histogram.
+4. **H < 1.6 means "trending"**, **H > 2.0 means "ranging"**, and anything in between is "transition".
+5. Momentum detectors are allowed in "trending" and blocked in "ranging". Reversion detectors are the opposite.
+
+**Think first:** on a quiet, flat day, almost every 1-minute return is within ±0.05%. What is the entropy?
+
+<details><summary>Answer</summary>
+
+It's very low. Almost everything falls into one bucket, so **H is close to 0**, which the detector labels **"trending"**. JSLL on 22 Oct fired with **H = 0.29, labelled "trending"**, on a quiet afternoon.
+
+Entropy measures **how spread out** the returns are, not **which way** they go. A strong one-way trend with large returns also lands in one bucket. So "low entropy" can mean "flat" or "trending", and the detector can't tell them apart.
+</details>
+
+**Why it hasn't been "fixed":** the owner deliberately did **not** change the regime gate. A pre-registered study is on the follow-up list: decide what the test is before running it, then run it. That's the evidence discipline from Part 7, applied to the system's own logic.
+
+**Interviewer might ask:** *"Isn't that a bug?"* A strong answer: "It's a misnamed signal. It measures volatility concentration, not direction. Changing a gate that every alert passes through, without a pre-registered test, would just swap one untested assumption for another. So I documented it and queued the study."
+
+### 4.3 Why alerts are limited · Level 2
+
+**Mental model:** push-notification hygiene in a mobile app. Too many alerts and the user mutes you.
+
+The rules, all in `src/workers/alertPolicy.ts` and `alertPipeline.ts`:
+1. **Gated only.** Only fires that pass the filter are sent. Everything else is still recorded, with `alert_suppressed_reason` such as `NOT_GATED` or `FILTER_REJECTED`.
+2. **Capital sizing.** A fire that would exceed paper capital is skipped (`CAPITAL_SKIP`) or reduced. The rule is risk at most 1% of capital and at most 10% in one name.
+3. **One alert per detector per symbol per day.** This uses `alert:sent:{day}:{detector}:{symbol}`, a `SET NX` with a 36-hour TTL.
+4. **A daily cap of 20** (`alert:count:{day}`). The first time it's exceeded, the admin gets one notice.
+5. **Fail closed for alerting, fail open for recording.** A filter error records the trade but sends nothing.
+
+**The gap that rule 3 left:** AEQUS at 11:06 fired from **two detectors** at the same moment. Rule 3 is per detector, so both alerts were sent.
+
+**The fix** is *built, not deployed*. It's PR #22, waiting for the owner's review:
+- one alert per **symbol and side** while the first position is open, otherwise for 60 minutes;
+- options use the 60-minute window only;
+- only an **alerted** fire keeps the "paper claim", so duplicate rows are flagged `duplicate_signal` and left out of the stats.
+
+### 4.4 Concurrency done right: atomic claims · Level 3
+
+**Think first:** two detectors run at the same time with `Promise.all`. Each checks "has anyone alerted AEQUS LONG?", sees "no", and both send. How do you stop that?
+
+<details><summary>Answer</summary>
+
+Don't **check, then act**. **Act atomically**: `SET key value NX EX 129600`. Redis guarantees that exactly one caller gets `OK`. The loser gets `null` and treats the fire as a duplicate.
+</details>
+
+**The harder parts:**
+- **The claim must expire on a business rule** ("position closed and more than 60 minutes old"), not just on a TTL. The winner stores `{ts, positionId}`. A later fire replaces a stale holder with a **Lua compare-and-set**, which does "GET equals what I read, then SET" atomically, so two late fires can't both win.
+- **A claim that leads to no alert must be given back.** Causes include a capital skip, a failed send, the cap, or an error. The give-back uses a **Lua compare-and-delete**, so you can only delete your *own* claim.
+- **Same-millisecond ids.** Two fires in the same millisecond got the same position id. PR #23 fixes that.
+
+**Evidence:** **[Tested on paper]**, plus a **real-Redis check** (`scripts/ops/realRedisClaims.ts`, on a throwaway Redis 7.4.8 container): **23 of 23 passed**. For example:
+- 50 concurrent claims gave exactly 1 winner;
+- 20 concurrent takeovers of a stale holder gave exactly 1 winner;
+- the TTL was 129,600 s and was reset on takeover.
+
+It is **not yet live**.
+
+<details><summary>Part 4 mini quiz</summary>
+
+1. What's the pass score? **78 out of 100.**
+2. Which gates block regardless of the score? **REGIME, BAYESIAN, EV and KELLY.**
+3. Why is a flat day labelled "trending"? **Low entropy means the returns are concentrated, which a flat day also produces. Entropy doesn't measure direction.**
+4. Why `SET NX` rather than GET-then-SET? **Atomicity: two concurrent callers can't both win.**
+5. Why give a claim back? **So a fire that sent nothing doesn't block a legitimate alert later.**
+</details>
+
+**Interviewer might ask:** *"How would you test this concurrency logic?"* A strong answer: "In layers. First, unit tests with an in-memory store that mirrors the Lua semantics. Then the real pipeline twice under `Promise.all`. Then the same claims against a real Redis in a throwaway container, with 50-way concurrency. Live behaviour is the last layer, and I label it separately."
