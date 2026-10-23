@@ -402,3 +402,115 @@ Each technology gets four answers: **what it is**, **why this project uses it**,
 </details>
 
 **Interviewer might ask:** *"Why not just use Postgres for state?"* A strong answer: "Per-tick reads and writes, TTL-based cooldowns and atomic first-wins claims are what Redis is built for. Postgres is the durable record. I keep the two jobs separate, and the boot cleanup is day-aware, so a mid-session restart doesn't wipe the Redis state."
+
+---
+
+## Part 3: The trading ideas in plain language
+
+> **Common misconception.** Several detector files open with comments like "~65% win rate in Indian markets" (`niftyOpeningRangeExplosionDetector.ts`) or "highest win-rate intraday Nifty setup" (`niftyVwapReclaimDetector.ts`). **These are hypotheses written while designing, not measurements.** Nothing in this repo has measured them. In an interview, call them "the design thesis" and never "the win rate". Per `CLAUDE.md`: "Never fabricate a performance number."
+
+### 3.1 The vocabulary · Level 1
+
+**Mental model:** before you can follow a game, you learn the words on the scoreboard. These words are on the trading scoreboard.
+
+| Term | Plain meaning | In this repo |
+|---|---|---|
+| **Tick** | One price update from the exchange | A Fyers WebSocket message with `ltp` (last traded price) and `vol_traded_today` |
+| **Candle** (1-, 3- or 5-minute) | The open, high, low and close of all ticks in a time bucket | Built in memory from ticks (`src/utils/candleAggregator.ts`, plus each detector's own buckets) |
+| **VWAP** | Volume-weighted average price since the session began: Σ(price × volume) ÷ Σ(volume) | `updateVwap` in `src/utils/vwapUtils.ts`, stored per symbol per day in Redis |
+| **Session TWAP** (for Nifty) | An index has no traded volume, so the engine uses the average of minute typical prices, (H+L+C)/3, as its reference | `updateNiftyMinuteState` in `websocket.ts` |
+| **EMA** | An exponential moving average, where recent prices weigh more | `src/core/emaTrend.ts` (EMA shadow study) |
+| **ADR** | Average daily range: how far a stock usually moves in a day | Used by the screener (*built, not running*) |
+| **Stop and target** | The exit price that means "I was wrong" and the one that means "take profit" | For equities the stop is **VWAP × 0.998** (long) or **× 1.002** (short), and the target is entry ± 1.5 × risk (`alertPipeline.ts`) |
+| **R-multiple** | Profit or loss measured in units of the initial risk. R = (exit − entry) ÷ (entry − stop) for a long. −1R means "hit the stop exactly". | `paper_trades.r_multiple` |
+| **Expectancy** | The average R per trade over many trades. Positive means an edge, but only with a large enough sample. | Bootstrap confidence intervals in `backtest/compare.ts` |
+| **Paper trading** | Simulated positions, with no real money | `paper_trades` |
+| **Shadow mode** | Running logic for measurement only, so it never alerts | The EMA study; `SHADOW_MODE` for the filter |
+| **Gated / ungated** | Passed the filter and was alerted, versus recorded only | `paper_trades.gated` |
+
+**Worked example: R for AEQUS.**
+- Entry ₹245.70, stop ₹242.62, so the risk is ₹3.08.
+- It exited at ₹242.55: (242.55 − 245.70) ÷ 3.08 = **−1.02R**. That's slightly worse than −1R, because the exit tick was below the stop. That is slippage.
+- The rupee loss: −₹3.15 × 40 shares = **−₹126**. That matches `paper_trades.realized_pnl`.
+
+<details><summary>Mini quiz</summary>
+
+1. Why does Nifty use a "session TWAP" instead of VWAP? **An index has no traded volume, so a volume-weighted average isn't defined.**
+2. A long trade has entry ₹100 and stop ₹98, and exits at ₹103. What's the R? **+1.5R.**
+3. Is +2R on one trade evidence of an edge? **No. Expectancy needs many trades, and a confidence interval.**
+</details>
+
+### 3.2 Stock Momentum Breakout · Level 2
+**Status:** *running*, part of the equity stack: `buildEquityStack` in `websocket.ts`. **[Proven]** It fires live, for example AEQUS 11:06 and JSLL 14:13 on 22 Oct.
+
+It looks for three setups (from the file header in `src/detectors/v2/stockMomentumBreakoutDetector.ts`):
+- **A, Morning Surge** (09:15–09:50): the stock breaks the 09:15 high on 3× the opening candle's volume.
+- **B, Intraday Compression Breakout** (09:50–14:30): price stays within 0.5% for 3 consecutive 5-minute candles, then breaks out on 4× average volume. **AEQUS was this**: "box ₹242.00–243.05, 0.43% tight, 5.3× vol".
+- **C, VWAP Momentum Continuation:** a pullback to VWAP, then a new 30-minute high or low with volume.
+
+All of them need Nifty bias alignment, a ₹1 crore+ block, and a 30-minute cooldown per stock. Every fire declares `regimeClass: 'MOMENTUM'` and `durationClass: 'INTRADAY'`.
+
+**Picture:**
+```
+price
+ 245.7 ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ●  breakout candle (5.3× volume)
+ 243.05 ┌──────────────────────┐
+        │  ▪  ▪  ▪   tight box │   3 candles inside 0.5%
+ 242.00 └──────────────────────┘
+ 242.62 ············ stop = VWAP × 0.998 (not the box low)
+```
+
+**Known weaknesses:**
+- The stop comes from VWAP, not from the box, so the risk can be too tight or too loose.
+- There's no proof of edge.
+- Volume on the first tick after a restart is dropped (§6.3).
+
+### 3.3 Volatility Contraction (VCP) · Level 2
+**Status:** *running* (`VolatilityContraction.ts`).
+
+**How it works:**
+- It keeps a rolling history of 7 five-minute candles in Redis, `v2:vcp_history:{symbol}`, so it needs 35 minutes of context before it can fire.
+- It fires when **the newest candle closes above the pivot**, the high of the contraction box (`history[1..3]`). The range and volume must have shrunk compared with the earlier candles (`history[4..6]`), and the breakout candle needs at least 1.5× the box's average volume.
+
+**Two real bugs are recorded in its own comments:**
+- The box used to include the breakout candle itself, so it asked the candle to close above its own high.
+- It compared one tick's volume with a 5-minute average, a scale mismatch of about 300×.
+
+Both were fixed in place. That's a good interview story about reading your own code skeptically.
+
+**Known weaknesses:**
+- 35 minutes of warm-up.
+- The history survives a same-day restart but can join candles across the restart gap. That's a known should-fix from the PR #21 review.
+
+### 3.4 The Nifty detectors · Level 2
+**Status:** 5 are wired (`NIFTY_STACK`, `websocket.ts`). Nifty fires become **option** alerts, for example "NIFTY 22650 CE".
+
+| Detector | Idea, from the file header | Backtestable? |
+|---|---|---|
+| Opening Range Explosion | The first 5-minute range (09:15–09:20) breaks with a 3-minute close outside it, VWAP aligned, before 10:00. On 22 Oct it **skipped**, because the range was 121 points, which is too wide. | yes |
+| Trend Pulse | 2 consecutive 3-minute closes in one direction, price more than 0.20% from VWAP, body at least 0.10%, volume at least 1.5× | yes |
+| VWAP Reclaim | At least 2 closes on one side of VWAP, then a decisive close back across (body at least 0.12%, not overextended) | yes |
+| Institutional OI Liquidity Sweep | Uses option-chain open interest | **no**: option OI isn't cached |
+| Delta Hedging Pressure | Uses option-chain OI and delta | **no** |
+
+**Honest limit:** option chains are off (`NIFTY_OPTIONS_ENABLED=false`) until an expiry fix, and option paper positions are never closed in-session (Part 8). So Nifty paper results are not meaningful yet.
+
+### 3.5 The EMA shadow study · Level 2
+**Status:** *running in shadow*. It never alerts, never touches the filter, and never writes a paper trade.
+
+- **What:** the pre-registered EMA trend study (`config/nifty_ema_study.json`, three variants, V0/V1/V2) running live on Nifty's own 5-minute candles. It writes JSONL to `/app/data/ema_shadow/<date>.jsonl`.
+- **Why "shadow":** to compare live behaviour with the backtest (a parity test) without risking alerts.
+- **22 Oct [Proven]:** V0 made 0 trades; V1 made 2 (ΣR −1.36); V2 made 4 (ΣR −4.17). Every row is flagged `warmup_partial` and `bars_incomplete`. **One session means nothing.**
+- **Known gaps:**
+  - The 15:25 candle is never stored, because the engine stops at 15:30 before that candle can close. That's on the backlog.
+  - Warm-up needs 200 stored candles, which is about 3 sessions.
+
+<details><summary>Part 3 mini quiz</summary>
+
+1. Which Momentum setup was AEQUS? **B, Intraday Compression Breakout.**
+2. Why can't two Nifty detectors be backtested? **They need option-chain open interest, which isn't cached.**
+3. What does "shadow" guarantee for the EMA study? **No alerts, no filter, no paper trades. It only measures.**
+4. A file comment says "65% win rate". What do you say? **"That was the design hypothesis. It's unmeasured."**
+</details>
+
+**Interviewer might ask:** *"Which of your strategies works best?"* A strong answer: "I don't know yet, and I'd be lying if I picked one. The samples are tiny, and the only study I pre-registered showed no edge after costs. What I can show is that every fire is recorded with its full filter breakdown, so that question can be answered honestly once there's enough data."
