@@ -132,3 +132,18 @@ Costs are converted to R per trade as the round-trip cost in ₹ divided by risk
 
 ## Deviation log
 Append only, with the date, what changed and why. It is empty at registration.
+
+**2026-10-23, about 19:45 IST.** These were written after the code trial and before any full-run result existed. The only output seen was a structural check on a partial sample, and its numbers weren't read as results.
+
+1. **Look-ahead check (§6): passed for filter state.** `runJaneStreetFilter`, `regimeDetector` and the Bayesian, structure, liquidity and order-flow helpers read only Redis and in-memory module state. None reads Postgres or files. `replaySession` calls `flushAll()` and resets the regime, candle and structure state before every session (`backtest/replay/engine.ts`), so nothing crosses between sessions. Universe-selection bias remains and is stated in §6.
+2. **Wrong-side S0 trades** (stop on the wrong side of entry) are **excluded from the H1-H3 cells** and reported separately, in bps of notional.
+   - **Why:** for these trades live's R formula (`positionTracker.ts:216`) divides by a negative risk, so R isn't an expectancy unit. Live exits them on the first tick; the replay uses the first forward bar's open.
+   - §2.3 said "keeps them, as live does". This is the clarification. Their count is in the report.
+3. **Costs for S0-S3** are applied analytically in R (bps × entry ÷ (10,000 × risk)), not as adjusted fills, so one simulation serves all five cost multiples.
+   - This equals fill-based slippage to first order.
+   - The side-by-side with the old replay (§A of the report) uses the harness's own fill convention (5 bps per leg, no charges) for both columns.
+4. **Addition, at the owner's request on 23 Oct evening:** report section A shows the **old replay**, exactly the harness method (trigger SL + T1 via `simulateExit`), next to the live-stop replay (S0) on the same signals. It also checks against the committed `results_5m.json` window. This adds to the report and changes no hypothesis or rule.
+5. **Excluded signals, with counts in the report:**
+   - signals with no forward bars in their session;
+   - S1 or S2 trades without 14 / 20 prior daily bars (the first weeks of the cache, and symbols that start later). H3's paired set uses only entries valid under all four rules.
+6. **Run mechanics:** the collection ran as 6 parallel sandbox shards (`--network none`, empty env file, cache mounted read-only, `sandboxGuard.ts` first). Three shards ran out of Docker memory (exit 137) and were re-run separately. Sessions are independent, so this doesn't affect results.
