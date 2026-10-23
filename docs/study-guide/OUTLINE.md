@@ -1,5 +1,7 @@
 # Study guide: outline for approval
 
+> **Superseded planning document (22 Oct).** `guide.md` is the current text, and where they differ, it wins. In particular, the guide's evidence-badge definitions and its choice of AEQUS as the worked example are final.
+
 Docs only, branch `docs/study-guide`. Paper trading only, with no proven trading edge.
 
 Every section uses the same shape:

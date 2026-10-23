@@ -1,6 +1,12 @@
 # Dashboard audit (read-only, for owner approval)
 
-- **Repo:** `N:\trade\insider-quant-dashboard`, the sibling folder `../`.
+> **Snapshot from 22-23 Oct, before the redesign.** Since 23 Oct:
+> - the redesign is the default at `/`, and this single-file dashboard is kept as the classic view at `?view=classic` (not the `/classic` route proposed below);
+> - the mixed-content defect is fixed.
+>
+> The dashboard repo's `AGENTS.md` describes the current state.
+
+- **Repo:** the sibling dashboard repo.
 - **Remote:** `https://github.com/Abhishek-thakur1/insider-quant-dashboard.git`.
 - **Branch:** `main` at `0ea81e6`, clean. Nothing was changed.
 - **Stack:** React 19, Vite 8, Tailwind 4, Recharts 3, framer-motion, lucide, axios, date-fns.

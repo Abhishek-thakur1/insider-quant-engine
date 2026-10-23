@@ -27,7 +27,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 .hidden{display:none}:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media print{nav.toc,.bar{display:none}.wrap{display:block}details{border:0}details>*{display:block}body{background:#fff;color:#000}h2{break-before:page}}
 </style></head><body>
-<div class="wrap"><nav class="toc" aria-label="Contents"><strong style="display:block;margin:0 6px 10px">Contents</strong><a class="l2" href="#part-0-start-here">Part 0: Start here</a><a class="l3" href="#0-1-how-to-use-this-guide-level-1">0.1 How to use this guide · Level 1</a><a class="l3" href="#0-2-the-60-second-and-5-minute-pitch-level-1">0.2 The 60-second and 5-minute pitch · Level 1</a><a class="l2" href="#part-1-the-big-picture">Part 1: The big picture</a><a class="l3" href="#1-1-what-the-system-does-end-to-end-level-1">1.1 What the system does, end to end · Level 1</a><a class="l3" href="#1-2-real-paper-and-not-built-level-1">1.2 Real, paper, and not built · Level 1</a><a class="l3" href="#1-3-the-architecture-tour-level-1-2">1.3 The architecture tour · Level 1–2</a><a class="l3" href="#1-4-the-life-of-one-tick-aequs-long-22-oct-2026-level-2">1.4 The life of one tick: AEQUS LONG, 22 Oct 2026 · Level 2</a><a class="l3" href="#1-5-one-trading-day-on-the-clock-level-1">1.5 One trading day on the clock · Level 1</a><a class="l2" href="#part-2-the-tech-stack-one-technology-at-a-time">Part 2: The tech stack, one technology at a time</a><a class="l3" href="#2-1-typescript-on-node-js-level-1">2.1 TypeScript on Node.js · Level 1</a><a class="l3" href="#2-2-the-fyers-api-and-websocket-level-2">2.2 The Fyers API and WebSocket · Level 2</a><a class="l3" href="#2-3-redis-level-2">2.3 Redis · Level 2</a><a class="l3" href="#2-4-postgresql-level-2">2.4 PostgreSQL · Level 2</a><a class="l3" href="#2-5-docker-and-docker-compose-level-2">2.5 Docker and Docker Compose · Level 2</a><a class="l3" href="#2-6-aws-ec2-level-1">2.6 AWS EC2 · Level 1</a><a class="l3" href="#2-7-cron-the-scheduler-container-and-the-host-crontab-level-2">2.7 Cron, the scheduler container and the host crontab · Level 2</a><a class="l3" href="#2-8-telegram-through-telegraf-level-1">2.8 Telegram through Telegraf · Level 1</a><a class="l3" href="#2-9-fastify-the-api-and-server-sent-events-level-2">2.9 Fastify (the API) and Server-Sent Events · Level 2</a><a class="l3" href="#2-10-the-dashboard-react-vite-tailwind-and-recharts-on-vercel-level-1">2.10 The dashboard: React, Vite, Tailwind and Recharts on Vercel · Level 1</a><a class="l3" href="#2-11-testing-node-test-through-tsx-the-typecheck-and-eslint-level-1-2">2.11 Testing: node:test through tsx, the typecheck and ESLint · Level 1-2</a><a class="l2" href="#part-3-the-trading-ideas-in-plain-language">Part 3: The trading ideas in plain language</a><a class="l3" href="#3-1-the-vocabulary-level-1">3.1 The vocabulary · Level 1</a><a class="l3" href="#3-2-stock-momentum-breakout-level-2">3.2 Stock Momentum Breakout · Level 2</a><a class="l3" href="#3-3-volatility-contraction-vcp-level-2">3.3 Volatility Contraction (VCP) · Level 2</a><a class="l3" href="#3-4-the-nifty-detectors-level-2">3.4 The Nifty detectors · Level 2</a><a class="l3" href="#3-5-the-ema-shadow-study-level-2">3.5 The EMA shadow study · Level 2</a><a class="l2" href="#part-4-the-filter-and-the-alert-policy">Part 4: The filter and the alert policy</a><a class="l3" href="#4-1-the-score-and-its-gates-level-2">4.1 The score and its gates · Level 2</a><a class="l3" href="#4-3-why-alerts-are-limited-level-2">4.3 Why alerts are limited · Level 2</a><a class="l2" href="#part-5-data-and-the-fyers-limits">Part 5: Data and the Fyers limits</a><a class="l3" href="#5-1-the-limits-level-1">5.1 The limits · Level 1</a><a class="l3" href="#5-2-the-quota-ledger-level-2">5.2 The quota ledger · Level 2</a><a class="l3" href="#5-3-case-study-october-39-s-no-alerts-mystery-level-2">5.3 Case study: October&#39;s &quot;no alerts&quot; mystery · Level 2</a><a class="l2" href="#part-6-operations">Part 6: Operations</a><a class="l3" href="#6-1-every-cron-entry-and-why-at-that-time-level-1">6.1 Every cron entry and why at that time · Level 1</a><a class="l3" href="#6-2-backups-level-2">6.2 Backups · Level 2</a><a class="l3" href="#6-3-staying-up-level-2">6.3 Staying up · Level 2</a><a class="l3" href="#6-4-the-deploy-procedure-level-2">6.4 The deploy procedure · Level 2</a><a class="l3" href="#6-5-monitoring-level-1">6.5 Monitoring · Level 1</a><a class="l2" href="#part-7-testing-and-evidence">Part 7: Testing and evidence</a><a class="l3" href="#7-1-the-backtest-harness-level-2">7.1 The backtest harness · Level 2</a><a class="l3" href="#7-2-biases-that-fool-you-level-2">7.2 Biases that fool you · Level 2</a><a class="l3" href="#7-3-why-small-samples-mean-nothing-level-2">7.3 Why small samples mean nothing · Level 2</a><a class="l2" href="#part-8-engineering-stories-situation-task-what-i-found-what-i-did-what-i-learned">Part 8: Engineering stories (situation → task → what I found → what I did → what I learned)</a><a class="l3" href="#8-1-the-holiday-crash-loop">8.1 The holiday crash loop</a><a class="l3" href="#8-2-the-100-symbol-blindness">8.2 The 100-symbol blindness</a><a class="l3" href="#8-3-the-signals-writer-stall">8.3 The signals-writer stall</a><a class="l3" href="#8-4-the-sigkill-shutdown-exit-137">8.4 The SIGKILL shutdown (exit 137)</a><a class="l3" href="#8-5-the-mid-session-restart-that-wiped-state">8.5 The mid-session restart that wiped state</a><a class="l3" href="#8-6-the-same-millisecond-position-id-collision">8.6 The same-millisecond position-id collision</a><a class="l3" href="#8-7-the-duplicate-alert-and-atomic-claims">8.7 The duplicate alert, and atomic claims</a><a class="l3" href="#8-8-optional-the-wrong-side-stop">8.8 (Optional) The wrong-side stop</a><a class="l2" href="#part-8b-security-and-secrets-level-2">Part 8b: Security and secrets · Level 2</a><a class="l2" href="#part-8c-cost-level-1">Part 8c: Cost · Level 1</a><a class="l2" href="#part-9-trade-offs-and-what-i-39-d-do-differently">Part 9: Trade-offs and what I&#39;d do differently</a><a class="l3" href="#9-1-the-honest-limits-level-2">9.1 The honest limits · Level 2</a><a class="l2" href="#part-10-interview-prep">Part 10: Interview prep</a><a class="l3" href="#10-1-question-bank-levels-1-3">10.1 Question bank · Levels 1–3</a><a class="l3" href="#10-2-weak-versus-strong-answers-level-2">10.2 Weak versus strong answers · Level 2</a><a class="l3" href="#10-3-glossary-level-1">10.3 Glossary · Level 1</a><a class="l3" href="#10-4-one-page-cheat-sheet-level-1">10.4 One-page cheat sheet · Level 1</a><a class="l3" href="#10-5-the-7-day-study-plan-level-1">10.5 The 7-day study plan · Level 1</a></nav>
+<div class="wrap"><nav class="toc" aria-label="Contents"><strong style="display:block;margin:0 6px 10px">Contents</strong><a class="l2" href="#part-0-start-here">Part 0: Start here</a><a class="l3" href="#0-1-how-to-use-this-guide-level-1">0.1 How to use this guide · Level 1</a><a class="l3" href="#0-2-the-60-second-and-5-minute-pitch-level-1">0.2 The 60-second and 5-minute pitch · Level 1</a><a class="l2" href="#part-1-the-big-picture">Part 1: The big picture</a><a class="l3" href="#1-1-what-the-system-does-end-to-end-level-1">1.1 What the system does, end to end · Level 1</a><a class="l3" href="#1-2-real-paper-and-not-built-level-1">1.2 Real, paper, and not built · Level 1</a><a class="l3" href="#1-3-the-architecture-tour-level-1-2">1.3 The architecture tour · Level 1–2</a><a class="l3" href="#1-4-the-life-of-one-tick-aequs-long-22-oct-2026-level-2">1.4 The life of one tick: AEQUS LONG, 22 Oct 2026 · Level 2</a><a class="l3" href="#1-5-one-trading-day-on-the-clock-level-1">1.5 One trading day on the clock · Level 1</a><a class="l2" href="#part-2-the-tech-stack-one-technology-at-a-time">Part 2: The tech stack, one technology at a time</a><a class="l3" href="#2-1-typescript-on-node-js-level-1">2.1 TypeScript on Node.js · Level 1</a><a class="l3" href="#2-2-the-fyers-api-and-websocket-level-2">2.2 The Fyers API and WebSocket · Level 2</a><a class="l3" href="#2-3-redis-level-2">2.3 Redis · Level 2</a><a class="l3" href="#2-4-postgresql-level-2">2.4 PostgreSQL · Level 2</a><a class="l3" href="#2-5-docker-and-docker-compose-level-2">2.5 Docker and Docker Compose · Level 2</a><a class="l3" href="#2-6-aws-ec2-level-1">2.6 AWS EC2 · Level 1</a><a class="l3" href="#2-7-cron-the-scheduler-container-and-the-host-crontab-level-2">2.7 Cron, the scheduler container and the host crontab · Level 2</a><a class="l3" href="#2-8-telegram-through-telegraf-level-1">2.8 Telegram through Telegraf · Level 1</a><a class="l3" href="#2-9-fastify-the-api-and-server-sent-events-level-2">2.9 Fastify (the API) and Server-Sent Events · Level 2</a><a class="l3" href="#2-10-the-dashboard-react-vite-tailwind-and-recharts-on-vercel-level-1">2.10 The dashboard: React, Vite, Tailwind and Recharts on Vercel · Level 1</a><a class="l3" href="#2-11-testing-node-test-through-tsx-the-typecheck-and-eslint-level-1-2">2.11 Testing: node:test through tsx, the typecheck and ESLint · Level 1-2</a><a class="l2" href="#part-3-the-trading-ideas-in-plain-language">Part 3: The trading ideas in plain language</a><a class="l3" href="#3-1-the-vocabulary-level-1">3.1 The vocabulary · Level 1</a><a class="l3" href="#3-2-stock-momentum-breakout-level-2">3.2 Stock Momentum Breakout · Level 2</a><a class="l3" href="#3-3-volatility-contraction-vcp-level-2">3.3 Volatility Contraction (VCP) · Level 2</a><a class="l3" href="#3-4-the-nifty-detectors-level-2">3.4 The Nifty detectors · Level 2</a><a class="l3" href="#3-5-the-ema-shadow-study-level-2">3.5 The EMA shadow study · Level 2</a><a class="l2" href="#part-4-the-filter-and-the-alert-policy">Part 4: The filter and the alert policy</a><a class="l3" href="#4-1-the-score-and-its-gates-level-2">4.1 The score and its gates · Level 2</a><a class="l3" href="#4-3-why-alerts-are-limited-level-2">4.3 Why alerts are limited · Level 2</a><a class="l2" href="#part-5-data-and-the-fyers-limits">Part 5: Data and the Fyers limits</a><a class="l3" href="#5-1-the-limits-level-1">5.1 The limits · Level 1</a><a class="l3" href="#5-2-the-quota-ledger-level-2">5.2 The quota ledger · Level 2</a><a class="l3" href="#5-3-case-study-october-39-s-no-alerts-mystery-level-2">5.3 Case study: October&#39;s &quot;no alerts&quot; mystery · Level 2</a><a class="l2" href="#part-6-operations">Part 6: Operations</a><a class="l3" href="#6-1-every-cron-entry-and-why-at-that-time-level-1">6.1 Every cron entry and why at that time · Level 1</a><a class="l3" href="#6-2-backups-level-2">6.2 Backups · Level 2</a><a class="l3" href="#6-3-staying-up-level-2">6.3 Staying up · Level 2</a><a class="l3" href="#6-4-the-deploy-procedure-level-2">6.4 The deploy procedure · Level 2</a><a class="l3" href="#6-5-monitoring-level-1">6.5 Monitoring · Level 1</a><a class="l2" href="#part-7-testing-and-evidence">Part 7: Testing and evidence</a><a class="l3" href="#7-1-the-backtest-harness-level-2">7.1 The backtest harness · Level 2</a><a class="l3" href="#7-2-biases-that-fool-you-level-2">7.2 Biases that fool you · Level 2</a><a class="l3" href="#7-3-why-small-samples-mean-nothing-level-2">7.3 Why small samples mean nothing · Level 2</a><a class="l2" href="#part-8-engineering-stories-situation-task-what-i-found-what-i-did-what-i-learned">Part 8: Engineering stories (situation → task → what I found → what I did → what I learned)</a><a class="l3" href="#8-1-the-holiday-crash-loop">8.1 The holiday crash loop</a><a class="l3" href="#8-2-the-100-symbol-blindness">8.2 The 100-symbol blindness</a><a class="l3" href="#8-3-the-signals-writer-stall">8.3 The signals-writer stall</a><a class="l3" href="#8-4-the-sigkill-shutdown-exit-137">8.4 The SIGKILL shutdown (exit 137)</a><a class="l3" href="#8-5-the-mid-session-restart-that-wiped-state">8.5 The mid-session restart that wiped state</a><a class="l3" href="#8-6-the-same-millisecond-position-id-collision-fix-merged-and-deployed-23-oct">8.6 The same-millisecond position-id collision (fix merged and deployed 23 Oct)</a><a class="l3" href="#8-7-the-duplicate-alert-and-atomic-claims">8.7 The duplicate alert, and atomic claims</a><a class="l3" href="#8-8-optional-the-wrong-side-stop">8.8 (Optional) The wrong-side stop</a><a class="l2" href="#part-8b-security-and-secrets-level-2">Part 8b: Security and secrets · Level 2</a><a class="l2" href="#part-8c-cost-level-1">Part 8c: Cost · Level 1</a><a class="l2" href="#part-9-trade-offs-and-what-i-39-d-do-differently">Part 9: Trade-offs and what I&#39;d do differently</a><a class="l3" href="#9-1-the-honest-limits-level-2">9.1 The honest limits · Level 2</a><a class="l2" href="#part-10-interview-prep">Part 10: Interview prep</a><a class="l3" href="#10-1-question-bank-levels-1-3">10.1 Question bank · Levels 1–3</a><a class="l3" href="#10-2-weak-versus-strong-answers-level-2">10.2 Weak versus strong answers · Level 2</a><a class="l3" href="#10-3-glossary-level-1">10.3 Glossary · Level 1</a><a class="l3" href="#10-4-one-page-cheat-sheet-level-1">10.4 One-page cheat sheet · Level 1</a><a class="l3" href="#10-5-the-7-day-study-plan-level-1">10.5 The 7-day study plan · Level 1</a></nav>
 <main><div class="bar"><input id="q" type="search" placeholder="Search the guide (e.g. SET NX, VWAP, watchdog)" aria-label="Search the guide"><button class="theme" id="t" type="button">Theme</button></div>
 <article id="doc"><h1>Insider Quant Engine: the study guide</h1>
 <blockquote>
@@ -98,7 +98,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <h4>For a senior engineer (5 minutes)</h4>
 <ol>
 <li><strong>What it is.</strong> A Node.js and TypeScript service on one AWS EC2 host, run with Docker Compose.<ul>
-<li>It subscribes to Fyers&#39; market-data WebSocket for about 25 watchlist stocks plus the Nifty index.</li>
+<li>It subscribes to Fyers&#39; market-data WebSocket for about 25 watchlist stocks plus the Nifty index (boot log: <code>26/100 symbols</code>) <strong>[Proven, 21-23 Oct]</strong>.</li>
 <li>It builds candles in memory and runs 2 equity detectors and 5 Nifty detectors.</li>
 <li>It scores every fire with a multi-gate filter, sends gated alerts to Telegram, and records every fire as a paper trade in Postgres.</li>
 <li>Redis holds live session state.</li>
@@ -107,7 +107,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 </li>
 <li><strong>The interesting engineering.</strong> Constraints and failure modes:<ul>
 <li>Fyers caps the WebSocket at 100 symbols and REST calls at 5/s, 50/min and 5,000/day. More than 3 per-minute breaches block you for the day.</li>
-<li>I subscribed to more than 2,000 symbols for weeks and got silence. I diagnosed it and fixed it with a capped subscription plan and a boot-time check.</li>
+<li>I subscribed to more than 2,000 symbols (2,189 per the boot log) for weeks and got silence <strong>[Proven]</strong>. I diagnosed it and fixed it with a capped subscription plan and a boot-time check.</li>
 <li>The quota ledger is shared across processes.</li>
 <li>Alerting uses atomic Redis claims (<code>SET NX</code> plus Lua compare-and-set), so two detectors firing in the same millisecond can&#39;t both alert.</li>
 </ul>
@@ -123,7 +123,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <li>The backtest replays 1-minute candles tick by tick through the real detector classes.</li>
 <li>Parity tests check that live code and backtest give identical results.</li>
 <li>Studies are pre-registered, with day-block bootstrap confidence intervals.</li>
-<li><strong>Result:</strong> the one pre-registered study I ran (an EMA trend study) shows <strong>no edge</strong> after costs. I report that rather than tuning until it looks good.</li>
+<li><strong>Result:</strong> both pre-registered studies I ran (an EMA trend study, and an edge map of the live detectors) show <strong>no edge</strong> after costs. I report that rather than tuning until it looks good.</li>
 </ul>
 </li>
 <li><strong>What I&#39;d do next.</strong> A shadow candle recorder, a managed database, and a mobile backend with authentication.</li>
@@ -232,7 +232,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <tr>
 <td>One-alert-per-symbol duplicate policy</td>
 <td><em>built, not deployed</em></td>
-<td><strong>[Tested on paper]</strong> PR #22, plus a real-Redis check (23 of 23) on a throwaway container</td>
+<td><strong>[Tested on paper]</strong> PR #22, plus a real-Redis check (23 of 23, <code>scripts/ops/realRedisClaims.ts</code> on the PR #22 branch) on a throwaway container</td>
 </tr>
 <tr>
 <td>Liquid-universe replay fetch (Part D)</td>
@@ -396,7 +396,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 </tbody></table>
 <p><em>What to notice:</em></p>
 <ol>
-<li>Two independent detectors fired in the <strong>same millisecond</strong>, so both positions got the same id (<code>trade_&lt;ms&gt;_NSE:AEQUS-EQ</code>). PR #23 fixes this.</li>
+<li>Two independent detectors fired in the <strong>same millisecond</strong>, so both positions got the same id (<code>trade_&lt;ms&gt;_NSE:AEQUS-EQ</code>). PR #23 fixes this (merged and deployed 23 Oct; its first live session is Monday 26 Oct).</li>
 <li>The <strong>11:46 watchdog restart</strong> happened while these positions were open.</li>
 <li>The stop came from VWAP, not from the pattern. That&#39;s a known design limit (Part 9).</li>
 </ol>
@@ -612,7 +612,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 </ul>
 <h3 id="2-6-aws-ec2-level-1">2.6 AWS EC2 · Level 1</h3>
 <ul>
-<li><strong>What it is:</strong> one rented Linux virtual machine (Ubuntu, a 15 GB disk per <code>df -h</code>).</li>
+<li><strong>What it is:</strong> one rented Linux virtual machine (Ubuntu; a 16 GB volume, which <code>df -h</code> shows as a 15 GB root filesystem).</li>
 <li><strong>Why here:</strong> always on, cheap, simple.</li>
 <li><strong>Alternatives:</strong> managed containers (ECS or Fargate) or serverless. Those are more moving parts for a single long-lived WebSocket.</li>
 <li><strong>What breaks without it:</strong> the trading day. There&#39;s no second host (Part 9).</li>
@@ -646,12 +646,17 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <ul>
 <li><strong>What it is:</strong> a single-page app (React 19, Vite 8, Tailwind 4, Recharts 3) in a separate repo, hosted on Vercel.</li>
 <li><strong>The trick:</strong> <code>vercel.json</code> rewrites <code>/api/*</code> to the host&#39;s API. The browser only ever talks to Vercel.</li>
-<li><strong>Honest state:</strong> one <code>App.tsx</code> of 1,124 lines, and <strong>no login</strong>. It has known defects, listed in <code>docs/dashboard-redesign/AUDIT.md</code>.</li>
+<li><strong>Honest state (23 Oct):</strong> <strong>no login</strong>.<ul>
+<li><strong>Two views:</strong> a redesign is the default at <code>/</code>, and the original single-file dashboard (<code>ClassicApp.tsx</code>, about 1,100 lines) is kept at <code>?view=classic</code>.</li>
+<li><strong>Pre-redesign audit:</strong> <code>docs/dashboard-redesign/AUDIT.md</code> describes the dashboard as it was on 22-23 Oct, before the redesign.</li>
+<li><strong>API access:</strong> the HTTPS pages always use the relative <code>/api</code> proxy, with a 30-second refresh, because the proxy cuts the live event stream after about 151 s.</li>
+</ul>
+</li>
 </ul>
 <h3 id="2-11-testing-node-test-through-tsx-the-typecheck-and-eslint-level-1-2">2.11 Testing: node:test through tsx, the typecheck and ESLint · Level 1-2</h3>
 <ul>
 <li><strong>What it is:</strong> Node&#39;s built-in test runner (the <code>test</code> script is <code>tsx --test &quot;tests/**/*.test.ts&quot;</code>). <strong>Not</strong> Jest or vitest.</li>
-<li><strong>Scale:</strong> 321 tests pass on <code>v2</code> at <code>2fcbe9e</code> (<code>npm test</code>). There&#39;s a strict typecheck (<code>tsc --noEmit</code>). ESLint has 20 errors in untouched files that existed before this work.</li>
+<li><strong>Scale:</strong> 333 tests pass on <code>v2</code> at <code>b4f6d40</code> (<code>npm test</code>, 23 Oct; it was 321 at <code>2fcbe9e</code> on 22 Oct). There&#39;s a strict typecheck (<code>tsc --noEmit</code>). ESLint has 20 errors in untouched files that existed before this work.</li>
 <li><strong>What the tests prove:</strong><ul>
 <li>parity between the live pipeline and the old worker;</li>
 <li>parity between the live shadow detector and the backtest;</li>
@@ -858,7 +863,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <li>What does &quot;shadow&quot; guarantee for the EMA study? <strong>No alerts, no filter, no paper trades. It only measures.</strong></li>
 <li>A file comment says &quot;65% win rate&quot;. What do you say? <strong>&quot;That was the design hypothesis. It&#39;s unmeasured.&quot;</strong></details></li>
 </ol>
-<p><strong>Interviewer might ask:</strong> <em>&quot;Which of your strategies works best?&quot;</em> A strong answer: &quot;I don&#39;t know yet, and I&#39;d be lying if I picked one. The samples are tiny, and the only study I pre-registered showed no edge after costs. What I can show is that every fire is recorded with its full filter breakdown, so that question can be answered honestly once there&#39;s enough data.&quot;</p>
+<p><strong>Interviewer might ask:</strong> <em>&quot;Which of your strategies works best?&quot;</em> A strong answer: &quot;I don&#39;t know yet, and I&#39;d be lying if I picked one. The live samples are tiny, and both studies I pre-registered showed no edge after costs. What I can show is that every fire is recorded with its full filter breakdown, so that question can be answered honestly once there&#39;s enough data.&quot;</p>
 <hr>
 <h2 id="part-4-the-filter-and-the-alert-policy">Part 4: The filter and the alert policy</h2>
 <h3 id="4-1-the-score-and-its-gates-level-2">4.1 The score and its gates · Level 2</h3>
@@ -960,7 +965,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <ul>
 <li>one alert per <strong>symbol and side</strong> while the first position is open, otherwise for 60 minutes;</li>
 <li>options use the 60-minute window only;</li>
-<li>only an <strong>alerted</strong> fire keeps the &quot;paper claim&quot;, so duplicate rows are flagged <code>duplicate_signal</code> and left out of the stats.</li>
+<li>only an <strong>alerted</strong> fire keeps the &quot;paper claim&quot;, so duplicate rows are flagged <code>duplicate_signal</code> (on the PR #22 branch) and left out of the stats.</li>
 </ul>
 <details class="deep"><summary><span class="h3like">4.4 Concurrency done right: atomic claims · Level 3</span> <span class="badge">deep dive · open</span></summary>
 <p><strong>Think first:</strong> two detectors run at the same time with <code>Promise.all</code>. Each checks &quot;has anyone alerted AEQUS LONG?&quot;, sees &quot;no&quot;, and both send. How do you stop that?</p>
@@ -973,9 +978,9 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <ul>
 <li><strong>The claim must expire on a business rule</strong> (&quot;position closed and more than 60 minutes old&quot;), not just on a TTL. The winner stores <code>{ts, positionId}</code>. A later fire replaces a stale holder with a <strong>Lua compare-and-set</strong>, which does &quot;GET equals what I read, then SET&quot; atomically, so two late fires can&#39;t both win.</li>
 <li><strong>A claim that leads to no alert must be given back.</strong> Causes include a capital skip, a failed send, the cap, or an error. The give-back uses a <strong>Lua compare-and-delete</strong>, so you can only delete your <em>own</em> claim.</li>
-<li><strong>Same-millisecond ids.</strong> Two fires in the same millisecond got the same position id. PR #23 fixes that.</li>
+<li><strong>Same-millisecond ids.</strong> Two fires in the same millisecond got the same position id. PR #23 fixes that (merged and deployed 23 Oct).</li>
 </ul>
-<p><strong>Evidence:</strong> <strong>[Tested on paper]</strong>, plus a <strong>real-Redis check</strong> (<code>scripts/ops/realRedisClaims.ts</code>, on a throwaway Redis 7.4.8 container): <strong>23 of 23 passed</strong>. For example:</p>
+<p><strong>Evidence:</strong> <strong>[Tested on paper]</strong>, plus a <strong>real-Redis check</strong> (<code>scripts/ops/realRedisClaims.ts</code>, on the PR #22 branch, not yet in <code>v2</code>; run on a throwaway Redis 7.4.8 container): <strong>23 of 23 passed</strong>. For example:</p>
 <ul>
 <li>50 concurrent claims gave exactly 1 winner;</li>
 <li>20 concurrent takeovers of a stale holder gave exactly 1 winner;</li>
@@ -1108,12 +1113,12 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <li><p><strong>When:</strong></p>
 <ul>
 <li>every trading day at <strong>16:00</strong> (<code>scheduler/db_backup.sh</code>);</li>
-<li>and <strong>manually before every deploy</strong>, e.g. <code>~/backups/pre-guard-20261022T1342Z.dump</code>. Each manual dump is checked: it must list the 3 data tables (<code>paper_trades</code>, <code>signals</code>, <code>schema_migrations</code>).</li>
+<li>and <strong>manually before every deploy</strong>, to a timestamped dump file on the host. Each manual dump is checked: it must list the 3 data tables (<code>paper_trades</code>, <code>signals</code>, <code>schema_migrations</code>).</li>
 </ul>
 </li>
 <li><p><strong>Honest gaps:</strong></p>
 <ul>
-<li>The script&#39;s S3 upload <strong>has never worked</strong> (<code>S3_BACKUP_BUCKET</code> path issue, recorded in project memory 18 Oct). Backups only live on the same host. <strong>[Unverified off-host copy: none]</strong></li>
+<li>The script&#39;s S3 upload <strong>has never worked</strong> (<code>S3_BACKUP_BUCKET</code> path issue, found 18 Oct). Backups only live on the same host. <strong>[Unverified off-host copy: none]</strong></li>
 <li>A full <strong>restore has not been tested</strong> end to end. <strong>[Unverified]</strong></li>
 </ul>
 <p>In an interview, say exactly that. &quot;We back up daily, but I haven&#39;t proven the restore&quot; is a senior-sounding answer.</p>
@@ -1129,7 +1134,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <li><strong>from 15:15 IST it stands down instead</strong> (exit 0).</li>
 </ul>
 </li>
-<li><p><strong>Session guard:</strong> the engine won&#39;t run on a weekend or an NSE holiday. That&#39;s the fix for the 20 Oct holiday crash loop: <strong>415 restarts</strong>.</p>
+<li><p><strong>Session guard:</strong> the engine won&#39;t run on a weekend or an NSE holiday. That&#39;s the fix for the 20 Oct holiday crash loop: <strong>415 restarts</strong> <strong>[Proven, 20 Oct]</strong>.</p>
 </li>
 <li><p><strong>Day-aware boot cleanup</strong> (<code>src/core/bootCleanup.ts</code>, deployed 22 Oct):</p>
 <ul>
@@ -1159,7 +1164,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <p><strong>Never restart during market hours (09:00–15:30).</strong> On 21 Oct a manual restart at 11:14 made the VWAP seeder refetch history, used up the day&#39;s breach budget, and destroyed the morning&#39;s logs. Since then it&#39;s a hard rule: during market hours the watchdog handles failures, and people only report.</p>
 <h3 id="6-5-monitoring-level-1">6.5 Monitoring · Level 1</h3>
 <ul>
-<li><strong>Read-only checks:</strong> host cron, every 15 minutes from 09:03 to 15:40 (<code>~/evidence/monitor/check.sh</code>). Each one checks:<ul>
+<li><strong>Read-only checks:</strong> a host-side monitor script (not in this repo), run by host cron every 15 minutes from 09:03 to 15:40. Each one checks:<ul>
 <li>container status and restarts;</li>
 <li>heartbeat (stocks seen, index ticks per 5 minutes);</li>
 <li>errors, the quota ledger, disk and memory;</li>
@@ -1249,7 +1254,8 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <ul>
 <li>With 2.3 points, Trend Pulse showed +0.078R.</li>
 <li>Under a <strong>futures cost model, everything is negative</strong>.</li>
-<li>Neither cost model is validated.</li>
+<li>Neither cost model is validated.
+<strong>[Tested on paper]</strong> for all the figures above (<code>backtest/studies/nifty-ema-trend/SUMMARY.md</code>).</li>
 </ul>
 </li>
 <li><p><strong>What it taught:</strong> the honest answer to &quot;does it work?&quot; is &quot;not on this evidence&quot;. The value is in the method:</p>
@@ -1260,6 +1266,17 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 </ul>
 </li>
 </ol>
+<p><strong>A second pre-registered study, the edge map (23 Oct, <code>docs/studies/edge-map/REPORT.md</code>)</strong> <strong>[Tested on paper]:</strong></p>
+<ul>
+<li><strong>What it ran:</strong> the two live equity detectors and the real filter, replayed over 1,284 cached sessions (63,436 signals), with exits under the <strong>live</strong> VWAP stop. It also used a frozen copy of the live paper trades.</li>
+<li><strong>Result:</strong> no detector × time × regime × score cell showed an edge after costs.<ul>
+<li>Gross expectancy is about 0. At assumed broker costs (about 20 bps round trip) the result is about −0.2 to −0.4R a trade, because costs come to a quarter to a third of R with stops this tight.</li>
+<li>Higher scores lose less, but don&#39;t win.</li>
+<li>A wider ATR stop loses less, mostly because costs become a smaller share of R.</li>
+</ul>
+</li>
+<li><strong>Same lesson:</strong> pre-register, cost honestly, report the null.</li>
+</ul>
 </details><details class="deep"><summary><span class="h3like">7.5 Parity tests · Level 3</span> <span class="badge">deep dive · open</span></summary>
 <p><strong>Why:</strong> if live code and backtest code drift apart, backtest results say nothing about live behaviour.</p>
 <table>
@@ -1273,7 +1290,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <tbody><tr>
 <td><code>tests/niftyEmaShadow.test.ts</code></td>
 <td>The live EMA shadow, fed tick by tick, produces the <strong>same trades</strong> as the study engine</td>
-<td>177 trades identical across 15 sessions. On the full local cache, 14,839 of 14,839 were identical once both sides had the same cleaned input.</td>
+<td><strong>[Tested on paper]</strong> 177 trades identical across 15 sessions (the committed test). In a one-off local run on the full cache (not a committed test), 14,839 of 14,839 were identical once both sides had the same cleaned input.</td>
 </tr>
 <tr>
 <td><code>tests/legacyWorkerParity.test.ts</code></td>
@@ -1299,7 +1316,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <h3 id="8-1-the-holiday-crash-loop">8.1 The holiday crash loop</h3>
 <ul>
 <li><strong>Situation.</strong> 20 Oct was an NSE holiday. The engine started anyway and kept dying.</li>
-<li><strong>Found.</strong> The watchdog exited 1 when the socket stayed silent (there was no market), and Docker restarted it again: <strong>415 restarts</strong> (<code>src/core/sessionGuard.ts</code> header).</li>
+<li><strong>Found.</strong> The watchdog exited 1 when the socket stayed silent (there was no market), and Docker restarted it again: <strong>415 restarts</strong> (<code>src/core/sessionGuard.ts</code> header) <strong>[Proven, 20 Oct]</strong>.</li>
 <li><strong>Did.</strong><ul>
 <li>A trading-day gate at boot, using the holiday file shared with the scheduler.</li>
 <li>A watchdog policy: at most 6 restarts a day, exponential backoff, and stand down (exit 0) after 15:15.</li>
@@ -1316,7 +1333,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <li><strong>Did.</strong><ol>
 <li>Wrote <strong>failing tests first</strong>: three STALL tests failed with actual 1, expected 3.</li>
 <li>Fixed <code>flush()</code> to clear its promise when it finishes.</li>
-<li>Backfilled the lost rows from the logs, flagged <code>recovered_from_log</code>.</li>
+<li>Backfilled the lost rows from the logs, with <code>recovered_from_log</code> in their <code>data_quality</code> column (4 rows in <code>signals</code>, checked 23 Oct). <strong>[Proven]</strong></li>
 </ol>
 </li>
 <li><strong>Learned.</strong> Write the failing test before the fix. And mark recovered data as recovered.</li>
@@ -1327,7 +1344,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 </li>
 <li><p><strong>Found.</strong> <code>sh</code> was PID 1 and ignored SIGTERM. Docker waited 10 s and sent SIGKILL, so the shutdown handler (flush the signals, close the socket) never ran.</p>
 </li>
-<li><p><strong>Did.</strong> Proved it on a throwaway stub container:</p>
+<li><p><strong>Did.</strong> Proved it on a throwaway stub container <strong>[Tested on paper]</strong>:</p>
 <ul>
 <li>with <code>exec npx</code>, npm exited in 0.6 s without waiting for its child;</li>
 <li>with <code>exec node</code>, the handler ran and the stub exited 0 in 5.1 s.</li>
@@ -1344,7 +1361,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <li><strong>Did.</strong> A day-aware cleanup (a <code>engine:boot_day</code> marker), plus re-loading the regime into memory. Reviewed independently and deployed after the close.</li>
 <li><strong>Learned.</strong> Ask &quot;what survives a restart?&quot; for every piece of state.</li>
 </ul>
-<h3 id="8-6-the-same-millisecond-position-id-collision">8.6 The same-millisecond position-id collision</h3>
+<h3 id="8-6-the-same-millisecond-position-id-collision-fix-merged-and-deployed-23-oct">8.6 The same-millisecond position-id collision (fix merged and deployed 23 Oct)</h3>
 <ul>
 <li><strong>Situation.</strong> AEQUS, 11:06:28.169: two detectors fired in the same millisecond.</li>
 <li><strong>Found.</strong> The id was <code>trade_&lt;ms&gt;_&lt;symbol&gt;</code>, so both positions shared it. One overwrote the other in Redis. After the restart only one was counted, and the Postgres close matched <strong>both</strong> rows.</li>
@@ -1363,7 +1380,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <li><strong>Learned.</strong> Every assumption (&quot;positions close&quot;) needs checking against the real data paths.</li>
 </ul>
 <h3 id="8-8-optional-the-wrong-side-stop">8.8 (Optional) The wrong-side stop</h3>
-<p>An audit found <strong>0 of 1,584</strong> paper trades with a stop on the wrong side. A guard was still added: such a fire is recorded, flagged <code>invalid_geometry</code>, and never alerted.</p>
+<p>A database audit found <strong>0 of 1,584</strong> paper trades with a stop on the wrong side <strong>[Proven, 21 Oct]</strong>. A guard was still added: such a fire is recorded, flagged <code>invalid_geometry</code>, and never alerted.</p>
 <ul>
 <li><strong>Learned.</strong> Defend the invariants the data says hold today.</li>
 </ul>
@@ -1388,9 +1405,9 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <ul>
 <li><strong>The dashboard has no login.</strong> Anyone with the URL sees the paper P&amp;L. Authentication is <em>planned</em> with the mobile backend.</li>
 <li><strong>The API is read-only but unauthenticated</strong>, and allows any origin (CORS <code>*</code>).</li>
-<li><strong>The production dashboard calls the API over plain HTTP at the host&#39;s address.</strong> That puts the address in the JS bundle, and browsers block the calls as mixed content. Found 23 Oct. The fix is the owner&#39;s decision: remove <code>VITE_API_URL</code> from the Vercel environment, so the app uses the relative <code>/api</code> proxy.</li>
+<li><strong>Fixed 23 Oct: the dashboard used to call the API over plain HTTP at the host&#39;s address.</strong> That put the address in the JS bundle, and browsers blocked the calls as mixed content, so the live site showed no data. Fix: HTTPS pages now ignore an <code>http://</code> API address and use the relative <code>/api</code> proxy (dashboard PRs #4-#6), and <code>VITE_API_URL</code> was deleted from every Vercel project. The bundles now contain no host address. <strong>[Proven, 23 Oct]</strong></li>
 </ul>
-<p><strong>Interviewer might ask:</strong> <em>&quot;What&#39;s your biggest security risk?&quot;</em> A strong answer: &quot;An unauthenticated read API and a dashboard without login. The data is paper-only and read-only, so the blast radius is information exposure, not money. But it&#39;s the first thing I&#39;d fix: put auth in front of the API, serve it only through the HTTPS proxy, and stop baking the backend address into the bundle.&quot;</p>
+<p><strong>Interviewer might ask:</strong> <em>&quot;What&#39;s your biggest security risk?&quot;</em> A strong answer: &quot;An unauthenticated read API and a dashboard without login. The data is paper-only and read-only, so the blast radius is information exposure, not money. But it&#39;s the first thing I&#39;d fix: put auth in front of the API and serve it only through the HTTPS proxy. I already took the backend address out of the bundle after it caused a mixed-content outage.&quot;</p>
 <hr>
 <h2 id="part-8c-cost-level-1">Part 8c: Cost · Level 1</h2>
 <table>
@@ -1467,7 +1484,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 </tr>
 <tr>
 <td><strong>No proven edge</strong></td>
-<td>Not enough data yet; the one study was null</td>
+<td>Both pre-registered studies were null after costs</td>
 <td>Every result needs a badge</td>
 </tr>
 <tr>
@@ -1494,7 +1511,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <li><em>What does the system do?</em> It finds NSE intraday setups, scores them, alerts gated ones to Telegram, and records paper trades. No orders. <em>How many detectors? 2 equity and 5 Nifty.</em></li>
 <li><em>Why containers?</em> Reproducible deploys and a one-command rollback through image tags. <em>What&#39;s PID 1 in your engine container? Node, through <code>exec</code>.</em></li>
 <li><em>Why one host?</em> The load is tiny and simplicity is worth more than availability at this stage. <em>What breaks if it dies? The whole day.</em></li>
-<li><em>How does the dashboard reach the API?</em> Through a Vercel rewrite of <code>/api/*</code>. <em>What&#39;s wrong with it today? Production bakes in a plain-HTTP API address, which browsers block as mixed content.</em></li>
+<li><em>How does the dashboard reach the API?</em> Through a Vercel rewrite of <code>/api/*</code>. <em>What went wrong with it? Production used to bake in a plain-HTTP API address, which browsers blocked as mixed content; fixed 23 Oct by always using the relative <code>/api</code> proxy on HTTPS.</em></li>
 <li><em>What&#39;s the hottest code path?</em> The socket handler. It only parses and emits; all I/O happens behind an event emitter. <em>Why? Never block the event loop.</em></li>
 <li><em>Where does state live?</em> Live state in Redis, durable records in Postgres, the token in a Docker volume. <em>What survives a restart? Redis, and the day-aware cleanup keeps it.</em></li>
 </ol>
@@ -1538,7 +1555,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 37. <em>Why not WebSockets for the dashboard?</em> The data flows one way. SSE is simpler.
 38. <em>Why not Jest?</em> <code>node:test</code> through <code>tsx</code> needs no extra framework.</p>
 <p><strong>The hard ones</strong>
-39. <em>Is it profitable?</em> &quot;No evidence that it is. The samples are tiny, and the one pre-registered study showed no edge after costs. The system is built to measure that honestly.&quot;
+39. <em>Is it profitable?</em> &quot;No evidence that it is. The live samples are tiny, and both pre-registered studies showed no edge after costs. The system is built to measure that honestly.&quot;
 40. <em>How do you know the backtest isn&#39;t fooling you?</em> &quot;I don&#39;t fully. That&#39;s why there&#39;s pre-registration, identical cost assumptions, day-block bootstrap confidence intervals, look-ahead tests, live-versus-backtest parity tests, and a stated list of what can&#39;t be replayed.&quot;
 41. <em>How much of this did AI write?</em> &quot;A lot of the code was written with an AI pair programmer. My job was to set the rules, review every change, insist on failing tests and independent reviews, and run the system in production. I can explain every design decision here, and several of the best fixes came from questioning code the AI wrote.&quot;
 42. <em>What would you do differently?</em> Record our own minute data from day one, run auth from day one, and pre-register before building detectors.</p>

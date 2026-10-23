@@ -70,14 +70,14 @@ Both are real rows in the `paper_trades` and `signals` tables (§1.4).
 #### For a senior engineer (5 minutes)
 
 1. **What it is.** A Node.js and TypeScript service on one AWS EC2 host, run with Docker Compose.
-   - It subscribes to Fyers' market-data WebSocket for about 25 watchlist stocks plus the Nifty index.
+   - It subscribes to Fyers' market-data WebSocket for about 25 watchlist stocks plus the Nifty index (boot log: `26/100 symbols`) **[Proven, 21-23 Oct]**.
    - It builds candles in memory and runs 2 equity detectors and 5 Nifty detectors.
    - It scores every fire with a multi-gate filter, sends gated alerts to Telegram, and records every fire as a paper trade in Postgres.
    - Redis holds live session state.
    - A Fastify API and SSE stream feed a React dashboard on Vercel.
 2. **The interesting engineering.** Constraints and failure modes:
    - Fyers caps the WebSocket at 100 symbols and REST calls at 5/s, 50/min and 5,000/day. More than 3 per-minute breaches block you for the day.
-   - I subscribed to more than 2,000 symbols for weeks and got silence. I diagnosed it and fixed it with a capped subscription plan and a boot-time check.
+   - I subscribed to more than 2,000 symbols (2,189 per the boot log) for weeks and got silence **[Proven]**. I diagnosed it and fixed it with a capped subscription plan and a boot-time check.
    - The quota ledger is shared across processes.
    - Alerting uses atomic Redis claims (`SET NX` plus Lua compare-and-set), so two detectors firing in the same millisecond can't both alert.
 3. **Operations.** Cron-driven daily lifecycle:
@@ -89,7 +89,7 @@ Both are real rows in the `paper_trades` and `signals` tables (§1.4).
    - The backtest replays 1-minute candles tick by tick through the real detector classes.
    - Parity tests check that live code and backtest give identical results.
    - Studies are pre-registered, with day-block bootstrap confidence intervals.
-   - **Result:** the one pre-registered study I ran (an EMA trend study) shows **no edge** after costs. I report that rather than tuning until it looks good.
+   - **Result:** both pre-registered studies I ran (an EMA trend study, and an edge map of the live detectors) show **no edge** after costs. I report that rather than tuning until it looks good.
 5. **What I'd do next.** A shadow candle recorder, a managed database, and a mobile backend with authentication.
 
 **Common mistake.** Opening with "I built an algo-trading bot". It invites "How much does it make?" in the first minute. Open with the system and the engineering, and state the paper-only status yourself.
@@ -161,7 +161,7 @@ Both are real rows in the `paper_trades` and `signals` tables (§1.4).
 | EMA trend study in shadow (no alerts) | *running* | **[Proven]** `/app/data/ema_shadow/2026-10-22.jsonl` |
 | End-of-day screener job | *built, not running* | Scheduled at 16:30 (`lifecycle.sh run_screener`), but the `quant_screener` container doesn't exist on the host, so the engine uses the baked-in `watchlist.json`. The boot log says `screener output not found`. |
 | Morning "in-play" re-rank | *design only* | Not coded |
-| One-alert-per-symbol duplicate policy | *built, not deployed* | **[Tested on paper]** PR #22, plus a real-Redis check (23 of 23) on a throwaway container |
+| One-alert-per-symbol duplicate policy | *built, not deployed* | **[Tested on paper]** PR #22, plus a real-Redis check (23 of 23, `scripts/ops/realRedisClaims.ts` on the PR #22 branch) on a throwaway container |
 | Liquid-universe replay fetch (Part D) | *built, not run* | PR #20 is merged. Nothing has been fetched (each fetch evening needs the owner's OK). |
 | Mobile backend, dashboard login | *planned* | No code |
 | Order execution | *not built, by design* | No broker order API is used anywhere |
@@ -237,7 +237,7 @@ Both are real rows in the `paper_trades` and `signals` tables (§1.4).
 | 7. Exit | 12:17:24: price hits the stop (₹242.55). STOP_LOSS, **−1.02R**, −₹126 each. | `positionTracker.processTick` |
 
 *What to notice:*
-1. Two independent detectors fired in the **same millisecond**, so both positions got the same id (`trade_<ms>_NSE:AEQUS-EQ`). PR #23 fixes this.
+1. Two independent detectors fired in the **same millisecond**, so both positions got the same id (`trade_<ms>_NSE:AEQUS-EQ`). PR #23 fixes this (merged and deployed 23 Oct; its first live session is Monday 26 Oct).
 2. The **11:46 watchdog restart** happened while these positions were open.
 3. The stop came from VWAP, not from the pattern. That's a known design limit (Part 9).
 
@@ -352,7 +352,7 @@ Each technology gets four answers: **what it is**, **why this project uses it**,
 - **Analogy:** a release build. The same artifact runs everywhere, and a rollback is "tag the old image, recreate".
 
 ### 2.6 AWS EC2 · Level 1
-- **What it is:** one rented Linux virtual machine (Ubuntu, a 15 GB disk per `df -h`).
+- **What it is:** one rented Linux virtual machine (Ubuntu; a 16 GB volume, which `df -h` shows as a 15 GB root filesystem).
 - **Why here:** always on, cheap, simple.
 - **Alternatives:** managed containers (ECS or Fargate) or serverless. Those are more moving parts for a single long-lived WebSocket.
 - **What breaks without it:** the trading day. There's no second host (Part 9).
@@ -380,11 +380,14 @@ Each technology gets four answers: **what it is**, **why this project uses it**,
 ### 2.10 The dashboard: React, Vite, Tailwind and Recharts on Vercel · Level 1
 - **What it is:** a single-page app (React 19, Vite 8, Tailwind 4, Recharts 3) in a separate repo, hosted on Vercel.
 - **The trick:** `vercel.json` rewrites `/api/*` to the host's API. The browser only ever talks to Vercel.
-- **Honest state:** one `App.tsx` of 1,124 lines, and **no login**. It has known defects, listed in `docs/dashboard-redesign/AUDIT.md`.
+- **Honest state (23 Oct):** **no login**.
+  - **Two views:** a redesign is the default at `/`, and the original single-file dashboard (`ClassicApp.tsx`, about 1,100 lines) is kept at `?view=classic`.
+  - **Pre-redesign audit:** `docs/dashboard-redesign/AUDIT.md` describes the dashboard as it was on 22-23 Oct, before the redesign.
+  - **API access:** the HTTPS pages always use the relative `/api` proxy, with a 30-second refresh, because the proxy cuts the live event stream after about 151 s.
 
 ### 2.11 Testing: node:test through tsx, the typecheck and ESLint · Level 1-2
 - **What it is:** Node's built-in test runner (the `test` script is `tsx --test "tests/**/*.test.ts"`). **Not** Jest or vitest.
-- **Scale:** 321 tests pass on `v2` at `2fcbe9e` (`npm test`). There's a strict typecheck (`tsc --noEmit`). ESLint has 20 errors in untouched files that existed before this work.
+- **Scale:** 333 tests pass on `v2` at `b4f6d40` (`npm test`, 23 Oct; it was 321 at `2fcbe9e` on 22 Oct). There's a strict typecheck (`tsc --noEmit`). ESLint has 20 errors in untouched files that existed before this work.
 - **What the tests prove:**
   - parity between the live pipeline and the old worker;
   - parity between the live shadow detector and the backtest;
@@ -513,7 +516,7 @@ Both were fixed in place. That's a good interview story about reading your own c
 4. A file comment says "65% win rate". What do you say? **"That was the design hypothesis. It's unmeasured."**
 </details>
 
-**Interviewer might ask:** *"Which of your strategies works best?"* A strong answer: "I don't know yet, and I'd be lying if I picked one. The samples are tiny, and the only study I pre-registered showed no edge after costs. What I can show is that every fire is recorded with its full filter breakdown, so that question can be answered honestly once there's enough data."
+**Interviewer might ask:** *"Which of your strategies works best?"* A strong answer: "I don't know yet, and I'd be lying if I picked one. The live samples are tiny, and both studies I pre-registered showed no edge after costs. What I can show is that every fire is recorded with its full filter breakdown, so that question can be answered honestly once there's enough data."
 
 ---
 
@@ -587,7 +590,7 @@ The rules, all in `src/workers/alertPolicy.ts` and `alertPipeline.ts`:
 **The fix** is *built, not deployed*. It's PR #22, waiting for the owner's review:
 - one alert per **symbol and side** while the first position is open, otherwise for 60 minutes;
 - options use the 60-minute window only;
-- only an **alerted** fire keeps the "paper claim", so duplicate rows are flagged `duplicate_signal` and left out of the stats.
+- only an **alerted** fire keeps the "paper claim", so duplicate rows are flagged `duplicate_signal` (on the PR #22 branch) and left out of the stats.
 
 ### 4.4 Concurrency done right: atomic claims · Level 3
 
@@ -601,9 +604,9 @@ Don't **check, then act**. **Act atomically**: `SET key value NX EX 129600`. Red
 **The harder parts:**
 - **The claim must expire on a business rule** ("position closed and more than 60 minutes old"), not just on a TTL. The winner stores `{ts, positionId}`. A later fire replaces a stale holder with a **Lua compare-and-set**, which does "GET equals what I read, then SET" atomically, so two late fires can't both win.
 - **A claim that leads to no alert must be given back.** Causes include a capital skip, a failed send, the cap, or an error. The give-back uses a **Lua compare-and-delete**, so you can only delete your *own* claim.
-- **Same-millisecond ids.** Two fires in the same millisecond got the same position id. PR #23 fixes that.
+- **Same-millisecond ids.** Two fires in the same millisecond got the same position id. PR #23 fixes that (merged and deployed 23 Oct).
 
-**Evidence:** **[Tested on paper]**, plus a **real-Redis check** (`scripts/ops/realRedisClaims.ts`, on a throwaway Redis 7.4.8 container): **23 of 23 passed**. For example:
+**Evidence:** **[Tested on paper]**, plus a **real-Redis check** (`scripts/ops/realRedisClaims.ts`, on the PR #22 branch, not yet in `v2`; run on a throwaway Redis 7.4.8 container): **23 of 23 passed**. For example:
 - 50 concurrent claims gave exactly 1 winner;
 - 20 concurrent takeovers of a stale holder gave exactly 1 winner;
 - the TTL was 129,600 s and was reset on takeover.
@@ -698,9 +701,9 @@ The monitor runs from the **host** crontab, so it doesn't depend on the containe
 - **What:** `pg_dump` writes a full, consistent snapshot of the Postgres database to a file. It's like exporting your app's local database so you can rebuild it on a fresh device.
 - **When:**
   - every trading day at **16:00** (`scheduler/db_backup.sh`);
-  - and **manually before every deploy**, e.g. `~/backups/pre-guard-20261022T1342Z.dump`. Each manual dump is checked: it must list the 3 data tables (`paper_trades`, `signals`, `schema_migrations`).
+  - and **manually before every deploy**, to a timestamped dump file on the host. Each manual dump is checked: it must list the 3 data tables (`paper_trades`, `signals`, `schema_migrations`).
 - **Honest gaps:**
-  - The script's S3 upload **has never worked** (`S3_BACKUP_BUCKET` path issue, recorded in project memory 18 Oct). Backups only live on the same host. **[Unverified off-host copy: none]**
+  - The script's S3 upload **has never worked** (`S3_BACKUP_BUCKET` path issue, found 18 Oct). Backups only live on the same host. **[Unverified off-host copy: none]**
   - A full **restore has not been tested** end to end. **[Unverified]**
 
   In an interview, say exactly that. "We back up daily, but I haven't proven the restore" is a senior-sounding answer.
@@ -711,7 +714,7 @@ The monitor runs from the **host** crontab, so it doesn't depend on the containe
   - the next boot backs off **30 s, 60, 120, 240, up to 300 s**;
   - at most **6 restarts a day**;
   - **from 15:15 IST it stands down instead** (exit 0).
-- **Session guard:** the engine won't run on a weekend or an NSE holiday. That's the fix for the 20 Oct holiday crash loop: **415 restarts**.
+- **Session guard:** the engine won't run on a weekend or an NSE holiday. That's the fix for the 20 Oct holiday crash loop: **415 restarts** **[Proven, 20 Oct]**.
 - **Day-aware boot cleanup** (`src/core/bootCleanup.ts`, deployed 22 Oct):
   - a **new day** clears yesterday's regime, bias, `pnl:daily` and VCP histories;
   - a **same-day restart** keeps them and re-loads the regime returns into memory.
@@ -733,7 +736,7 @@ The monitor runs from the **host** crontab, so it doesn't depend on the containe
 **Never restart during market hours (09:00–15:30).** On 21 Oct a manual restart at 11:14 made the VWAP seeder refetch history, used up the day's breach budget, and destroyed the morning's logs. Since then it's a hard rule: during market hours the watchdog handles failures, and people only report.
 
 ### 6.5 Monitoring · Level 1
-- **Read-only checks:** host cron, every 15 minutes from 09:03 to 15:40 (`~/evidence/monitor/check.sh`). Each one checks:
+- **Read-only checks:** a host-side monitor script (not in this repo), run by host cron every 15 minutes from 09:03 to 15:40. Each one checks:
   - container status and restarts;
   - heartbeat (stocks seen, index ticks per 5 minutes);
   - errors, the quota ledger, disk and memory;
@@ -803,17 +806,26 @@ The monitor runs from the **host** crontab, so it doesn't depend on the containe
    - With 2.3 points, Trend Pulse showed +0.078R.
    - Under a **futures cost model, everything is negative**.
    - Neither cost model is validated.
+   **[Tested on paper]** for all the figures above (`backtest/studies/nifty-ema-trend/SUMMARY.md`).
 4. **What it taught:** the honest answer to "does it work?" is "not on this evidence". The value is in the method:
    - pre-register;
    - cost everything the same way;
    - report the null.
+
+**A second pre-registered study, the edge map (23 Oct, `docs/studies/edge-map/REPORT.md`)** **[Tested on paper]:**
+- **What it ran:** the two live equity detectors and the real filter, replayed over 1,284 cached sessions (63,436 signals), with exits under the **live** VWAP stop. It also used a frozen copy of the live paper trades.
+- **Result:** no detector × time × regime × score cell showed an edge after costs.
+  - Gross expectancy is about 0. At assumed broker costs (about 20 bps round trip) the result is about −0.2 to −0.4R a trade, because costs come to a quarter to a third of R with stops this tight.
+  - Higher scores lose less, but don't win.
+  - A wider ATR stop loses less, mostly because costs become a smaller share of R.
+- **Same lesson:** pre-register, cost honestly, report the null.
 
 ### 7.5 Parity tests · Level 3
 **Why:** if live code and backtest code drift apart, backtest results say nothing about live behaviour.
 
 | Test | Claim | Evidence |
 |---|---|---|
-| `tests/niftyEmaShadow.test.ts` | The live EMA shadow, fed tick by tick, produces the **same trades** as the study engine | 177 trades identical across 15 sessions. On the full local cache, 14,839 of 14,839 were identical once both sides had the same cleaned input. |
+| `tests/niftyEmaShadow.test.ts` | The live EMA shadow, fed tick by tick, produces the **same trades** as the study engine | **[Tested on paper]** 177 trades identical across 15 sessions (the committed test). In a one-off local run on the full cache (not a committed test), 14,839 of 14,839 were identical once both sides had the same cleaned input. |
 | `tests/legacyWorkerParity.test.ts` | The current alert worker behaves exactly like the old one for every scenario | It runs both versions' real code side by side and compares every Redis write, send and log line |
 | `tests/alertPipeline.test.ts` | The signals hook is purely observational | Behaviour is identical with no hook, a real hook, and a hook that throws |
 
@@ -832,7 +844,7 @@ Each story is real, with sources in the repo, `CHANGELOG.md` and `AGENTS.md`.
 
 ### 8.1 The holiday crash loop
 - **Situation.** 20 Oct was an NSE holiday. The engine started anyway and kept dying.
-- **Found.** The watchdog exited 1 when the socket stayed silent (there was no market), and Docker restarted it again: **415 restarts** (`src/core/sessionGuard.ts` header).
+- **Found.** The watchdog exited 1 when the socket stayed silent (there was no market), and Docker restarted it again: **415 restarts** (`src/core/sessionGuard.ts` header) **[Proven, 20 Oct]**.
 - **Did.**
   - A trading-day gate at boot, using the holiday file shared with the scheduler.
   - A watchdog policy: at most 6 restarts a day, exponential backoff, and stand down (exit 0) after 15:15.
@@ -847,13 +859,13 @@ See §5.3. **Learned:** measure what arrives, not what you asked for.
 - **Did.**
   1. Wrote **failing tests first**: three STALL tests failed with actual 1, expected 3.
   2. Fixed `flush()` to clear its promise when it finishes.
-  3. Backfilled the lost rows from the logs, flagged `recovered_from_log`.
+  3. Backfilled the lost rows from the logs, with `recovered_from_log` in their `data_quality` column (4 rows in `signals`, checked 23 Oct). **[Proven]**
 - **Learned.** Write the failing test before the fix. And mark recovered data as recovered.
 
 ### 8.4 The SIGKILL shutdown (exit 137)
 - **Situation.** Every 15:30 stop ended with exit code 137, which means killed.
 - **Found.** `sh` was PID 1 and ignored SIGTERM. Docker waited 10 s and sent SIGKILL, so the shutdown handler (flush the signals, close the socket) never ran.
-- **Did.** Proved it on a throwaway stub container:
+- **Did.** Proved it on a throwaway stub container **[Tested on paper]**:
   - with `exec npx`, npm exited in 0.6 s without waiting for its child;
   - with `exec node`, the handler ran and the stub exited 0 in 5.1 s.
 
@@ -866,7 +878,7 @@ See §5.3. **Learned:** measure what arrives, not what you asked for.
 - **Did.** A day-aware cleanup (a `engine:boot_day` marker), plus re-loading the regime into memory. Reviewed independently and deployed after the close.
 - **Learned.** Ask "what survives a restart?" for every piece of state.
 
-### 8.6 The same-millisecond position-id collision
+### 8.6 The same-millisecond position-id collision (fix merged and deployed 23 Oct)
 - **Situation.** AEQUS, 11:06:28.169: two detectors fired in the same millisecond.
 - **Found.** The id was `trade_<ms>_<symbol>`, so both positions shared it. One overwrote the other in Redis. After the restart only one was counted, and the Postgres close matched **both** rows.
 - **Did.**
@@ -881,7 +893,7 @@ See §5.3. **Learned:** measure what arrives, not what you asked for.
 - **Learned.** Every assumption ("positions close") needs checking against the real data paths.
 
 ### 8.8 (Optional) The wrong-side stop
-An audit found **0 of 1,584** paper trades with a stop on the wrong side. A guard was still added: such a fire is recorded, flagged `invalid_geometry`, and never alerted.
+A database audit found **0 of 1,584** paper trades with a stop on the wrong side **[Proven, 21 Oct]**. A guard was still added: such a fire is recorded, flagged `invalid_geometry`, and never alerted.
 - **Learned.** Defend the invariants the data says hold today.
 
 ---
@@ -905,9 +917,9 @@ So a stolen token is only useful until the evening.
 **Honest gaps (say these in an interview before you're asked):**
 - **The dashboard has no login.** Anyone with the URL sees the paper P&L. Authentication is *planned* with the mobile backend.
 - **The API is read-only but unauthenticated**, and allows any origin (CORS `*`).
-- **The production dashboard calls the API over plain HTTP at the host's address.** That puts the address in the JS bundle, and browsers block the calls as mixed content. Found 23 Oct. The fix is the owner's decision: remove `VITE_API_URL` from the Vercel environment, so the app uses the relative `/api` proxy.
+- **Fixed 23 Oct: the dashboard used to call the API over plain HTTP at the host's address.** That put the address in the JS bundle, and browsers blocked the calls as mixed content, so the live site showed no data. Fix: HTTPS pages now ignore an `http://` API address and use the relative `/api` proxy (dashboard PRs #4-#6), and `VITE_API_URL` was deleted from every Vercel project. The bundles now contain no host address. **[Proven, 23 Oct]**
 
-**Interviewer might ask:** *"What's your biggest security risk?"* A strong answer: "An unauthenticated read API and a dashboard without login. The data is paper-only and read-only, so the blast radius is information exposure, not money. But it's the first thing I'd fix: put auth in front of the API, serve it only through the HTTPS proxy, and stop baking the backend address into the bundle."
+**Interviewer might ask:** *"What's your biggest security risk?"* A strong answer: "An unauthenticated read API and a dashboard without login. The data is paper-only and read-only, so the blast radius is information exposure, not money. But it's the first thing I'd fix: put auth in front of the API and serve it only through the HTTPS proxy. I already took the backend address out of the bundle after it caused a mixed-content outage."
 
 ---
 
@@ -937,7 +949,7 @@ So a stolen token is only useful until the evening.
 | **Stops derived from VWAP** for equities | One uniform rule | They ignore the pattern's own level (AEQUS: ₹242.62 vs the detectors' ₹242.14 and ₹241.76) |
 | **No per-minute history of our own** | Only Fyers history exists | Days like 21 Oct can't be replayed. A *planned* shadow candle recorder fixes it. |
 | **5 live detectors, 2 of them unbacktestable** | Simplicity after the v2 rewrite | Small sample per setup |
-| **No proven edge** | Not enough data yet; the one study was null | Every result needs a badge |
+| **No proven edge** | Both pre-registered studies were null after costs | Every result needs a badge |
 | **Filter weights are assumptions** | Nothing measured them | The threshold is set by policy, not by evidence |
 
 ### 9.2 The upgrade path · Level 3
@@ -959,7 +971,7 @@ Each answer is short and honest. Follow-ups are in *italics*.
 1. *What does the system do?* It finds NSE intraday setups, scores them, alerts gated ones to Telegram, and records paper trades. No orders. *How many detectors? 2 equity and 5 Nifty.*
 2. *Why containers?* Reproducible deploys and a one-command rollback through image tags. *What's PID 1 in your engine container? Node, through `exec`.*
 3. *Why one host?* The load is tiny and simplicity is worth more than availability at this stage. *What breaks if it dies? The whole day.*
-4. *How does the dashboard reach the API?* Through a Vercel rewrite of `/api/*`. *What's wrong with it today? Production bakes in a plain-HTTP API address, which browsers block as mixed content.*
+4. *How does the dashboard reach the API?* Through a Vercel rewrite of `/api/*`. *What went wrong with it? Production used to bake in a plain-HTTP API address, which browsers blocked as mixed content; fixed 23 Oct by always using the relative `/api` proxy on HTTPS.*
 5. *What's the hottest code path?* The socket handler. It only parses and emits; all I/O happens behind an event emitter. *Why? Never block the event loop.*
 6. *Where does state live?* Live state in Redis, durable records in Postgres, the token in a Docker volume. *What survives a restart? Redis, and the day-aware cleanup keeps it.*
 
@@ -1010,7 +1022,7 @@ Each answer is short and honest. Follow-ups are in *italics*.
 38. *Why not Jest?* `node:test` through `tsx` needs no extra framework.
 
 **The hard ones**
-39. *Is it profitable?* "No evidence that it is. The samples are tiny, and the one pre-registered study showed no edge after costs. The system is built to measure that honestly."
+39. *Is it profitable?* "No evidence that it is. The live samples are tiny, and both pre-registered studies showed no edge after costs. The system is built to measure that honestly."
 40. *How do you know the backtest isn't fooling you?* "I don't fully. That's why there's pre-registration, identical cost assumptions, day-block bootstrap confidence intervals, look-ahead tests, live-versus-backtest parity tests, and a stated list of what can't be replayed."
 41. *How much of this did AI write?* "A lot of the code was written with an AI pair programmer. My job was to set the rules, review every change, insist on failing tests and independent reviews, and run the system in production. I can explain every design decision here, and several of the best fixes came from questioning code the AI wrote."
 42. *What would you do differently?* Record our own minute data from day one, run auth from day one, and pre-register before building detectors.
