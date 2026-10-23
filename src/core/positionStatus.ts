@@ -41,3 +41,29 @@ export const isOrphanedAtBoot = (
 ): boolean =>
 	(!pos.durationClass || pos.durationClass === 'INTRADAY') &&
 	istDate(pos.timestamp) !== istDate(nowMs)
+
+// ── Position identity (2026-10-22) ──────────────────────────────────────────
+// The id used to be `trade_<ms>_<symbol>`. On Oct 22 at 11:06 two detectors fired AEQUS LONG
+// in the same millisecond: both positions got the same id, the second overwrote the first in
+// the Redis hash `trades:open`, and after the 11:46 restart only one was reloaded (pnl:daily
+// counted one close). Postgres rows were also closed by symbol + entry_time, which matches
+// BOTH same-ms rows. Now: a unique id (detector slug + random suffix), and the Postgres row
+// is addressed by its own primary key once known.
+
+const slug = (s: string) => s.replace(/[^A-Za-z0-9]+/g, '').slice(0, 24) || 'UNKNOWN'
+
+/** `trade_<ms>_<symbol>_<detector>_<6 hex>` — unique even for same-ms fires on one symbol. */
+export const newPositionId = (nowMs: number, symbol: string, detectorName: string, rand?: () => string): string =>
+	`trade_${nowMs}_${symbol}_${slug(detectorName)}_${(rand ?? randomHex6)()}`
+
+const randomHex6 = (): string => Math.floor(Math.random() * 0x1000000).toString(16).padStart(6, '0')
+
+/**
+ * Which paper_trades row(s) an UPDATE for this position targets: its own primary key when
+ * known (`dbId`, set right after the INSERT and persisted in trades:open), else the legacy
+ * symbol + entry_time match (positions registered before this change).
+ */
+export const rowMatch = (pos: { dbId?: number | null; symbol: string; timestamp: number }, firstParam: number): { where: string; params: unknown[] } =>
+	pos.dbId != null
+		? { where: `id = $${firstParam}`, params: [pos.dbId] }
+		: { where: `symbol = $${firstParam} AND entry_time = to_timestamp($${firstParam + 1} / 1000.0)`, params: [pos.symbol, pos.timestamp] }

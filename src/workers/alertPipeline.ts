@@ -14,6 +14,7 @@
 
 import type { FilterDecision } from '../detectors/janeStreetFilter.js'
 import type { OpenPosition } from '../core/positionTracker.js'
+import { newPositionId } from '../core/positionStatus.js'
 import type { AlertPayload } from './telegramWorker.js'
 import type { SignalDraft } from '../db/signalRecord.js'
 import {
@@ -48,6 +49,8 @@ export interface PipelineDeps {
 	// Lazily resolved, exactly when the original code dynamically imported them.
 	getTracker(): Promise<PipelineTracker>
 	getAlertStore(): Promise<AlertStore>
+	/** Random suffix of the position id (positionStatus.newPositionId); tests pin it. */
+	randomIdSuffix?: () => string
 	sendChannel(text: string, markdown: boolean): Promise<unknown>
 	sendAdmin(text: string): Promise<unknown>
 	now(): number
@@ -191,7 +194,7 @@ export const runAlertPipeline = async (
 
 		// Record EVERY trade that reaches this point, before any alert decision.
 		const tradeId = await positionTracker.registerTrade({
-			id: `trade_${deps.now()}_${data.symbol}`,
+			id: newPositionId(deps.now(), data.symbol, data.detectorName || 'UNKNOWN', deps.randomIdSuffix),
 			symbol: data.symbol,
 			side: data.side,
 			entryPrice: entry,
