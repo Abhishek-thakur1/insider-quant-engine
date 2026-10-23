@@ -2,6 +2,9 @@ import Fastify from 'fastify'
 import { redisClient, bootRedis } from '../config/redis.js'
 import { pool } from '../config/db.js'
 import { schemaProblem } from '../db/migrate.js'
+import { coarseHealth, mapSignalRow, signalsQuery } from './publicData.js'
+import { loadHolidays } from '../core/sessionGuard.js'
+import { getISTDateString } from '../utils/marketHours.js'
 
 const fastify = Fastify({ logger: true })
 
@@ -160,6 +163,33 @@ fastify.get('/api/trades/heatmap', async (request, reply) => {
 			count: Number(r.count)
 		}))
 	}
+})
+
+// REST: every fire of a day from the signals table — read-only (src/api/publicData.ts)
+fastify.get('/api/signals', async (request, reply) => {
+	const date = String((request.query as any)?.date ?? getISTDateString())
+	const q = signalsQuery(date)
+	if (!q) return reply.code(400).send({ success: false, error: 'date must be YYYY-MM-DD' })
+	const res = await pool.query(q.sql, q.params)
+	return { success: true, date, count: res.rowCount, data: res.rows.map(mapSignalRow) }
+})
+
+// REST: coarse public health — status, ticks per 5 min, stocks seen; nothing else (owner, 2026-10-23)
+const HOLIDAYS = loadHolidays()
+fastify.get('/api/health', async () => {
+	const now = Date.now()
+	const today = getISTDateString(now)
+	const last = await redisClient.lRange('ema_shadow:nifty:bars5', -1, -1)
+	let lastBarStartMs: number | null = null
+	try {
+		lastBarStartMs = last[0] ? Number(JSON.parse(last[0]).t) || null : null
+	} catch {
+		lastBarStartMs = null
+	}
+	let stocksSeenToday = 0
+	for await (const batch of redisClient.scanIterator({ MATCH: `vwap:*:${today}`, COUNT: 500 }))
+		stocksSeenToday += batch.filter((k) => !k.includes('-INDEX:')).length
+	return { success: true, data: coarseHealth({ nowMs: now, holidays: HOLIDAYS, lastBarStartMs, stocksSeenToday }) }
 })
 
 // SSE Stream Endpoint

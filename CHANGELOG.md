@@ -2,6 +2,19 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased — `feat/api-signals-health` (not merged, not deployed; API container only, Monday 26 Oct at the earliest)
+
+- **New read-only endpoints for the dashboard redesign** (AGENTS.md §11.20):
+  - `GET /api/signals?date=` lists the day's fires from the `signals` table.
+  - `GET /api/health` gives coarse public health: status, stocks seen, and ticks per 5 minutes. That last one is `null` until the engine publishes it.
+- **No writes:** no engine change, no migration.
+- **Tests:** `tests/publicData.test.ts`, 5 tests. They check:
+  - the SQL is SELECT-only, parameterised and capped;
+  - which columns are exposed;
+  - the status in each state;
+  - that health has only the coarse fields;
+  - that the API never writes.
+
 ## `feat/fetch-replay` — merged (PR #20); offline tooling, nothing fetched yet
 
 - **Liquid-replay fetch, offline tooling only** (`backtest/fetchReplay.ts`, `scripts/fetch_replay.ts`). It doesn't touch the engine, and adds no Redis key or migration.

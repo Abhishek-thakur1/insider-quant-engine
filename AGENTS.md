@@ -1641,6 +1641,23 @@ The regime then restarted from zero. Worse, the regime engine reads only its **i
 
 Tests: `tests/bootCleanup.test.ts`.
 
+## 11.20 Dashboard API additions, read-only (2026-10-23, branch `feat/api-signals-health`)
+
+Pure logic lives in `src/api/publicData.ts`, wired in `src/api/server.ts`. There is no engine change, no migration and no write. Deploy **the API container alone**, outside market hours, with a fresh `pg_dump`, and not before Monday 26 Oct (owner).
+
+- **`GET /api/signals?date=YYYY-MM-DD`**: the day's fires from `signals`, newest first, capped at 500. The SQL is parameterised, and a bad date returns 400.
+  - **Exposed columns:** detector, score, threshold, filter result, rejecting gate, regime, alerted, suppression reason, `data_quality`, `trade_id`.
+  - **Not exposed:** trigger text, quantities, capital fields, the breakdown.
+- **`GET /api/health`**: **coarse** public health, per the owner, because the dashboard has no login.
+  - `status`: `live`, `stale`, `closed` or `holiday`.
+    - `live` means the newest closed 5-minute Nifty candle in `ema_shadow:nifty:bars5` ended within 10 minutes, during 09:15–15:30 IST on a trading day.
+    - `stale` means it's inside the session with no recent candle.
+  - `stocksSeenToday`: the count of `vwap:*:{today}` keys, excluding the index.
+  - `ticksPer5m`: currently `null`. The engine logs it but doesn't publish it, so a later engine change is needed.
+  - **No** quota, monitor, restart or host details.
+
+Tests: `tests/publicData.test.ts`.
+
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
 The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 
