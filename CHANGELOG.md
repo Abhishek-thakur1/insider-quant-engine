@@ -2,6 +2,17 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased — `docs/study-guide` (docs only; no code, config or deploy change)
+
+- **Interview-ready study guide** in `docs/study-guide/`:
+  - `guide.md`: the Markdown source, Parts 0–10 plus security and cost;
+  - `index.html`: one self-contained page with a sticky contents list, search, light and dark themes, Level 3 sections collapsed, print CSS, and 4 inline SVG diagrams. It makes no external requests.
+  - `VERIFICATION.md`: 51 paths resolved, 20 numbers checked, 7 open items;
+  - `OUTLINE.md`.
+- **Worked example:** AEQUS 11:06 LONG on 22 Oct, with JSLL as the post-restart counter-example.
+- **Dashboard redesign planning:** `docs/dashboard-redesign/AUDIT.md` and `wireframes.html`.
+- **Rebuild the HTML:** `npm install --no-save marked@14.1.4 && node docs/study-guide/build.mjs`.
+
 ## `feat/fetch-replay` — merged (PR #20); offline tooling, nothing fetched yet
 
 - **Liquid-replay fetch, offline tooling only** (`backtest/fetchReplay.ts`, `scripts/fetch_replay.ts`). It doesn't touch the engine, and adds no Redis key or migration.

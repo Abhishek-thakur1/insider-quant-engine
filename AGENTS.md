@@ -1641,6 +1641,12 @@ The regime then restarted from zero. Worse, the regime engine reads only its **i
 
 Tests: `tests/bootCleanup.test.ts`.
 
+## 11.21 Study guide (docs only, 2026-10-23, branch `docs/study-guide`)
+
+`docs/study-guide/` holds the owner's interview study guide: `guide.md` is the source and `index.html` is built from it by `build.mjs`. `VERIFICATION.md` lists every checked path and number.
+
+**When behaviour changes, update the guide too:** the filter, the alert policy, the cron times, the deploy steps or the quota rules. A stale guide teaches wrong answers. Paper trading only, with no proven edge: keep the evidence badges honest.
+
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
 The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 

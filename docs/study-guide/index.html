@@ -1,0 +1,1683 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Insider Quant Study Guide</title>
+<style>
+:root{--bg:#f6f5f2;--surface:#fff;--surface2:#eeece7;--line:#dcd8d0;--fg:#1d2128;--muted:#5d6470;--accent:#2b6a9a;--warn:#9a6400;--hot:#1c8a7a;color-scheme:light;
+--sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--serif:Georgia,"Iowan Old Style","Palatino Linotype",serif;--mono:ui-monospace,"SFMono-Regular",Consolas,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#11151b;--surface:#171d25;--surface2:#1e2630;--line:#2b3542;--fg:#e4e8ee;--muted:#93a0b0;--accent:#7fb3e6;--warn:#e0a83a;--hot:#3cc2ad;color-scheme:dark}}
+:root[data-theme=dark]{--bg:#11151b;--surface:#171d25;--surface2:#1e2630;--line:#2b3542;--fg:#e4e8ee;--muted:#93a0b0;--accent:#7fb3e6;--warn:#e0a83a;--hot:#3cc2ad;color-scheme:dark}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 var(--sans)}
+.wrap{display:grid;grid-template-columns:minmax(0,1fr);max-width:1240px;margin:0 auto}
+@media(min-width:1000px){.wrap{grid-template-columns:280px minmax(0,1fr)}}
+nav.toc{display:none}@media(min-width:1000px){nav.toc{display:block;position:sticky;top:0;height:100vh;overflow-y:auto;padding:20px 14px;border-right:1px solid var(--line);font-size:.86rem}}
+nav.toc a{display:block;color:var(--muted);text-decoration:none;padding:3px 6px;border-radius:6px}nav.toc a.l3{padding-left:18px;font-size:.82rem}nav.toc a:hover{color:var(--fg);background:var(--surface2)}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}input#q{flex:1;min-width:0;font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg)}
+button.theme{font:inherit;padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg);cursor:pointer}
+main{padding:24px max(16px,env(safe-area-inset-right)) 80px max(16px,env(safe-area-inset-left));min-width:0}@media(min-width:1000px){main{padding:32px 48px}}
+article{max-width:72ch}h1,h2,h3,.h3like{font-family:var(--serif);line-height:1.2;text-wrap:balance}h1{font-size:2.1rem}h2{font-size:1.6rem;margin-top:2.4em;border-top:1px solid var(--line);padding-top:1em}h3,.h3like{font-size:1.2rem;margin-top:1.8em}
+code{font:.88em var(--mono);background:var(--surface2);padding:1px 5px;border-radius:5px;overflow-wrap:anywhere}pre{background:var(--surface2);padding:12px;border-radius:10px;overflow-x:auto;font-size:.82rem;line-height:1.35}pre code{background:none;padding:0}
+table{border-collapse:collapse;width:100%;font-size:.88rem;display:block;overflow-x:auto}th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}th{color:var(--muted);font-weight:600}
+blockquote{margin:1em 0;padding:10px 14px;border-left:3px solid var(--warn);background:var(--surface);border-radius:0 10px 10px 0}
+details{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin:1em 0}summary{cursor:pointer;font-weight:600}
+details.deep>summary .badge{font:500 .72rem var(--mono);color:var(--accent);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+a{color:var(--accent)}hr{border:0}
+figure.diagram{margin:1.2em 0;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px;overflow-x:auto}figure.diagram svg{width:100%;min-width:620px;height:auto;display:block}
+figure.diagram figcaption{font-size:.82rem;color:var(--muted);margin-top:6px}
+svg rect{fill:var(--surface2);stroke:var(--line)}svg .hot rect{stroke:var(--hot);stroke-width:2}svg .ext rect{fill:var(--surface);stroke-dasharray:4 3}svg rect.zone{fill:none;stroke:var(--line);stroke-dasharray:6 4}
+svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}svg .t{fill:var(--fg);font:600 12px var(--sans)}svg .s{fill:var(--muted);font:11px var(--sans)}svg line,svg path.conn{stroke:var(--muted);stroke-width:1.4}svg .axis{stroke:var(--line);stroke-width:2}svg .ahead{fill:var(--muted)}
+.hidden{display:none}:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media print{nav.toc,.bar{display:none}.wrap{display:block}details{border:0}details>*{display:block}body{background:#fff;color:#000}h2{break-before:page}}
+</style></head><body>
+<div class="wrap"><nav class="toc" aria-label="Contents"><strong style="display:block;margin:0 6px 10px">Contents</strong><a class="l2" href="#part-0-start-here">Part 0: Start here</a><a class="l3" href="#0-1-how-to-use-this-guide-level-1">0.1 How to use this guide · Level 1</a><a class="l3" href="#0-2-the-60-second-and-5-minute-pitch-level-1">0.2 The 60-second and 5-minute pitch · Level 1</a><a class="l2" href="#part-1-the-big-picture">Part 1: The big picture</a><a class="l3" href="#1-1-what-the-system-does-end-to-end-level-1">1.1 What the system does, end to end · Level 1</a><a class="l3" href="#1-2-real-paper-and-not-built-level-1">1.2 Real, paper, and not built · Level 1</a><a class="l3" href="#1-3-the-architecture-tour-level-1-2">1.3 The architecture tour · Level 1–2</a><a class="l3" href="#1-4-the-life-of-one-tick-aequs-long-22-oct-2026-level-2">1.4 The life of one tick: AEQUS LONG, 22 Oct 2026 · Level 2</a><a class="l3" href="#1-5-one-trading-day-on-the-clock-level-1">1.5 One trading day on the clock · Level 1</a><a class="l2" href="#part-2-the-tech-stack-one-technology-at-a-time">Part 2: The tech stack, one technology at a time</a><a class="l3" href="#2-1-typescript-on-node-js-level-1">2.1 TypeScript on Node.js · Level 1</a><a class="l3" href="#2-2-the-fyers-api-and-websocket-level-2">2.2 The Fyers API and WebSocket · Level 2</a><a class="l3" href="#2-3-redis-level-2">2.3 Redis · Level 2</a><a class="l3" href="#2-4-postgresql-level-2">2.4 PostgreSQL · Level 2</a><a class="l3" href="#2-5-docker-and-docker-compose-level-2">2.5 Docker and Docker Compose · Level 2</a><a class="l3" href="#2-6-aws-ec2-level-1">2.6 AWS EC2 · Level 1</a><a class="l3" href="#2-7-cron-the-scheduler-container-and-the-host-crontab-level-2">2.7 Cron, the scheduler container and the host crontab · Level 2</a><a class="l3" href="#2-8-telegram-through-telegraf-level-1">2.8 Telegram through Telegraf · Level 1</a><a class="l3" href="#2-9-fastify-the-api-and-server-sent-events-level-2">2.9 Fastify (the API) and Server-Sent Events · Level 2</a><a class="l3" href="#2-10-the-dashboard-react-vite-tailwind-and-recharts-on-vercel-level-1">2.10 The dashboard: React, Vite, Tailwind and Recharts on Vercel · Level 1</a><a class="l3" href="#2-11-testing-node-test-through-tsx-the-typecheck-and-eslint-level-1-2">2.11 Testing: node:test through tsx, the typecheck and ESLint · Level 1-2</a><a class="l2" href="#part-3-the-trading-ideas-in-plain-language">Part 3: The trading ideas in plain language</a><a class="l3" href="#3-1-the-vocabulary-level-1">3.1 The vocabulary · Level 1</a><a class="l3" href="#3-2-stock-momentum-breakout-level-2">3.2 Stock Momentum Breakout · Level 2</a><a class="l3" href="#3-3-volatility-contraction-vcp-level-2">3.3 Volatility Contraction (VCP) · Level 2</a><a class="l3" href="#3-4-the-nifty-detectors-level-2">3.4 The Nifty detectors · Level 2</a><a class="l3" href="#3-5-the-ema-shadow-study-level-2">3.5 The EMA shadow study · Level 2</a><a class="l2" href="#part-4-the-filter-and-the-alert-policy">Part 4: The filter and the alert policy</a><a class="l3" href="#4-1-the-score-and-its-gates-level-2">4.1 The score and its gates · Level 2</a><a class="l3" href="#4-3-why-alerts-are-limited-level-2">4.3 Why alerts are limited · Level 2</a><a class="l2" href="#part-5-data-and-the-fyers-limits">Part 5: Data and the Fyers limits</a><a class="l3" href="#5-1-the-limits-level-1">5.1 The limits · Level 1</a><a class="l3" href="#5-2-the-quota-ledger-level-2">5.2 The quota ledger · Level 2</a><a class="l3" href="#5-3-case-study-october-39-s-no-alerts-mystery-level-2">5.3 Case study: October&#39;s &quot;no alerts&quot; mystery · Level 2</a><a class="l2" href="#part-6-operations">Part 6: Operations</a><a class="l3" href="#6-1-every-cron-entry-and-why-at-that-time-level-1">6.1 Every cron entry and why at that time · Level 1</a><a class="l3" href="#6-2-backups-level-2">6.2 Backups · Level 2</a><a class="l3" href="#6-3-staying-up-level-2">6.3 Staying up · Level 2</a><a class="l3" href="#6-4-the-deploy-procedure-level-2">6.4 The deploy procedure · Level 2</a><a class="l3" href="#6-5-monitoring-level-1">6.5 Monitoring · Level 1</a><a class="l2" href="#part-7-testing-and-evidence">Part 7: Testing and evidence</a><a class="l3" href="#7-1-the-backtest-harness-level-2">7.1 The backtest harness · Level 2</a><a class="l3" href="#7-2-biases-that-fool-you-level-2">7.2 Biases that fool you · Level 2</a><a class="l3" href="#7-3-why-small-samples-mean-nothing-level-2">7.3 Why small samples mean nothing · Level 2</a><a class="l2" href="#part-8-engineering-stories-situation-task-what-i-found-what-i-did-what-i-learned">Part 8: Engineering stories (situation → task → what I found → what I did → what I learned)</a><a class="l3" href="#8-1-the-holiday-crash-loop">8.1 The holiday crash loop</a><a class="l3" href="#8-2-the-100-symbol-blindness">8.2 The 100-symbol blindness</a><a class="l3" href="#8-3-the-signals-writer-stall">8.3 The signals-writer stall</a><a class="l3" href="#8-4-the-sigkill-shutdown-exit-137">8.4 The SIGKILL shutdown (exit 137)</a><a class="l3" href="#8-5-the-mid-session-restart-that-wiped-state">8.5 The mid-session restart that wiped state</a><a class="l3" href="#8-6-the-same-millisecond-position-id-collision">8.6 The same-millisecond position-id collision</a><a class="l3" href="#8-7-the-duplicate-alert-and-atomic-claims">8.7 The duplicate alert, and atomic claims</a><a class="l3" href="#8-8-optional-the-wrong-side-stop">8.8 (Optional) The wrong-side stop</a><a class="l2" href="#part-8b-security-and-secrets-level-2">Part 8b: Security and secrets · Level 2</a><a class="l2" href="#part-8c-cost-level-1">Part 8c: Cost · Level 1</a><a class="l2" href="#part-9-trade-offs-and-what-i-39-d-do-differently">Part 9: Trade-offs and what I&#39;d do differently</a><a class="l3" href="#9-1-the-honest-limits-level-2">9.1 The honest limits · Level 2</a><a class="l2" href="#part-10-interview-prep">Part 10: Interview prep</a><a class="l3" href="#10-1-question-bank-levels-1-3">10.1 Question bank · Levels 1–3</a><a class="l3" href="#10-2-weak-versus-strong-answers-level-2">10.2 Weak versus strong answers · Level 2</a><a class="l3" href="#10-3-glossary-level-1">10.3 Glossary · Level 1</a><a class="l3" href="#10-4-one-page-cheat-sheet-level-1">10.4 One-page cheat sheet · Level 1</a><a class="l3" href="#10-5-the-7-day-study-plan-level-1">10.5 The 7-day study plan · Level 1</a></nav>
+<main><div class="bar"><input id="q" type="search" placeholder="Search the guide (e.g. SET NX, VWAP, watchdog)" aria-label="Search the guide"><button class="theme" id="t" type="button">Theme</button></div>
+<article id="doc"><h1>Insider Quant Engine: the study guide</h1>
+<blockquote>
+<p><strong>Paper trading only.</strong> This engine finds trade setups on NSE stocks and the Nifty index. It scores each setup, sends Telegram alerts, and records <em>simulated</em> (paper) trades. <strong>It does not place orders.</strong> There is <strong>no proven trading edge</strong>, and nothing here should be read as a claim of profit.</p>
+<p><strong>Evidence badges</strong> are used throughout:</p>
+<ul>
+<li><strong>[Proven]</strong>: observed live on the production host, with logs or database rows.</li>
+<li><strong>[Tested on paper]</strong>: covered by unit, parity or real-Redis tests, but not yet seen live.</li>
+<li><strong>[Unverified]</strong>: claimed somewhere, but not checked.</li>
+</ul>
+<p><strong>Status labels:</strong></p>
+<ul>
+<li><em>running</em>: live every trading day.</li>
+<li><em>built, not running</em>: code exists, but nothing runs it today.</li>
+<li><em>design only</em>: written up, not coded.</li>
+<li><em>planned</em>: an idea on the roadmap.</li>
+</ul>
+</blockquote>
+<hr>
+<h2 id="part-0-start-here">Part 0: Start here</h2>
+<h3 id="0-1-how-to-use-this-guide-level-1">0.1 How to use this guide · Level 1</h3>
+<p><strong>Why it matters.</strong> You&#39;ll be asked to explain this system by people who have built bigger ones. This guide teaches it in the order you need to understand it:</p>
+<ol>
+<li>what it is;</li>
+<li>how data flows;</li>
+<li>each technology;</li>
+<li>the trading ideas;</li>
+<li>how it is run;</li>
+<li>how we know anything;</li>
+<li>what went wrong and how it was fixed.</li>
+</ol>
+<p><strong>How each section works.</strong> Each section follows the same shape:</p>
+<ul>
+<li><strong>why it matters</strong>;</li>
+<li><strong>the mental model</strong>, with an analogy from React Native first;</li>
+<li><strong>how it works here</strong>, with real code, config and log lines;</li>
+<li><strong>what can go wrong</strong>;</li>
+<li>then a <strong>recap</strong>, an <strong>&quot;explain it back&quot;</strong> prompt, a <strong>mini quiz</strong>, and <strong>&quot;interviewer might ask&quot;</strong>.</li>
+</ul>
+<p><strong>Levels.</strong> Level 1 is the basics. Level 2 is working knowledge. Level 3 is a senior deep dive: skip it the first time through.</p>
+<p><strong>One example, followed all the way.</strong> We follow <strong>one real paper trade</strong> from start to finish:</p>
+<ul>
+<li><strong>AEQUS LONG, 22 Oct 2026, 11:06 IST</strong> (before that day&#39;s restart);</li>
+<li>with <strong>JSLL SHORT at 14:13</strong> as the counter-example after the restart.</li>
+</ul>
+<p>Both are real rows in the <code>paper_trades</code> and <code>signals</code> tables (§1.4).</p>
+<p><strong>Recap</strong></p>
+<ul>
+<li>Read the parts in order. Each one only uses ideas from earlier parts.</li>
+<li>Trust the badges: &quot;Tested on paper&quot; is not &quot;Proven&quot;.</li>
+<li>When you&#39;re unsure in an interview, say which badge your claim has.</li>
+</ul>
+<p><strong>Explain it back:</strong> What&#39;s the difference between &quot;tested on paper&quot; and &quot;proven&quot; in this guide? Why does it matter in an interview?</p>
+<details><summary>Mini quiz</summary>
+
+<ol>
+<li>Does this engine place orders? <strong>No.</strong> It sends alerts and records paper trades.</li>
+<li>What does Level 3 mean? <strong>A senior deep dive.</strong> It&#39;s optional the first time.</li>
+<li>What badge does a feature with only unit tests get? <strong>Tested on paper.</strong></details></li>
+</ol>
+<hr>
+<h3 id="0-2-the-60-second-and-5-minute-pitch-level-1">0.2 The 60-second and 5-minute pitch · Level 1</h3>
+<p><strong>Why it matters.</strong> The first minute sets the interviewer&#39;s frame. If you oversell, every follow-up becomes a trap. If you undersell, they don&#39;t dig into the good parts.</p>
+<h4>For a non-technical interviewer (60 seconds)</h4>
+<blockquote>
+<p>&quot;It&#39;s a personal project that watches the Indian stock market in real time and flags moments when a stock looks like it&#39;s breaking out. When it sees one, it scores the setup, and if the score is high enough it sends me a Telegram alert. It also records each alert as a simulated trade, so I can check later whether the ideas actually work. It doesn&#39;t trade real money, and it doesn&#39;t yet show that it makes money. That&#39;s the honest state. What I&#39;m proud of is that it runs every trading day on its own, on a cloud server, and I&#39;ve made it reliable through some real production incidents.&quot;</p>
+</blockquote>
+<h4>For a senior engineer (5 minutes)</h4>
+<ol>
+<li><strong>What it is.</strong> A Node.js and TypeScript service on one AWS EC2 host, run with Docker Compose.<ul>
+<li>It subscribes to Fyers&#39; market-data WebSocket for about 25 watchlist stocks plus the Nifty index.</li>
+<li>It builds candles in memory and runs 2 equity detectors and 5 Nifty detectors.</li>
+<li>It scores every fire with a multi-gate filter, sends gated alerts to Telegram, and records every fire as a paper trade in Postgres.</li>
+<li>Redis holds live session state.</li>
+<li>A Fastify API and SSE stream feed a React dashboard on Vercel.</li>
+</ul>
+</li>
+<li><strong>The interesting engineering.</strong> Constraints and failure modes:<ul>
+<li>Fyers caps the WebSocket at 100 symbols and REST calls at 5/s, 50/min and 5,000/day. More than 3 per-minute breaches block you for the day.</li>
+<li>I subscribed to more than 2,000 symbols for weeks and got silence. I diagnosed it and fixed it with a capped subscription plan and a boot-time check.</li>
+<li>The quota ledger is shared across processes.</li>
+<li>Alerting uses atomic Redis claims (<code>SET NX</code> plus Lua compare-and-set), so two detectors firing in the same millisecond can&#39;t both alert.</li>
+</ul>
+</li>
+<li><strong>Operations.</strong> Cron-driven daily lifecycle:<ul>
+<li>token refresh at 07:45, boot at 09:00, stop at 15:30;</li>
+<li>a watchdog with restart backoff, and a day-aware state cleanup;</li>
+<li>deploys with a backup, a rollback tag, and the engine left stopped until the next scheduled start;</li>
+<li>never restart during market hours.</li>
+</ul>
+</li>
+<li><strong>Evidence discipline.</strong><ul>
+<li>The backtest replays 1-minute candles tick by tick through the real detector classes.</li>
+<li>Parity tests check that live code and backtest give identical results.</li>
+<li>Studies are pre-registered, with day-block bootstrap confidence intervals.</li>
+<li><strong>Result:</strong> the one pre-registered study I ran (an EMA trend study) shows <strong>no edge</strong> after costs. I report that rather than tuning until it looks good.</li>
+</ul>
+</li>
+<li><strong>What I&#39;d do next.</strong> A shadow candle recorder, a managed database, and a mobile backend with authentication.</li>
+</ol>
+<p><strong>Common mistake.</strong> Opening with &quot;I built an algo-trading bot&quot;. It invites &quot;How much does it make?&quot; in the first minute. Open with the system and the engineering, and state the paper-only status yourself.</p>
+<p><strong>Recap</strong></p>
+<ul>
+<li>There are two pitches: plain-language and senior-engineer.</li>
+<li>Say &quot;paper only, no proven edge&quot; before you&#39;re asked.</li>
+<li>Lead with constraints and incidents. That&#39;s where your real learning is.</li>
+</ul>
+<p><strong>Explain it back:</strong> Give the 60-second version out loud without the word &quot;algorithm&quot;.</p>
+<details><summary>Mini quiz</summary>
+
+<ol>
+<li>Name two Fyers limits that shaped the design. <strong>The 100-symbol WebSocket cap, and REST at 5/s, 50/min, 5,000/day (more than 3 breaches means a blocked day).</strong></li>
+<li>Where does live session state live? <strong>In Redis.</strong></li>
+<li>What did the pre-registered EMA study find? <strong>No edge after costs.</strong></details></li>
+</ol>
+<p><strong>Interviewer might ask:</strong> <em>&quot;So does it make money?&quot;</em> A strong answer: &quot;No evidence that it does. The sample is small, and the one study I ran properly shows no edge after costs. The system is built so I can measure that honestly, which is the point at this stage.&quot;</p>
+<hr>
+<h2 id="part-1-the-big-picture">Part 1: The big picture</h2>
+<h3 id="1-1-what-the-system-does-end-to-end-level-1">1.1 What the system does, end to end · Level 1</h3>
+<p><strong>Mental model.</strong> Think of a React Native app with a background task that keeps a WebSocket open. Each message updates state. Some state changes fire a push notification, and every event is logged to a backend database. Here:</p>
+<ul>
+<li>the &quot;app&quot; is a server process;</li>
+<li>the &quot;messages&quot; are price ticks;</li>
+<li>the &quot;push notification&quot; is a Telegram message;</li>
+<li>the &quot;log&quot; is Postgres.</li>
+</ul>
+<p><strong>What happens on a trading day [Proven]:</strong></p>
+<ol>
+<li><strong>07:45 IST.</strong> An auth service gets a fresh Fyers access token: the market-data login, valid for one day.</li>
+<li><strong>09:00.</strong> The engine boots. It reads the watchlist, plans its subscriptions (at most 100 symbols) and connects to the Fyers WebSocket.</li>
+<li><strong>09:15–15:30.</strong> For every tick it:<ul>
+<li>updates VWAP and 1-minute candles;</li>
+<li>runs the detectors on each closed candle;</li>
+<li>scores any fire with the filter;</li>
+<li>records it as a paper trade;</li>
+<li>sends a Telegram alert only if the filter passed and the alert policy allows it.</li>
+</ul>
+</li>
+<li><strong>15:15.</strong> Intraday paper positions are closed by a time exit.</li>
+<li><strong>15:30.</strong> The engine is stopped cleanly.</li>
+<li><strong>16:00.</strong> The database is backed up.</li>
+<li><strong>17:15.</strong> The day&#39;s token is deleted.</li>
+</ol>
+<p><strong>Recap</strong></p>
+<ul>
+<li>Ticks in, candles built, detectors fire, the filter scores, alerts go out, paper trades are recorded.</li>
+<li>A cron-driven lifecycle bounds every day.</li>
+<li>No orders, ever.</li>
+</ul>
+<details><summary>Mini quiz</summary>
+
+<ol>
+<li>When are intraday paper positions closed? <strong>At 15:15 IST (TIME exit).</strong></li>
+<li>What happens at 17:15? <strong>The day&#39;s Fyers token is purged.</strong></li>
+<li>Is a fire recorded even when it isn&#39;t alerted? <strong>Yes. Every fire that reaches the pipeline becomes a paper-trade row; only gated ones alert.</strong></details></li>
+</ol>
+<hr>
+<h3 id="1-2-real-paper-and-not-built-level-1">1.2 Real, paper, and not built · Level 1</h3>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Status</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Live market data (Fyers WebSocket)</td>
+<td><em>running</em></td>
+<td><strong>[Proven]</strong> heartbeat logs: 25/25 stocks seen, about 1,000 index ticks per 5 minutes on 22 Oct</td>
+</tr>
+<tr>
+<td>2 equity and 5 Nifty detectors</td>
+<td><em>running</em></td>
+<td><strong>[Proven]</strong> boot banner <code>Equity stack: 2 detectors …</code>, <code>Nifty stack: 5 detectors …</code></td>
+</tr>
+<tr>
+<td>Telegram alerts (gated only)</td>
+<td><em>running</em></td>
+<td><strong>[Proven]</strong> 3 alerts sent on 22 Oct (<code>signals.alert_sent</code>)</td>
+</tr>
+<tr>
+<td>Paper trades in Postgres</td>
+<td><em>running</em></td>
+<td><strong>[Proven]</strong> <code>paper_trades</code> rows with entry, stop, target and exit</td>
+</tr>
+<tr>
+<td>EMA trend study in shadow (no alerts)</td>
+<td><em>running</em></td>
+<td><strong>[Proven]</strong> <code>/app/data/ema_shadow/2026-10-22.jsonl</code></td>
+</tr>
+<tr>
+<td>End-of-day screener job</td>
+<td><em>built, not running</em></td>
+<td>Scheduled at 16:30 (<code>lifecycle.sh run_screener</code>), but the <code>quant_screener</code> container doesn&#39;t exist on the host, so the engine uses the baked-in <code>watchlist.json</code>. The boot log says <code>screener output not found</code>.</td>
+</tr>
+<tr>
+<td>Morning &quot;in-play&quot; re-rank</td>
+<td><em>design only</em></td>
+<td>Not coded</td>
+</tr>
+<tr>
+<td>One-alert-per-symbol duplicate policy</td>
+<td><em>built, not deployed</em></td>
+<td><strong>[Tested on paper]</strong> PR #22, plus a real-Redis check (23 of 23) on a throwaway container</td>
+</tr>
+<tr>
+<td>Liquid-universe replay fetch (Part D)</td>
+<td><em>built, not run</em></td>
+<td>PR #20 is merged. Nothing has been fetched (each fetch evening needs the owner&#39;s OK).</td>
+</tr>
+<tr>
+<td>Mobile backend, dashboard login</td>
+<td><em>planned</em></td>
+<td>No code</td>
+</tr>
+<tr>
+<td>Order execution</td>
+<td><em>not built, by design</em></td>
+<td>No broker order API is used anywhere</td>
+</tr>
+</tbody></table>
+<p><strong>Common mistake.</strong> Saying the screener &quot;picks the stocks every evening&quot;. It&#39;s built, but it isn&#39;t running. Today&#39;s watchlist is a static file.</p>
+<details><summary>Mini quiz</summary>
+
+<ol>
+<li>Is the end-of-day screener running? <strong>No: built, not running.</strong></li>
+<li>Which feature has a real-Redis test but no live evidence yet? <strong>The duplicate policy (PR #22).</strong></li>
+<li>Does the dashboard have a login? <strong>No. That&#39;s planned with the mobile backend.</strong></details></li>
+</ol>
+<hr>
+<h3 id="1-3-the-architecture-tour-level-1-2">1.3 The architecture tour · Level 1–2</h3><figure class="diagram"><svg viewBox="0 0 760 400" role="img" aria-label="Architecture: services on one EC2 host and how they connect"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ahead"/></marker></defs>
+<rect x="150" y="20" width="590" height="300" rx="16" class="zone"/><text x="165" y="42" class="s">EC2 host · Docker Compose · paper trading only</text>
+<g class="ext"><rect x="10" y="60" width="120" height="46" rx="10"/><text x="70" y="79" text-anchor="middle" class="t">Fyers login</text><text x="70" y="97" text-anchor="middle" class="s">daily token</text></g><g class="ext"><rect x="10" y="160" width="120" height="46" rx="10"/><text x="70" y="179" text-anchor="middle" class="t">Fyers data</text><text x="70" y="197" text-anchor="middle" class="s">WebSocket ticks</text></g><g class="ext"><rect x="10" y="262" width="120" height="46" rx="10"/><text x="70" y="281" text-anchor="middle" class="t">Telegram</text><text x="70" y="299" text-anchor="middle" class="s">channel + admin</text></g>
+<g class=""><rect x="175" y="60" width="135" height="46" rx="10"/><text x="242.5" y="79" text-anchor="middle" class="t">quant_auth</text><text x="242.5" y="97" text-anchor="middle" class="s">writes token</text></g><g class=""><rect x="175" y="240" width="135" height="46" rx="10"/><text x="242.5" y="259" text-anchor="middle" class="t">quant_scheduler</text><text x="242.5" y="277" text-anchor="middle" class="s">cron, IST</text></g>
+<g class="hot"><rect x="350" y="140" width="160" height="70" rx="10"/><text x="430" y="171" text-anchor="middle" class="t">quant_engine</text><text x="430" y="189" text-anchor="middle" class="s">ticks → alerts</text></g>
+<g class=""><rect x="565" y="60" width="155" height="46" rx="10"/><text x="642.5" y="79" text-anchor="middle" class="t">Redis</text><text x="642.5" y="97" text-anchor="middle" class="s">live state</text></g><g class=""><rect x="565" y="150" width="155" height="46" rx="10"/><text x="642.5" y="169" text-anchor="middle" class="t">Postgres</text><text x="642.5" y="187" text-anchor="middle" class="s">paper_trades, signals</text></g><g class=""><rect x="565" y="250" width="155" height="46" rx="10"/><text x="642.5" y="269" text-anchor="middle" class="t">quant_api</text><text x="642.5" y="287" text-anchor="middle" class="s">read-only REST + SSE</text></g>
+<g class="ext"><rect x="565" y="344" width="155" height="46" rx="10"/><text x="642.5" y="363" text-anchor="middle" class="t">Vercel dashboard</text><text x="642.5" y="381" text-anchor="middle" class="s">React · /api proxy</text></g>
+<line x1="130" y1="83" x2="173" y2="83" marker-end="url(#ah)"/><line x1="310" y1="90" x2="395" y2="138" marker-end="url(#ah)"/><text x="356.5" y="109" class="s">token volume</text><line x1="130" y1="183" x2="348" y2="175" marker-end="url(#ah)"/><text x="243" y="174" class="s">ticks</text><line x1="310" y1="258" x2="380" y2="212" marker-end="url(#ah)"/><text x="349" y="230" class="s">start / stop</text>
+<line x1="510" y1="160" x2="563" y2="90" marker-end="url(#ah)"/><line x1="510" y1="178" x2="563" y2="175" marker-end="url(#ah)"/><line x1="350" y1="200" x2="132" y2="282" marker-end="url(#ah)"/><text x="200" y="318" class="s">gated alerts</text>
+<line x1="640" y1="196" x2="640" y2="248" marker-end="url(#ah)"/><path class="conn" d="M720,83 L734,83 L734,273 L722,273" fill="none" marker-end="url(#ah)"/><line x1="640" y1="342" x2="640" y2="298" marker-end="url(#ah)"/><text x="644" y="315" class="s">/api/*</text></svg><figcaption>What to notice: only the engine touches market data and Telegram; the API only reads; the dashboard reaches the host only through the /api proxy.</figcaption></figure>
+<p><strong>Mental model.</strong> Each container is like a separate app on a phone: it has its own process, but they share storage (volumes) and talk over a private network.</p>
+<pre><code>                        ┌──────────────── EC2 host (one Linux VM, Docker Compose) ─────────────────┐
+  Fyers auth ──token──▶ │ quant_auth ──writes──▶ token volume ◀──reads── quant_engine                  │
+                        │                                                │  ▲ ticks (WebSocket)        │
+  Fyers market data ───────────────────────────────────────────────────▶│  │                          │
+                        │ quant_scheduler (cron, IST) ── starts / stops ─▶│                             │
+                        │                                                ├──▶ Redis (live state)       │
+                        │                                                ├──▶ Postgres (paper_trades,  │
+                        │                                                │      signals)               │
+                        │                                                └──▶ Telegram (alerts)        │
+                        │ quant_api (Fastify, read-only) ◀── Postgres + Redis                         │
+                        └──────────────────────────────────────▲───────────────────────────────────────┘
+                                                               │ /api/* proxied
+                                              Vercel dashboard (React) ── your phone or laptop
+</code></pre>
+<p><em>What to notice:</em> only the engine touches market data and Telegram. The API only reads. The dashboard never talks to the host directly; Vercel proxies <code>/api/*</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Service (docker-compose.yml)</th>
+<th>Owns</th>
+<th>Talks to</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>quant_auth</code></td>
+<td>the daily Fyers token, written to the <code>token_store</code> volume</td>
+<td>Fyers login, Telegram (to prompt the owner)</td>
+</tr>
+<tr>
+<td><code>quant_scheduler</code></td>
+<td>the daily timetable (cron inside a container, timezone IST)</td>
+<td>Docker: starts and stops the others</td>
+</tr>
+<tr>
+<td><code>quant_engine</code></td>
+<td>ticks, candles, detectors, filter, alerts, paper trades</td>
+<td>Fyers WebSocket, Redis, Postgres, Telegram</td>
+</tr>
+<tr>
+<td><code>quant_screener</code> (job)</td>
+<td>the evening watchlist (<em>built, not running</em>)</td>
+<td>Fyers REST, through the quota ledger</td>
+</tr>
+<tr>
+<td><code>quant_api</code></td>
+<td>read-only REST and SSE for the dashboard</td>
+<td>Postgres, Redis</td>
+</tr>
+<tr>
+<td><code>redis_cache</code> (<code>quant_redis</code>)</td>
+<td>live session state: VWAP, cooldowns, open positions, alert claims, quota ledger</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>postgres_db</code> (<code>quant_postgres</code>)</td>
+<td>the durable record: <code>paper_trades</code>, <code>signals</code>, <code>schema_migrations</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Vercel dashboard (separate repo)</td>
+<td>the UI</td>
+<td><code>/api/*</code> through a rewrite in <code>vercel.json</code></td>
+</tr>
+</tbody></table>
+<p><strong>Why one host?</strong> It&#39;s simple and cheap, and the load is tiny (the engine uses about 110 MB of memory and 4% CPU on 22 Oct). The trade-off is that there is no redundancy: if the host dies, the day is lost (Part 9).</p>
+<details><summary>Mini quiz</summary>
+
+<ol>
+<li>Which container is the only one that sends Telegram alerts? <strong><code>quant_engine</code> (<code>quant_auth</code> only messages the owner during login).</strong></li>
+<li>Where does the dashboard get its data? <strong>From <code>quant_api</code>, through Vercel&#39;s <code>/api/*</code> rewrite.</strong></li>
+<li>What holds the token? <strong>The <code>token_store</code> volume.</strong></details></li>
+</ol>
+<hr>
+<h3 id="1-4-the-life-of-one-tick-aequs-long-22-oct-2026-level-2">1.4 The life of one tick: AEQUS LONG, 22 Oct 2026 · Level 2</h3><figure class="diagram"><svg viewBox="0 0 760 170" role="img" aria-label="Life of one tick from WebSocket to Telegram and the paper tracker"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ahead"/></marker></defs>
+<g class=""><rect x="5" y="30" width="105" height="50" rx="10"/><text x="57.5" y="51" text-anchor="middle" class="t">Tick</text><text x="57.5" y="69" text-anchor="middle" class="s">Fyers WS</text></g><g class=""><rect x="130" y="30" width="105" height="50" rx="10"/><text x="182.5" y="51" text-anchor="middle" class="t">VWAP + candle</text><text x="182.5" y="69" text-anchor="middle" class="s">Redis / memory</text></g><g class=""><rect x="255" y="30" width="105" height="50" rx="10"/><text x="307.5" y="51" text-anchor="middle" class="t">Detectors</text><text x="307.5" y="69" text-anchor="middle" class="s">2 equity · 5 Nifty</text></g>
+<g class=""><rect x="380" y="30" width="105" height="50" rx="10"/><text x="432.5" y="51" text-anchor="middle" class="t">Filter</text><text x="432.5" y="69" text-anchor="middle" class="s">score ≥ 78</text></g><g class=""><rect x="505" y="30" width="115" height="50" rx="10"/><text x="562.5" y="51" text-anchor="middle" class="t">Alert policy</text><text x="562.5" y="69" text-anchor="middle" class="s">gated · dedup · cap</text></g><g class="ext"><rect x="640" y="30" width="115" height="50" rx="10"/><text x="697.5" y="51" text-anchor="middle" class="t">Telegram</text><text x="697.5" y="69" text-anchor="middle" class="s">channel</text></g>
+<g class="hot"><rect x="380" y="110" width="240" height="45" rx="10"/><text x="500" y="128.5" text-anchor="middle" class="t">Paper tracker → Postgres</text><text x="500" y="146.5" text-anchor="middle" class="s">every fire recorded</text></g>
+<line x1="110" y1="55" x2="128" y2="55" marker-end="url(#ah)"/><line x1="235" y1="55" x2="253" y2="55" marker-end="url(#ah)"/><line x1="360" y1="55" x2="378" y2="55" marker-end="url(#ah)"/><line x1="485" y1="55" x2="503" y2="55" marker-end="url(#ah)"/><line x1="620" y1="55" x2="638" y2="55" marker-end="url(#ah)"/><line x1="432" y1="80" x2="470" y2="108" marker-end="url(#ah)"/></svg><figcaption>What to notice: every fire becomes a paper trade, but only fires that pass the filter and the alert policy reach Telegram.</figcaption></figure>
+<p><strong>Mental model.</strong> It&#39;s a Redux-style pipeline. Each tick is an action. Reducers update state (VWAP, candles), and selectors (the detectors) fire when a pattern appears. Middleware (the filter and the alert policy) decides whether to dispatch a side effect (Telegram).</p>
+<p><strong>The real trade [Proven]</strong> (rows from <code>signals</code> and <code>paper_trades</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What happened (IST)</th>
+<th>Where in the code</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1. Tick</td>
+<td>AEQUS ticks arrive on the Fyers WebSocket. Each one updates the symbol&#39;s VWAP in Redis (<code>vwap:NSE:AEQUS-EQ:2026-10-22</code>).</td>
+<td><code>src/ingestion/websocket.ts</code> (<code>skt.on(&#39;message&#39;)</code> → <code>tickEmitter</code> → <code>updateVwap</code>)</td>
+</tr>
+<tr>
+<td>2. Candle and detectors</td>
+<td>At <strong>11:06:28</strong> two detectors fire on the same tick. <strong>Stock Momentum Breakout</strong>: &quot;Compression Breakout LONG, box ₹242.00–243.05, 5.3× vol&quot;. <strong>Volatility Contraction (VCP)</strong>: &quot;pivot ₹243.05, range −47%, volume dry −48%&quot;.</td>
+<td><code>src/detectors/v2/stockMomentumBreakoutDetector.ts</code>, <code>src/detectors/v2/high_alpha/VolatilityContraction.ts</code></td>
+</tr>
+<tr>
+<td>3. Filter</td>
+<td>Both pass. Momentum scores <strong>85</strong>, VCP <strong>88</strong> (threshold 78). Regime: &quot;trending&quot; (entropy H = 1.16). Bayesian P = 0.68 and 0.81. EV ₹2.36 and ₹3.90. Half-Kelly 5%.</td>
+<td><code>src/detectors/janeStreetFilter.ts</code></td>
+</tr>
+<tr>
+<td>4. Levels</td>
+<td>Entry ₹245.70. The <strong>stop is ₹242.62</strong>, which is <strong>VWAP ₹243.10 × 0.998</strong>, not the detectors&#39; own stops (₹242.14 and ₹241.76). Target ₹250.32 = entry + 1.5 × risk.</td>
+<td><code>src/workers/alertPipeline.ts</code> (equity levels come from VWAP)</td>
+</tr>
+<tr>
+<td>5. Record</td>
+<td>Two paper rows, <strong>#1592 and #1593</strong>, gated, quantity 40.</td>
+<td><code>src/core/positionTracker.ts</code> (<code>registerTrade</code>)</td>
+</tr>
+<tr>
+<td>6. Alert</td>
+<td><strong>Two Telegram alerts went out</strong>, one per detector. That&#39;s the duplicate-alert story (Part 8).</td>
+<td><code>src/workers/alertPolicy.ts</code></td>
+</tr>
+<tr>
+<td>7. Exit</td>
+<td>12:17:24: price hits the stop (₹242.55). STOP_LOSS, <strong>−1.02R</strong>, −₹126 each.</td>
+<td><code>positionTracker.processTick</code></td>
+</tr>
+</tbody></table>
+<p><em>What to notice:</em></p>
+<ol>
+<li>Two independent detectors fired in the <strong>same millisecond</strong>, so both positions got the same id (<code>trade_&lt;ms&gt;_NSE:AEQUS-EQ</code>). PR #23 fixes this.</li>
+<li>The <strong>11:46 watchdog restart</strong> happened while these positions were open.</li>
+<li>The stop came from VWAP, not from the pattern. That&#39;s a known design limit (Part 9).</li>
+</ol>
+<p><strong>Counter-example: JSLL SHORT at 14:13 [Proven].</strong></p>
+<ul>
+<li>It came after the restart. Momentum scored 85, regime H = 0.29 (&quot;trending&quot; on a flat day; see §4.2).</li>
+<li>Stop ₹356.54 and target ₹340.06 are on the correct sides for a short.</li>
+<li>It was closed by the <strong>15:15 time exit at 0.00R</strong>: the exit price equalled the entry price, ₹349.95.</li>
+</ul>
+<p><strong>What can go wrong here.</strong></p>
+<ul>
+<li>The detectors run with <code>Promise.all</code>, so concurrent fires race (Part 8: duplicates).</li>
+<li>A restart loses in-memory candles (Part 6.3).</li>
+<li>The stop ignores the pattern&#39;s own level.</li>
+</ul>
+<details><summary>Mini quiz</summary>
+
+<ol>
+<li>Why is AEQUS&#39;s stop ₹242.62 rather than ₹242.14? <strong>For equities, the pipeline sets the stop at VWAP × 0.998 and ignores the detector&#39;s own stop.</strong></li>
+<li>How many Telegram alerts did AEQUS produce? <strong>Two, one per detector.</strong></li>
+<li>What closed JSLL? <strong>The 15:15 TIME exit.</strong></details></li>
+</ol>
+<p><strong>Interviewer might ask:</strong> <em>&quot;Why did one setup send two alerts?&quot;</em> A strong answer: &quot;Two detectors fired concurrently on the same tick. The dedup was per detector, not per symbol. I designed a per-symbol-and-side claim using Redis <code>SET NX</code> plus Lua compare-and-set, and tested it against a real Redis with 50-way concurrency. It&#39;s on a branch, not deployed yet.&quot;</p>
+<hr>
+<h3 id="1-5-one-trading-day-on-the-clock-level-1">1.5 One trading day on the clock · Level 1</h3><figure class="diagram"><svg viewBox="0 0 760 150" role="img" aria-label="One trading day on the clock, IST (events evenly spaced, not to scale)">
+<rect x="180" y="40" width="245" height="26" rx="6" class="session"/><text x="302.5" y="58" text-anchor="middle" class="s">session 09:15–15:30</text>
+<line x1="20" y1="82" x2="740" y2="82" class="axis"/>
+<line x1="40" y1="76" x2="40" y2="88" class="axis"/><text x="40" y="106" text-anchor="middle" class="t">07:45</text><text x="40" y="122" text-anchor="middle" class="s">token</text><line x1="115" y1="76" x2="115" y2="88" class="axis"/><text x="115" y="106" text-anchor="middle" class="t">09:00</text><text x="115" y="122" text-anchor="middle" class="s">boot</text><line x1="190" y1="76" x2="190" y2="88" class="axis"/><text x="190" y="106" text-anchor="middle" class="t">09:15</text><text x="190" y="122" text-anchor="middle" class="s">open</text><line x1="265" y1="76" x2="265" y2="88" class="axis"/><text x="265" y="106" text-anchor="middle" class="t">09:25</text><text x="265" y="122" text-anchor="middle" class="s">status msg</text><line x1="340" y1="76" x2="340" y2="88" class="axis"/><text x="340" y="106" text-anchor="middle" class="t">15:15</text><text x="340" y="122" text-anchor="middle" class="s">square-off</text><line x1="415" y1="76" x2="415" y2="88" class="axis"/><text x="415" y="106" text-anchor="middle" class="t">15:30</text><text x="415" y="122" text-anchor="middle" class="s">stop</text><line x1="490" y1="76" x2="490" y2="88" class="axis"/><text x="490" y="106" text-anchor="middle" class="t">15:45</text><text x="490" y="122" text-anchor="middle" class="s">summary</text><line x1="565" y1="76" x2="565" y2="88" class="axis"/><text x="565" y="106" text-anchor="middle" class="t">16:00</text><text x="565" y="122" text-anchor="middle" class="s">backup</text><line x1="640" y1="76" x2="640" y2="88" class="axis"/><text x="640" y="106" text-anchor="middle" class="t">16:30</text><text x="640" y="122" text-anchor="middle" class="s">screener*</text><line x1="715" y1="76" x2="715" y2="88" class="axis"/><text x="715" y="106" text-anchor="middle" class="t">17:15</text><text x="715" y="122" text-anchor="middle" class="s">token purge</text>
+<text x="20" y="24" class="s">* built, not running · events evenly spaced, not to scale · no restarts or deploys 09:00–15:30</text></svg><figcaption>What to notice: everything that can disturb the session (deploys, restarts, the screener, backups) happens outside 09:15–15:30.</figcaption></figure>
+<table>
+<thead>
+<tr>
+<th>IST</th>
+<th>What runs</th>
+<th>Why then</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>07:45</td>
+<td>auth bridge (<code>lifecycle.sh start_auth</code>)</td>
+<td>a fresh daily token before the market</td>
+<td>scheduler crontab</td>
+</tr>
+<tr>
+<td>09:00</td>
+<td>engine boot (<code>start_engine</code>)</td>
+<td>15 minutes before the open: subscribe and warm up</td>
+<td>scheduler crontab</td>
+</tr>
+<tr>
+<td>09:03 → 15:40</td>
+<td>read-only monitor checks every 15 minutes</td>
+<td>catch silence, restarts, errors and a full disk</td>
+<td>host crontab (UTC)</td>
+</tr>
+<tr>
+<td>09:07</td>
+<td>&quot;market open&quot; message</td>
+<td>owner heads-up</td>
+<td>scheduler crontab</td>
+</tr>
+<tr>
+<td>09:10</td>
+<td>liveness check</td>
+<td>verify the token before trading</td>
+<td>scheduler crontab</td>
+</tr>
+<tr>
+<td>09:25</td>
+<td>monitor status message to the phone</td>
+<td>the boot checklist at a glance</td>
+<td>host crontab</td>
+</tr>
+<tr>
+<td>15:15</td>
+<td>intraday paper positions time-exit</td>
+<td>no overnight intraday risk</td>
+<td><code>positionTracker.ts</code> (<code>isAfter315</code>)</td>
+</tr>
+<tr>
+<td>15:17</td>
+<td>&quot;market close&quot; message</td>
+<td>owner heads-up</td>
+<td>scheduler crontab</td>
+</tr>
+<tr>
+<td>15:30</td>
+<td>engine stop (SIGTERM, exit 0)</td>
+<td>at the close</td>
+<td>scheduler crontab</td>
+</tr>
+<tr>
+<td>15:35</td>
+<td>engine-log export</td>
+<td>a recreate deletes Docker&#39;s log</td>
+<td>host crontab</td>
+</tr>
+<tr>
+<td>15:45</td>
+<td>monitor daily summary to the phone</td>
+<td>the day&#39;s results</td>
+<td>host crontab</td>
+</tr>
+<tr>
+<td>16:00</td>
+<td>database backup (<code>db_backup.sh</code>)</td>
+<td>after the close, nothing writing</td>
+<td>scheduler crontab</td>
+</tr>
+<tr>
+<td>16:30</td>
+<td>screener (<em>built, not running</em>)</td>
+<td>after the close, end-of-day data</td>
+<td>scheduler crontab</td>
+</tr>
+<tr>
+<td>17:15</td>
+<td>token purge</td>
+<td>the token is only valid for the day</td>
+<td>scheduler crontab</td>
+</tr>
+</tbody></table>
+<p><em>What to notice:</em> the scheduler container runs on IST, but the host crontab runs on <strong>UTC</strong> (the host&#39;s clock). The same instant has two spellings: 15:35 IST is <code>5 10 * * 1-5</code> in UTC.</p>
+<details><summary>Mini quiz</summary>
+
+<ol>
+<li>Why does the 15:35 job exist? <strong>A container recreate deletes its Docker log, so the log is exported daily.</strong></li>
+<li>Which crontab is in UTC? <strong>The host&#39;s.</strong></li>
+<li>When is the database backed up? <strong>16:00 IST.</strong></details></li>
+</ol>
+<hr>
+<h2 id="part-2-the-tech-stack-one-technology-at-a-time">Part 2: The tech stack, one technology at a time</h2>
+<p>Each technology gets four answers: <strong>what it is</strong>, <strong>why this project uses it</strong>, <strong>the alternatives and why not</strong>, and <strong>what would break without it</strong>. Versions come from <code>package.json</code>, <code>Dockerfile</code> and <code>docker-compose.yml</code> on <code>v2</code>.</p>
+<h3 id="2-1-typescript-on-node-js-level-1">2.1 TypeScript on Node.js · Level 1</h3>
+<ul>
+<li><strong>What it is:</strong> JavaScript on the server, with types. <code>Dockerfile</code> uses <code>FROM node:22-slim</code>, and TypeScript runs directly through <code>tsx</code>. The container command is <code>exec node --import tsx src/ingestion/websocket.ts</code>.</li>
+<li><strong>Why here:</strong><ul>
+<li>It&#39;s the language you already know.</li>
+<li>Node&#39;s single-threaded event loop suits a stream of small I/O-bound messages (ticks, Redis calls, HTTP).</li>
+<li>Types catch shape mistakes. <code>npm run typecheck</code> must stay at 0 errors.</li>
+</ul>
+</li>
+<li><strong>Alternatives:</strong><ul>
+<li>Python has better quant libraries, but needs a second language and its own async story.</li>
+<li>Go is faster, but the latency here is network-bound, not CPU-bound.</li>
+</ul>
+</li>
+<li><strong>What breaks without it:</strong> nothing magical; you&#39;d rewrite in another language. The real rule that matters is <strong>never block the event loop</strong>. The socket handler only parses and emits. All I/O happens behind <code>tickEmitter</code> (<code>src/ingestion/websocket.ts</code>).</li>
+<li><strong>Analogy:</strong> the JS thread in React Native. A long synchronous loop freezes the UI; here it would freeze tick handling.</li>
+</ul>
+<h3 id="2-2-the-fyers-api-and-websocket-level-2">2.2 The Fyers API and WebSocket · Level 2</h3>
+<ul>
+<li><strong>What it is:</strong> an Indian broker&#39;s market-data API. There&#39;s REST for history and quotes, and a WebSocket that pushes ticks. Client: <code>fyers-api-v3</code> (^1.7.0).</li>
+<li><strong>Why here:</strong> it&#39;s the broker account the owner has, and it has free real-time NSE data.</li>
+<li><strong>Limits that shaped everything</strong> [Proven, Fyers documentation as quoted in <code>config/fyers_quota.json</code>]:<ul>
+<li>REST: 5 per second, 50 per minute, 5,000 per day. More than 3 per-minute breaches block the day.</li>
+<li>WebSocket: 100 symbols (Standard plan).</li>
+</ul>
+</li>
+<li><strong>Alternatives:</strong> a paid feed such as Kite Connect, or scraping (unreliable and against the terms).</li>
+<li><strong>What breaks without it:</strong> no data at all. The token expires daily, so <code>quant_auth</code> runs every morning.</li>
+</ul>
+<h3 id="2-3-redis-level-2">2.3 Redis · Level 2</h3>
+<ul>
+<li><p><strong>What it is:</strong> an in-memory key-value store (<code>redis:7-alpine</code>, client <code>redis</code> ^5.12.1).</p>
+</li>
+<li><p><strong>Why here:</strong> fast shared state the engine reads and writes on every tick:</p>
+<ul>
+<li>VWAP (<code>vwap:{symbol}:{date}</code>);</li>
+<li>cooldowns;</li>
+<li>open positions (<code>trades:open</code>);</li>
+<li>alert dedup (<code>alert:sent:*</code>);</li>
+<li>the Fyers quota ledger (<code>fyers:quota:{day}</code>).</li>
+</ul>
+<p>It survives an engine restart, because Redis runs in its own container.</p>
+</li>
+<li><p><strong>Key tools:</strong></p>
+<ul>
+<li><strong>TTLs:</strong> keys that expire on their own, like cooldowns.</li>
+<li><strong><code>SET NX</code>:</strong> set only if the key doesn&#39;t exist. This is an atomic &quot;first one wins&quot;.</li>
+<li><strong>Lua scripts:</strong> several commands run atomically.</li>
+</ul>
+</li>
+<li><p><strong>Alternatives:</strong> in-process memory (lost on restart), or Postgres for everything (slower per tick, and no TTLs).</p>
+</li>
+<li><p><strong>What breaks without it:</strong> every restart would forget VWAP, cooldowns and open positions. The full key map is in <code>AGENTS.md</code> §7.</p>
+</li>
+<li><p><strong>Analogy:</strong> a global state store that lives outside the app, so it survives an app restart.</p>
+</li>
+</ul>
+<h3 id="2-4-postgresql-level-2">2.4 PostgreSQL · Level 2</h3>
+<ul>
+<li><strong>What it is:</strong> a relational database (<code>postgres:15-alpine</code>, client <code>pg</code> ^8.23.0).</li>
+<li><strong>Why here:</strong> the durable record. <code>paper_trades</code> holds every position. <code>signals</code> holds one row per fire, with the full filter breakdown. Versioned migrations live in <code>db/migrations/</code>, and the applied ones are listed in <code>schema_migrations</code>.</li>
+<li><strong>Alternatives:</strong> SQLite (fine for one host, weaker for concurrent writers), or Redis alone (not a durable record).</li>
+<li><strong>What breaks without it:</strong> no history, no evidence and no dashboard history. The daily <code>pg_dump</code> (§6.2) protects it.</li>
+</ul>
+<h3 id="2-5-docker-and-docker-compose-level-2">2.5 Docker and Docker Compose · Level 2</h3>
+<ul>
+<li><strong>What it is:</strong> each service runs in a container built from an image. Compose describes them all in <code>docker-compose.yml</code>.</li>
+<li><strong>Why here:</strong> one command brings the system up the same way every time. Restart policies:<ul>
+<li><code>always</code> for Redis, Postgres, the API and the scheduler;</li>
+<li><code>on-failure</code> for the engine, so a clean stop stays stopped while a crash restarts.</li>
+</ul>
+</li>
+<li><strong>The two things to really understand:</strong><ul>
+<li><strong>PID 1 and signals.</strong> The engine&#39;s command ends with <code>exec node ...</code>, so Node is PID 1 and receives the SIGTERM from <code>docker stop</code>. Before that, <code>sh</code> was PID 1, ignored SIGTERM, and every stop ended in a SIGKILL with exit code 137 (Part 8).</li>
+<li><strong><code>stop_grace_period: 20s</code>.</strong> This gives the shutdown handler time to flush.</li>
+</ul>
+</li>
+<li><strong>Analogy:</strong> a release build. The same artifact runs everywhere, and a rollback is &quot;tag the old image, recreate&quot;.</li>
+</ul>
+<h3 id="2-6-aws-ec2-level-1">2.6 AWS EC2 · Level 1</h3>
+<ul>
+<li><strong>What it is:</strong> one rented Linux virtual machine (Ubuntu, a 15 GB disk per <code>df -h</code>).</li>
+<li><strong>Why here:</strong> always on, cheap, simple.</li>
+<li><strong>Alternatives:</strong> managed containers (ECS or Fargate) or serverless. Those are more moving parts for a single long-lived WebSocket.</li>
+<li><strong>What breaks without it:</strong> the trading day. There&#39;s no second host (Part 9).</li>
+</ul>
+<h3 id="2-7-cron-the-scheduler-container-and-the-host-crontab-level-2">2.7 Cron, the scheduler container and the host crontab · Level 2</h3>
+<ul>
+<li><strong>What it is:</strong> cron runs commands at fixed times. There are <strong>two</strong> crontabs:<ul>
+<li>one <strong>inside <code>quant_scheduler</code></strong> (timezone IST) for the daily lifecycle;</li>
+<li>the <strong>host&#39;s own crontab</strong> (timezone <strong>UTC</strong>) for the read-only monitor and the log export.</li>
+</ul>
+</li>
+<li><strong>Why two:</strong> the monitor must not depend on any container it is watching.</li>
+<li><strong>Trading days only:</strong> both use the same <code>trading_day.sh</code> and holiday file, <code>scheduler/nse_holidays.txt</code>.</li>
+<li><strong>Common mistake:</strong> forgetting the timezone. <code>5 10 * * 1-5</code> on the host means 15:35 IST.</li>
+</ul>
+<h3 id="2-8-telegram-through-telegraf-level-1">2.8 Telegram through Telegraf · Level 1</h3>
+<ul>
+<li><strong>What it is:</strong> a bot API. Client <code>telegraf</code> ^4.16.3.</li>
+<li><strong>Why here:</strong> instant, free alerts on your phone.</li>
+<li><strong>Two destinations:</strong> the <strong>channel</strong>, for trade alerts that passed the filter, and the <strong>admin chat</strong>, for operations notices like watchdog trips and monitor FAILs.</li>
+<li><strong>What breaks without it:</strong> you&#39;d only see alerts on the dashboard.</li>
+</ul>
+<h3 id="2-9-fastify-the-api-and-server-sent-events-level-2">2.9 Fastify (the API) and Server-Sent Events · Level 2</h3>
+<ul>
+<li><strong>What it is:</strong> a small, fast Node web framework (<code>fastify</code> ^5.8.2).</li>
+<li><strong>Why here:</strong> read-only endpoints for the dashboard: <code>/api/today</code>, <code>/api/trades/history</code>, <code>/api/trades/heatmap</code>, <code>/api/live-pnl</code>, and the SSE stream <code>/api/events</code>. The engine publishes on Redis pub/sub <code>sse:events</code>, and the API relays it.</li>
+<li><strong>Alternatives:</strong> Express (slower and older), or WebSockets (two-way; this data only flows one way).</li>
+<li><strong>What breaks without it:</strong> the dashboard. Trading continues.</li>
+</ul>
+<h3 id="2-10-the-dashboard-react-vite-tailwind-and-recharts-on-vercel-level-1">2.10 The dashboard: React, Vite, Tailwind and Recharts on Vercel · Level 1</h3>
+<ul>
+<li><strong>What it is:</strong> a single-page app (React 19, Vite 8, Tailwind 4, Recharts 3) in a separate repo, hosted on Vercel.</li>
+<li><strong>The trick:</strong> <code>vercel.json</code> rewrites <code>/api/*</code> to the host&#39;s API. The browser only ever talks to Vercel.</li>
+<li><strong>Honest state:</strong> one <code>App.tsx</code> of 1,124 lines, and <strong>no login</strong>. It has known defects, listed in <code>docs/dashboard-redesign/AUDIT.md</code>.</li>
+</ul>
+<h3 id="2-11-testing-node-test-through-tsx-the-typecheck-and-eslint-level-1-2">2.11 Testing: node:test through tsx, the typecheck and ESLint · Level 1-2</h3>
+<ul>
+<li><strong>What it is:</strong> Node&#39;s built-in test runner (the <code>test</code> script is <code>tsx --test &quot;tests/**/*.test.ts&quot;</code>). <strong>Not</strong> Jest or vitest.</li>
+<li><strong>Scale:</strong> 321 tests pass on <code>v2</code> at <code>2fcbe9e</code> (<code>npm test</code>). There&#39;s a strict typecheck (<code>tsc --noEmit</code>). ESLint has 20 errors in untouched files that existed before this work.</li>
+<li><strong>What the tests prove:</strong><ul>
+<li>parity between the live pipeline and the old worker;</li>
+<li>parity between the live shadow detector and the backtest;</li>
+<li>policy rules;</li>
+<li>the quota rules.</li>
+</ul>
+</li>
+<li><strong>What they don&#39;t prove:</strong> behaviour against a live market. That&#39;s what the badges are for.</li>
+</ul>
+<details><summary>Part 2 mini quiz</summary>
+
+<ol>
+<li>Why does the engine&#39;s command use <code>exec node</code>? <strong>So Node is PID 1 and receives SIGTERM, which gives a clean shutdown instead of exit 137.</strong></li>
+<li>Why is Redis a separate container? <strong>So live state survives an engine restart.</strong></li>
+<li>Which crontab runs on UTC? <strong>The host&#39;s.</strong></li>
+<li>Which test runner? <strong><code>node:test</code> through <code>tsx</code>.</strong></li>
+<li>What does the API write? <strong>Nothing. It&#39;s read-only.</strong></details></li>
+</ol>
+<p><strong>Interviewer might ask:</strong> <em>&quot;Why not just use Postgres for state?&quot;</em> A strong answer: &quot;Per-tick reads and writes, TTL-based cooldowns and atomic first-wins claims are what Redis is built for. Postgres is the durable record. I keep the two jobs separate, and the boot cleanup is day-aware, so a mid-session restart doesn&#39;t wipe the Redis state.&quot;</p>
+<hr>
+<h2 id="part-3-the-trading-ideas-in-plain-language">Part 3: The trading ideas in plain language</h2>
+<blockquote>
+<p><strong>Common misconception.</strong> Several detector files open with comments like &quot;~65% win rate in Indian markets&quot; (<code>niftyOpeningRangeExplosionDetector.ts</code>) or &quot;highest win-rate intraday Nifty setup&quot; (<code>niftyVwapReclaimDetector.ts</code>). <strong>These are hypotheses written while designing, not measurements.</strong> Nothing in this repo has measured them. In an interview, call them &quot;the design thesis&quot; and never &quot;the win rate&quot;. Per <code>CLAUDE.md</code>: &quot;Never fabricate a performance number.&quot;</p>
+</blockquote>
+<h3 id="3-1-the-vocabulary-level-1">3.1 The vocabulary · Level 1</h3>
+<p><strong>Mental model:</strong> before you can follow a game, you learn the words on the scoreboard. These words are on the trading scoreboard.</p>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Plain meaning</th>
+<th>In this repo</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Tick</strong></td>
+<td>One price update from the exchange</td>
+<td>A Fyers WebSocket message with <code>ltp</code> (last traded price) and <code>vol_traded_today</code></td>
+</tr>
+<tr>
+<td><strong>Candle</strong> (1-, 3- or 5-minute)</td>
+<td>The open, high, low and close of all ticks in a time bucket</td>
+<td>Built in memory from ticks (<code>src/utils/candleAggregator.ts</code>, plus each detector&#39;s own buckets)</td>
+</tr>
+<tr>
+<td><strong>VWAP</strong></td>
+<td>Volume-weighted average price since the session began: Σ(price × volume) ÷ Σ(volume)</td>
+<td><code>updateVwap</code> in <code>src/utils/vwapUtils.ts</code>, stored per symbol per day in Redis</td>
+</tr>
+<tr>
+<td><strong>Session TWAP</strong> (for Nifty)</td>
+<td>An index has no traded volume, so the engine uses the average of minute typical prices, (H+L+C)/3, as its reference</td>
+<td><code>updateNiftyMinuteState</code> in <code>websocket.ts</code></td>
+</tr>
+<tr>
+<td><strong>EMA</strong></td>
+<td>An exponential moving average, where recent prices weigh more</td>
+<td><code>src/core/emaTrend.ts</code> (EMA shadow study)</td>
+</tr>
+<tr>
+<td><strong>ADR</strong></td>
+<td>Average daily range: how far a stock usually moves in a day</td>
+<td>Used by the screener (<em>built, not running</em>)</td>
+</tr>
+<tr>
+<td><strong>Stop and target</strong></td>
+<td>The exit price that means &quot;I was wrong&quot; and the one that means &quot;take profit&quot;</td>
+<td>For equities the stop is <strong>VWAP × 0.998</strong> (long) or <strong>× 1.002</strong> (short), and the target is entry ± 1.5 × risk (<code>alertPipeline.ts</code>)</td>
+</tr>
+<tr>
+<td><strong>R-multiple</strong></td>
+<td>Profit or loss measured in units of the initial risk. R = (exit − entry) ÷ (entry − stop) for a long. −1R means &quot;hit the stop exactly&quot;.</td>
+<td><code>paper_trades.r_multiple</code></td>
+</tr>
+<tr>
+<td><strong>Expectancy</strong></td>
+<td>The average R per trade over many trades. Positive means an edge, but only with a large enough sample.</td>
+<td>Bootstrap confidence intervals in <code>backtest/compare.ts</code></td>
+</tr>
+<tr>
+<td><strong>Paper trading</strong></td>
+<td>Simulated positions, with no real money</td>
+<td><code>paper_trades</code></td>
+</tr>
+<tr>
+<td><strong>Shadow mode</strong></td>
+<td>Running logic for measurement only, so it never alerts</td>
+<td>The EMA study; <code>SHADOW_MODE</code> for the filter</td>
+</tr>
+<tr>
+<td><strong>Gated / ungated</strong></td>
+<td>Passed the filter and was alerted, versus recorded only</td>
+<td><code>paper_trades.gated</code></td>
+</tr>
+</tbody></table>
+<p><strong>Worked example: R for AEQUS.</strong></p>
+<ul>
+<li>Entry ₹245.70, stop ₹242.62, so the risk is ₹3.08.</li>
+<li>It exited at ₹242.55: (242.55 − 245.70) ÷ 3.08 = <strong>−1.02R</strong>. That&#39;s slightly worse than −1R, because the exit tick was below the stop. That is slippage.</li>
+<li>The rupee loss: −₹3.15 × 40 shares = <strong>−₹126</strong>. That matches <code>paper_trades.realized_pnl</code>.</li>
+</ul>
+<details><summary>Mini quiz</summary>
+
+<ol>
+<li>Why does Nifty use a &quot;session TWAP&quot; instead of VWAP? <strong>An index has no traded volume, so a volume-weighted average isn&#39;t defined.</strong></li>
+<li>A long trade has entry ₹100 and stop ₹98, and exits at ₹103. What&#39;s the R? <strong>+1.5R.</strong></li>
+<li>Is +2R on one trade evidence of an edge? <strong>No. Expectancy needs many trades, and a confidence interval.</strong></details></li>
+</ol>
+<h3 id="3-2-stock-momentum-breakout-level-2">3.2 Stock Momentum Breakout · Level 2</h3>
+<p><strong>Status:</strong> <em>running</em>, part of the equity stack: <code>buildEquityStack</code> in <code>websocket.ts</code>. <strong>[Proven]</strong> It fires live, for example AEQUS 11:06 and JSLL 14:13 on 22 Oct.</p>
+<p>It looks for three setups (from the file header in <code>src/detectors/v2/stockMomentumBreakoutDetector.ts</code>):</p>
+<ul>
+<li><strong>A, Morning Surge</strong> (09:15–09:50): the stock breaks the 09:15 high on 3× the opening candle&#39;s volume.</li>
+<li><strong>B, Intraday Compression Breakout</strong> (09:50–14:30): price stays within 0.5% for 3 consecutive 5-minute candles, then breaks out on 4× average volume. <strong>AEQUS was this</strong>: &quot;box ₹242.00–243.05, 0.43% tight, 5.3× vol&quot;.</li>
+<li><strong>C, VWAP Momentum Continuation:</strong> a pullback to VWAP, then a new 30-minute high or low with volume.</li>
+</ul>
+<p>All of them need Nifty bias alignment, a ₹1 crore+ block, and a 30-minute cooldown per stock. Every fire declares <code>regimeClass: &#39;MOMENTUM&#39;</code> and <code>durationClass: &#39;INTRADAY&#39;</code>.</p>
+<p><strong>Picture:</strong></p>
+<pre><code>price
+ 245.7 ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ●  breakout candle (5.3× volume)
+ 243.05 ┌──────────────────────┐
+        │  ▪  ▪  ▪   tight box │   3 candles inside 0.5%
+ 242.00 └──────────────────────┘
+ 242.62 ············ stop = VWAP × 0.998 (not the box low)
+</code></pre>
+<p><strong>Known weaknesses:</strong></p>
+<ul>
+<li>The stop comes from VWAP, not from the box, so the risk can be too tight or too loose.</li>
+<li>There&#39;s no proof of edge.</li>
+<li>Volume on the first tick after a restart is dropped (§6.3).</li>
+</ul>
+<h3 id="3-3-volatility-contraction-vcp-level-2">3.3 Volatility Contraction (VCP) · Level 2</h3>
+<p><strong>Status:</strong> <em>running</em> (<code>VolatilityContraction.ts</code>).</p>
+<p><strong>How it works:</strong></p>
+<ul>
+<li>It keeps a rolling history of 7 five-minute candles in Redis, <code>v2:vcp_history:{symbol}</code>, so it needs 35 minutes of context before it can fire.</li>
+<li>It fires when <strong>the newest candle closes above the pivot</strong>, the high of the contraction box (<code>history[1..3]</code>). The range and volume must have shrunk compared with the earlier candles (<code>history[4..6]</code>), and the breakout candle needs at least 1.5× the box&#39;s average volume.</li>
+</ul>
+<p><strong>Two real bugs are recorded in its own comments:</strong></p>
+<ul>
+<li>The box used to include the breakout candle itself, so it asked the candle to close above its own high.</li>
+<li>It compared one tick&#39;s volume with a 5-minute average, a scale mismatch of about 300×.</li>
+</ul>
+<p>Both were fixed in place. That&#39;s a good interview story about reading your own code skeptically.</p>
+<p><strong>Known weaknesses:</strong></p>
+<ul>
+<li>35 minutes of warm-up.</li>
+<li>The history survives a same-day restart but can join candles across the restart gap. That&#39;s a known should-fix from the PR #21 review.</li>
+</ul>
+<h3 id="3-4-the-nifty-detectors-level-2">3.4 The Nifty detectors · Level 2</h3>
+<p><strong>Status:</strong> 5 are wired (<code>NIFTY_STACK</code>, <code>websocket.ts</code>). Nifty fires become <strong>option</strong> alerts, for example &quot;NIFTY 22650 CE&quot;.</p>
+<table>
+<thead>
+<tr>
+<th>Detector</th>
+<th>Idea, from the file header</th>
+<th>Backtestable?</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Opening Range Explosion</td>
+<td>The first 5-minute range (09:15–09:20) breaks with a 3-minute close outside it, VWAP aligned, before 10:00. On 22 Oct it <strong>skipped</strong>, because the range was 121 points, which is too wide.</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Trend Pulse</td>
+<td>2 consecutive 3-minute closes in one direction, price more than 0.20% from VWAP, body at least 0.10%, volume at least 1.5×</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>VWAP Reclaim</td>
+<td>At least 2 closes on one side of VWAP, then a decisive close back across (body at least 0.12%, not overextended)</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Institutional OI Liquidity Sweep</td>
+<td>Uses option-chain open interest</td>
+<td><strong>no</strong>: option OI isn&#39;t cached</td>
+</tr>
+<tr>
+<td>Delta Hedging Pressure</td>
+<td>Uses option-chain OI and delta</td>
+<td><strong>no</strong></td>
+</tr>
+</tbody></table>
+<p><strong>Honest limit:</strong> option chains are off (<code>NIFTY_OPTIONS_ENABLED=false</code>) until an expiry fix, and option paper positions are never closed in-session (Part 8). So Nifty paper results are not meaningful yet.</p>
+<h3 id="3-5-the-ema-shadow-study-level-2">3.5 The EMA shadow study · Level 2</h3>
+<p><strong>Status:</strong> <em>running in shadow</em>. It never alerts, never touches the filter, and never writes a paper trade.</p>
+<ul>
+<li><strong>What:</strong> the pre-registered EMA trend study (<code>config/nifty_ema_study.json</code>, three variants, V0/V1/V2) running live on Nifty&#39;s own 5-minute candles. It writes JSONL to <code>/app/data/ema_shadow/&lt;date&gt;.jsonl</code>.</li>
+<li><strong>Why &quot;shadow&quot;:</strong> to compare live behaviour with the backtest (a parity test) without risking alerts.</li>
+<li><strong>22 Oct [Proven]:</strong> V0 made 0 trades; V1 made 2 (ΣR −1.36); V2 made 4 (ΣR −4.17). Every row is flagged <code>warmup_partial</code> and <code>bars_incomplete</code>. <strong>One session means nothing.</strong></li>
+<li><strong>Known gaps:</strong><ul>
+<li>The 15:25 candle is never stored, because the engine stops at 15:30 before that candle can close. That&#39;s on the backlog.</li>
+<li>Warm-up needs 200 stored candles, which is about 3 sessions.</li>
+</ul>
+</li>
+</ul>
+<details><summary>Part 3 mini quiz</summary>
+
+<ol>
+<li>Which Momentum setup was AEQUS? <strong>B, Intraday Compression Breakout.</strong></li>
+<li>Why can&#39;t two Nifty detectors be backtested? <strong>They need option-chain open interest, which isn&#39;t cached.</strong></li>
+<li>What does &quot;shadow&quot; guarantee for the EMA study? <strong>No alerts, no filter, no paper trades. It only measures.</strong></li>
+<li>A file comment says &quot;65% win rate&quot;. What do you say? <strong>&quot;That was the design hypothesis. It&#39;s unmeasured.&quot;</strong></details></li>
+</ol>
+<p><strong>Interviewer might ask:</strong> <em>&quot;Which of your strategies works best?&quot;</em> A strong answer: &quot;I don&#39;t know yet, and I&#39;d be lying if I picked one. The samples are tiny, and the only study I pre-registered showed no edge after costs. What I can show is that every fire is recorded with its full filter breakdown, so that question can be answered honestly once there&#39;s enough data.&quot;</p>
+<hr>
+<h2 id="part-4-the-filter-and-the-alert-policy">Part 4: The filter and the alert policy</h2>
+<h3 id="4-1-the-score-and-its-gates-level-2">4.1 The score and its gates · Level 2</h3>
+<p><strong>Why it matters.</strong> Detectors are eager: on 22 Oct they fired <strong>21 times</strong>, and only <strong>3</strong> became alerts [Proven, <code>signals</code> table]. The filter decides which fires are worth your attention.</p>
+<p><strong>Mental model.</strong> Picture a pull-request review with blocking checks and a quality score:</p>
+<ul>
+<li><strong>Hard gates</strong> are like failing CI: they block no matter what the score is.</li>
+<li>The <strong>score</strong> (out of 100) is like a reviewer&#39;s confidence. Below the bar, the change doesn&#39;t ship.</li>
+</ul>
+<p><strong>How it works here</strong> (<code>src/detectors/janeStreetFilter.ts</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Max points</th>
+<th>What it asks</th>
+<th>Hard gate?</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>REGIME</td>
+<td>12</td>
+<td>Does the market&#39;s current &quot;mode&quot; suit this detector type?</td>
+<td><strong>yes</strong>: an incompatible regime gives score 0 and <code>rejectedAt: &#39;REGIME&#39;</code></td>
+</tr>
+<tr>
+<td>STRUCTURE</td>
+<td>20</td>
+<td>Is the breakout clean (a fresh break of structure)?</td>
+<td>no</td>
+</tr>
+<tr>
+<td>LIQUIDITY</td>
+<td>18</td>
+<td>Is there room to the next liquidity pool?</td>
+<td>no</td>
+</tr>
+<tr>
+<td>ORDER_FLOW</td>
+<td>15</td>
+<td>Was it an aggressive candle (body and volume)?</td>
+<td>no</td>
+</tr>
+<tr>
+<td>BAYESIAN</td>
+<td>25</td>
+<td>Posterior P(win) from the evidence (bias, volume, momentum, time window)</td>
+<td>listed in <code>HARD_GATES</code> (<code>alertPipeline.ts</code>), but the filter never rejects at it today: it only contributes points</td>
+</tr>
+<tr>
+<td>EV_KELLY</td>
+<td>10</td>
+<td>Expected value after slippage, and half-Kelly sizing</td>
+<td><strong>yes</strong>: EV below 0 gives <code>rejectedAt: &#39;EV&#39;</code> (<code>MIN_EV_PTS = 0</code>)</td>
+</tr>
+</tbody></table>
+<p><strong>Pass:</strong> score ≥ <strong>78</strong> (<code>CONFIRMATION_THRESHOLD</code>, which can be changed through the environment). The weights add up to 100.</p>
+<p><strong>Worked example [Proven]:</strong></p>
+<ul>
+<li><p><strong>AEQUS VCP scored 88.</strong></p>
+<p>REGIME 12/12 + STRUCTURE 20/20 + LIQUIDITY 10.8/18 + ORDER_FLOW 15/15 + BAYESIAN 20.2/25 (P = 81%) + EV_KELLY 10/10.</p>
+</li>
+<li><p><strong>JTLIND scored 77</strong> at 10:15, one point under the bar, and was rejected at SCORE.</p>
+</li>
+<li><p><strong>MRPL scored 49</strong> and was rejected at <strong>EV</strong>. It had negative expected value after slippage, so it&#39;s blocked even in shadow mode.</p>
+</li>
+</ul>
+<p><strong>Why the weights are what they are:</strong> the honest answer is <strong>they&#39;re assumptions</strong>. <code>CLAUDE.md</code> says: &quot;Every <code>L=</code> ratio, score weight and win-rate comment is an assumption.&quot; Changing the threshold changes how often alerts fire in a non-linear way, so the repo rule is to collect decisions in <code>SHADOW_MODE</code> first and reason from the logged distribution (<code>jsfilter:decisions</code>).</p>
+<details class="deep"><summary><span class="h3like">4.2 How the filter misbehaves: the regime-entropy finding · Level 3</span> <span class="badge">deep dive · open</span></summary>
+<p><strong>What the regime detector does</strong> (<code>src/utils/regimeDetector.ts</code>):</p>
+<ol>
+<li>It takes the last <strong>20 one-minute Nifty returns</strong>. It needs at least 8.</li>
+<li>It puts each return into one of <strong>5 buckets</strong> by size: &lt; −0.3%, &lt; −0.05%, ±0.05%, ≤ +0.3%, &gt; +0.3%.</li>
+<li>It computes the <strong>Shannon entropy</strong> H of that histogram.</li>
+<li><strong>H &lt; 1.6 means &quot;trending&quot;**, **H &gt; 2.0 means &quot;ranging&quot;</strong>, and anything in between is &quot;transition&quot;.</li>
+<li>Momentum detectors are allowed in &quot;trending&quot; and blocked in &quot;ranging&quot;. Reversion detectors are the opposite.</li>
+</ol>
+<p><strong>Think first:</strong> on a quiet, flat day, almost every 1-minute return is within ±0.05%. What is the entropy?</p>
+<details><summary>Answer</summary>
+
+<p>It&#39;s very low. Almost everything falls into one bucket, so <strong>H is close to 0</strong>, which the detector labels <strong>&quot;trending&quot;</strong>. JSLL on 22 Oct fired with <strong>H = 0.29, labelled &quot;trending&quot;</strong>, on a quiet afternoon.</p>
+<p>Entropy measures <strong>how spread out</strong> the returns are, not <strong>which way</strong> they go. A strong one-way trend with large returns also lands in one bucket. So &quot;low entropy&quot; can mean &quot;flat&quot; or &quot;trending&quot;, and the detector can&#39;t tell them apart.</p>
+</details>
+
+<p><strong>Why it hasn&#39;t been &quot;fixed&quot;:</strong> the owner deliberately did <strong>not</strong> change the regime gate. A pre-registered study is on the follow-up list: decide what the test is before running it, then run it. That&#39;s the evidence discipline from Part 7, applied to the system&#39;s own logic.</p>
+<p><strong>Interviewer might ask:</strong> <em>&quot;Isn&#39;t that a bug?&quot;</em> A strong answer: &quot;It&#39;s a misnamed signal. It measures volatility concentration, not direction. Changing a gate that every alert passes through, without a pre-registered test, would just swap one untested assumption for another. So I documented it and queued the study.&quot;</p>
+</details><h3 id="4-3-why-alerts-are-limited-level-2">4.3 Why alerts are limited · Level 2</h3>
+<p><strong>Mental model:</strong> push-notification hygiene in a mobile app. Too many alerts and the user mutes you.</p>
+<p>The rules, all in <code>src/workers/alertPolicy.ts</code> and <code>alertPipeline.ts</code>:</p>
+<ol>
+<li><strong>Gated only.</strong> Only fires that pass the filter are sent. Everything else is still recorded, with <code>alert_suppressed_reason</code> such as <code>NOT_GATED</code> or <code>FILTER_REJECTED</code>.</li>
+<li><strong>Capital sizing.</strong> A fire that would exceed paper capital is skipped (<code>CAPITAL_SKIP</code>) or reduced. The rule is risk at most 1% of capital and at most 10% in one name.</li>
+<li><strong>One alert per detector per symbol per day.</strong> This uses <code>alert:sent:{day}:{detector}:{symbol}</code>, a <code>SET NX</code> with a 36-hour TTL.</li>
+<li><strong>A daily cap of 20</strong> (<code>alert:count:{day}</code>). The first time it&#39;s exceeded, the admin gets one notice.</li>
+<li><strong>Fail closed for alerting, fail open for recording.</strong> A filter error records the trade but sends nothing.</li>
+</ol>
+<p><strong>The gap that rule 3 left:</strong> AEQUS at 11:06 fired from <strong>two detectors</strong> at the same moment. Rule 3 is per detector, so both alerts were sent.</p>
+<p><strong>The fix</strong> is <em>built, not deployed</em>. It&#39;s PR #22, waiting for the owner&#39;s review:</p>
+<ul>
+<li>one alert per <strong>symbol and side</strong> while the first position is open, otherwise for 60 minutes;</li>
+<li>options use the 60-minute window only;</li>
+<li>only an <strong>alerted</strong> fire keeps the &quot;paper claim&quot;, so duplicate rows are flagged <code>duplicate_signal</code> and left out of the stats.</li>
+</ul>
+<details class="deep"><summary><span class="h3like">4.4 Concurrency done right: atomic claims · Level 3</span> <span class="badge">deep dive · open</span></summary>
+<p><strong>Think first:</strong> two detectors run at the same time with <code>Promise.all</code>. Each checks &quot;has anyone alerted AEQUS LONG?&quot;, sees &quot;no&quot;, and both send. How do you stop that?</p>
+<details><summary>Answer</summary>
+
+<p>Don&#39;t <strong>check, then act</strong>. <strong>Act atomically</strong>: <code>SET key value NX EX 129600</code>. Redis guarantees that exactly one caller gets <code>OK</code>. The loser gets <code>null</code> and treats the fire as a duplicate.</p>
+</details>
+
+<p><strong>The harder parts:</strong></p>
+<ul>
+<li><strong>The claim must expire on a business rule</strong> (&quot;position closed and more than 60 minutes old&quot;), not just on a TTL. The winner stores <code>{ts, positionId}</code>. A later fire replaces a stale holder with a <strong>Lua compare-and-set</strong>, which does &quot;GET equals what I read, then SET&quot; atomically, so two late fires can&#39;t both win.</li>
+<li><strong>A claim that leads to no alert must be given back.</strong> Causes include a capital skip, a failed send, the cap, or an error. The give-back uses a <strong>Lua compare-and-delete</strong>, so you can only delete your <em>own</em> claim.</li>
+<li><strong>Same-millisecond ids.</strong> Two fires in the same millisecond got the same position id. PR #23 fixes that.</li>
+</ul>
+<p><strong>Evidence:</strong> <strong>[Tested on paper]</strong>, plus a <strong>real-Redis check</strong> (<code>scripts/ops/realRedisClaims.ts</code>, on a throwaway Redis 7.4.8 container): <strong>23 of 23 passed</strong>. For example:</p>
+<ul>
+<li>50 concurrent claims gave exactly 1 winner;</li>
+<li>20 concurrent takeovers of a stale holder gave exactly 1 winner;</li>
+<li>the TTL was 129,600 s and was reset on takeover.</li>
+</ul>
+<p>It is <strong>not yet live</strong>.</p>
+<details><summary>Part 4 mini quiz</summary>
+
+<ol>
+<li>What&#39;s the pass score? <strong>78 out of 100.</strong></li>
+<li>Which gates actually block regardless of the score? <strong>REGIME and EV.</strong> These are the only <code>rejectedAt</code> values the filter sets. <code>HARD_GATES</code> also lists BAYESIAN and KELLY, ready for the day the filter rejects at them.</li>
+<li>Why is a flat day labelled &quot;trending&quot;? <strong>Low entropy means the returns are concentrated, which a flat day also produces. Entropy doesn&#39;t measure direction.</strong></li>
+<li>Why <code>SET NX</code> rather than GET-then-SET? <strong>Atomicity: two concurrent callers can&#39;t both win.</strong></li>
+<li>Why give a claim back? <strong>So a fire that sent nothing doesn&#39;t block a legitimate alert later.</strong></details></li>
+</ol>
+<p><strong>Interviewer might ask:</strong> <em>&quot;How would you test this concurrency logic?&quot;</em> A strong answer: &quot;In layers. First, unit tests with an in-memory store that mirrors the Lua semantics. Then the real pipeline twice under <code>Promise.all</code>. Then the same claims against a real Redis in a throwaway container, with 50-way concurrency. Live behaviour is the last layer, and I label it separately.&quot;</p>
+</details><hr>
+<h2 id="part-5-data-and-the-fyers-limits">Part 5: Data and the Fyers limits</h2>
+<h3 id="5-1-the-limits-level-1">5.1 The limits · Level 1</h3>
+<p><strong>Mental model:</strong> a rate-limited third-party API in a mobile app. Go over the limit and you get 429s. Go over it repeatedly and the vendor blocks your key for the day.</p>
+<table>
+<thead>
+<tr>
+<th>Limit (Fyers Standard plan)</th>
+<th>Value</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Data REST: per second, per minute, per day</td>
+<td>5 / 50 / 5,000</td>
+<td>Fyers documentation, quoted in <code>config/fyers_quota.json</code></td>
+</tr>
+<tr>
+<td>Penalty</td>
+<td>more than 3 per-minute breaches in a day blocks the user for the rest of the day</td>
+<td>same</td>
+</tr>
+<tr>
+<td>WebSocket symbols</td>
+<td><strong>100</strong> per user</td>
+<td><code>DEFAULT_SUBSCRIPTION_CAP = 100</code> (<code>src/core/subscriptionPlan.ts</code>)</td>
+</tr>
+</tbody></table>
+<h3 id="5-2-the-quota-ledger-level-2">5.2 The quota ledger · Level 2</h3>
+<p><strong>Why:</strong> several processes call Fyers REST: the screener, the engine&#39;s VWAP seeder, anomaly promotions, and backtest fetches. Each one pacing itself is not enough, because Fyers counts <strong>all</strong> of them together.</p>
+<p><strong>How</strong> (<code>src/fyers/quota.ts</code> and <code>config/fyers_quota.json</code>):</p>
+<ul>
+<li><p><strong>One shared ledger</strong> per IST day in Redis: <code>fyers:quota:{day}</code>, holding <code>used:&lt;job&gt;</code>, <code>breaches</code>, <code>exhausted</code> and <code>cooldownUntil</code>.</p>
+</li>
+<li><p><strong>Pacing below the limit:</strong> 4/s and <strong>40/min</strong>.</p>
+</li>
+<li><p><strong>Per-job allocations:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Job</th>
+<th>Requests per day</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>screener</td>
+<td>2,200</td>
+</tr>
+<tr>
+<td>seeder</td>
+<td>300</td>
+</tr>
+<tr>
+<td>anomaly</td>
+<td>200</td>
+</tr>
+<tr>
+<td>backtest</td>
+<td>1,500</td>
+</tr>
+</tbody></table>
+<p>They add up to the 5,000 daily limit.</p>
+</li>
+<li><p><strong>Every request is counted <em>before</em> the call,</strong> because Fyers counts failed requests too.</p>
+</li>
+<li><p><strong>On a throttle</strong> (Cloudflare 1015, 429 or −360): everyone cools down for at least 65 seconds, and the breach is counted. At <strong>2 breaches</strong> (below Fyers&#39; 3) the job stops for the day.</p>
+</li>
+<li><p><strong>For the replay fetch</strong> (PR #20), stricter rules apply:</p>
+<ul>
+<li>the <strong>first</strong> throttle stops the run (<code>maxBreachesPerDay</code> 1, <code>maxRetries</code> 0);</li>
+<li>at most 1,000 requests per evening;</li>
+<li>it only starts between 15:45 and 16:15 IST;</li>
+<li>it needs the owner&#39;s OK that evening.</li>
+</ul>
+</li>
+</ul>
+<p><strong>The incident behind it [Proven, header of <code>quota.ts</code>]:</strong> on 20 Oct the first screener run paced at 4 requests per second, which is 240 per minute. Cloudflare throttled it (1015), and it then hit the daily cap: <strong>2,352 of 2,352 requests failed</strong>.</p>
+<h3 id="5-3-case-study-october-39-s-no-alerts-mystery-level-2">5.3 Case study: October&#39;s &quot;no alerts&quot; mystery · Level 2</h3>
+<ul>
+<li><strong>Situation.</strong> From 16 Oct, stock alerts stopped completely, while Nifty alerts kept coming.</li>
+<li><strong>What we found.</strong> The engine subscribed to <strong>2,189 symbols</strong> (log: <code>All 2189 symbols subscribed across 11 chunks</code>). The Standard plan streams only <strong>100 per user</strong>. Index ticks kept arriving; stock ticks for almost everything didn&#39;t. The engine never complained, because subscribing &quot;succeeded&quot;.</li>
+<li><strong>Proof.</strong> We deployed a <strong>26-symbol</strong> plan: watchlist 25 plus Nifty. The first heartbeat showed <code>active symbols seen 25/25</code> and <code>eq→router 2705</code>. That was the cap. <strong>[Proven, 21 Oct]</strong></li>
+<li><strong>Fix</strong> (<code>subscriptionPlan.ts</code>, PR #13):<ul>
+<li>plan the subscription (watchlist + bench + index + options) at boot;</li>
+<li><strong>refuse to start</strong> if it exceeds <code>SUBSCRIPTION_CAP</code>;</li>
+<li>log <code>🧾 Subscription plan: 26/100 symbols …</code>.</li>
+</ul>
+</li>
+<li><strong>Lesson.</strong> &quot;Success&quot; from an API call doesn&#39;t mean the data is flowing. Measure the outcome (ticks per symbol), not the request.</li>
+</ul>
+<details><summary>Part 5 mini quiz</summary>
+
+<ol>
+<li>Why does the ledger count a request before making it? <strong>Fyers counts failed requests too.</strong></li>
+<li>Why stop at 2 breaches, not 3? <strong>Stay below Fyers&#39; block threshold, with a margin.</strong></li>
+<li>How was the 100-symbol cap proven? <strong>A 26-symbol deploy immediately showed 25 of 25 stocks ticking.</strong></details></li>
+</ol>
+<hr>
+<h2 id="part-6-operations">Part 6: Operations</h2>
+<h3 id="6-1-every-cron-entry-and-why-at-that-time-level-1">6.1 Every cron entry and why at that time · Level 1</h3>
+<p>The full table is in §1.5. The principles behind it:</p>
+<ul>
+<li>the token comes <strong>before</strong> the boot;</li>
+<li>the boot comes <strong>15 minutes before the open</strong>;</li>
+<li>the stop comes <strong>at the close</strong>;</li>
+<li>the backup and the screener come <strong>after the close</strong>;</li>
+<li>the token purge comes <strong>last</strong>.</li>
+</ul>
+<p>The monitor runs from the <strong>host</strong> crontab, so it doesn&#39;t depend on the containers it watches. Every job checks <code>trading_day.sh</code> against <code>scheduler/nse_holidays.txt</code>.</p>
+<h3 id="6-2-backups-level-2">6.2 Backups · Level 2</h3>
+<ul>
+<li><p><strong>What:</strong> <code>pg_dump</code> writes a full, consistent snapshot of the Postgres database to a file. It&#39;s like exporting your app&#39;s local database so you can rebuild it on a fresh device.</p>
+</li>
+<li><p><strong>When:</strong></p>
+<ul>
+<li>every trading day at <strong>16:00</strong> (<code>scheduler/db_backup.sh</code>);</li>
+<li>and <strong>manually before every deploy</strong>, e.g. <code>~/backups/pre-guard-20261022T1342Z.dump</code>. Each manual dump is checked: it must list the 3 data tables (<code>paper_trades</code>, <code>signals</code>, <code>schema_migrations</code>).</li>
+</ul>
+</li>
+<li><p><strong>Honest gaps:</strong></p>
+<ul>
+<li>The script&#39;s S3 upload <strong>has never worked</strong> (<code>S3_BACKUP_BUCKET</code> path issue, recorded in project memory 18 Oct). Backups only live on the same host. <strong>[Unverified off-host copy: none]</strong></li>
+<li>A full <strong>restore has not been tested</strong> end to end. <strong>[Unverified]</strong></li>
+</ul>
+<p>In an interview, say exactly that. &quot;We back up daily, but I haven&#39;t proven the restore&quot; is a senior-sounding answer.</p>
+</li>
+</ul>
+<h3 id="6-3-staying-up-level-2">6.3 Staying up · Level 2</h3>
+<ul>
+<li><p><strong>Watchdog</strong> (<code>src/core/sessionGuard.ts</code>, <code>websocket.ts</code>):</p>
+<ul>
+<li>if no socket message arrives for <strong>30 s</strong> (checked every 10 s), the engine exits 1 and Docker restarts it;</li>
+<li>the next boot backs off <strong>30 s, 60, 120, 240, up to 300 s</strong>;</li>
+<li>at most <strong>6 restarts a day</strong>;</li>
+<li><strong>from 15:15 IST it stands down instead</strong> (exit 0).</li>
+</ul>
+</li>
+<li><p><strong>Session guard:</strong> the engine won&#39;t run on a weekend or an NSE holiday. That&#39;s the fix for the 20 Oct holiday crash loop: <strong>415 restarts</strong>.</p>
+</li>
+<li><p><strong>Day-aware boot cleanup</strong> (<code>src/core/bootCleanup.ts</code>, deployed 22 Oct):</p>
+<ul>
+<li>a <strong>new day</strong> clears yesterday&#39;s regime, bias, <code>pnl:daily</code> and VCP histories;</li>
+<li>a <strong>same-day restart</strong> keeps them and re-loads the regime returns into memory.</li>
+</ul>
+<p>The bug it fixed: the <strong>11:46 restart on 22 Oct</strong> wiped all of these mid-session.</p>
+</li>
+<li><p><strong>What a restart still loses:</strong> in-memory candles, detector state (for example the opening range), the first tick per symbol, and the EMA shadow&#39;s half-built candle.</p>
+</li>
+</ul>
+<h3 id="6-4-the-deploy-procedure-level-2">6.4 The deploy procedure · Level 2</h3><figure class="diagram"><svg viewBox="0 0 760 200" role="img" aria-label="Deploy and rollback flow"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ahead"/></marker></defs>
+<g class=""><rect x="5" y="20" width="110" height="50" rx="10"/><text x="60" y="41" text-anchor="middle" class="t">copy log</text><text x="60" y="59" text-anchor="middle" class="s">recreate deletes it</text></g><g class=""><rect x="130" y="20" width="110" height="50" rx="10"/><text x="185" y="41" text-anchor="middle" class="t">pg_dump</text><text x="185" y="59" text-anchor="middle" class="s">verify 3 tables</text></g><g class=""><rect x="255" y="20" width="120" height="50" rx="10"/><text x="315" y="41" text-anchor="middle" class="t">tag rollback</text><text x="315" y="59" text-anchor="middle" class="s">current image</text></g>
+<g class=""><rect x="390" y="20" width="110" height="50" rx="10"/><text x="445" y="41" text-anchor="middle" class="t">build engine</text><text x="445" y="59" text-anchor="middle" class="s">only quant_engine</text></g><g class=""><rect x="515" y="20" width="110" height="50" rx="10"/><text x="570" y="41" text-anchor="middle" class="t">create</text><text x="570" y="59" text-anchor="middle" class="s">left "Created"</text></g><g class="hot"><rect x="640" y="20" width="115" height="50" rx="10"/><text x="697.5" y="41" text-anchor="middle" class="t">09:00 cron</text><text x="697.5" y="59" text-anchor="middle" class="s">starts it</text></g>
+<line x1="115" y1="45" x2="128" y2="45" marker-end="url(#ah)"/><line x1="240" y1="45" x2="253" y2="45" marker-end="url(#ah)"/><line x1="375" y1="45" x2="388" y2="45" marker-end="url(#ah)"/><line x1="500" y1="45" x2="513" y2="45" marker-end="url(#ah)"/><line x1="625" y1="45" x2="638" y2="45" marker-end="url(#ah)"/>
+<g class="ext"><rect x="255" y="120" width="370" height="55" rx="10"/><text x="440" y="143.5" text-anchor="middle" class="t">Rollback: tag rollback image as latest</text><text x="440" y="161.5" text-anchor="middle" class="s">then create --force-recreate quant_engine</text></g><line x1="315" y1="72" x2="315" y2="118" marker-end="url(#ah)"/></svg><figcaption>What to notice: a deploy never starts the engine, and the log copy comes first because a recreate deletes it.</figcaption></figure>
+<pre><code> copy engine log ─▶ pg_dump (+verify) ─▶ tag current image rollback-&lt;sha&gt; ─▶ git pull
+      ─▶ build ONLY quant_engine ─▶ stop ─▶ create --force-recreate (left &quot;Created&quot;)
+      ─▶ verify the image has the change ─▶ the 09:00 cron starts it
+ rollback: docker tag …:rollback-&lt;sha&gt; …:latest &amp;&amp; docker compose create --force-recreate quant_engine
+</code></pre>
+<p><em>What to notice:</em></p>
+<ul>
+<li>The engine is <strong>never started</strong> by a deploy. The schedule starts it, so a deploy can&#39;t accidentally open a live socket after hours.</li>
+<li>The <strong>log copy comes first</strong>, because a recreate deletes the old container&#39;s log. That happened on 22 Oct and the day&#39;s log was lost.</li>
+</ul>
+<p><strong>Never restart during market hours (09:00–15:30).</strong> On 21 Oct a manual restart at 11:14 made the VWAP seeder refetch history, used up the day&#39;s breach budget, and destroyed the morning&#39;s logs. Since then it&#39;s a hard rule: during market hours the watchdog handles failures, and people only report.</p>
+<h3 id="6-5-monitoring-level-1">6.5 Monitoring · Level 1</h3>
+<ul>
+<li><strong>Read-only checks:</strong> host cron, every 15 minutes from 09:03 to 15:40 (<code>~/evidence/monitor/check.sh</code>). Each one checks:<ul>
+<li>container status and restarts;</li>
+<li>heartbeat (stocks seen, index ticks per 5 minutes);</li>
+<li>errors, the quota ledger, disk and memory;</li>
+<li>fires, alerts and the signals count;</li>
+<li>EMA shadow output;</li>
+<li>the 15:15 square-off and the 15:30 stop.</li>
+</ul>
+</li>
+<li><strong>Phone messages:</strong> a status line at 09:25, a summary at 15:45, and an immediate message on any FAIL (at most once per issue per hour). They go to the admin chat through the same bot path the engine uses. The token is never printed.</li>
+<li><strong>Thresholds:</strong><ul>
+<li>disk above <strong>80%</strong>;</li>
+<li>index ticks below 300 per 5 minutes for 10 minutes;</li>
+<li>fewer than 20 of 25 stocks seen;</li>
+<li>any 429, 1015 or −360 error.</li>
+</ul>
+</li>
+</ul>
+<details><summary>Part 6 mini quiz</summary>
+
+<ol>
+<li>Why does a deploy leave the engine in &quot;Created&quot;? <strong>So it starts on schedule, not after hours.</strong></li>
+<li>What does the watchdog do at 15:20 if the feed goes silent? <strong>It stands down (exit 0), because there&#39;s no time to restart before the close.</strong></li>
+<li>What&#39;s the honest status of restores? <strong>Never tested end to end.</strong></li>
+<li>Why copy the log before a deploy? <strong>A recreate deletes the old container&#39;s log.</strong></details></li>
+</ol>
+<p><strong>Interviewer might ask:</strong> <em>&quot;How do you deploy without downtime?&quot;</em> A strong answer: &quot;I don&#39;t need zero downtime, so I chose zero risk instead. Deploys only happen after the close: back up, tag a rollback image, rebuild only the engine and leave it stopped. The morning cron starts the new build, and a monitor checks the boot at 09:03 and 09:25. Rollback is one command.&quot;</p>
+<hr>
+<h2 id="part-7-testing-and-evidence">Part 7: Testing and evidence</h2>
+<h3 id="7-1-the-backtest-harness-level-2">7.1 The backtest harness · Level 2</h3>
+<ul>
+<li><strong>What:</strong> it replays historical <strong>1-minute candles</strong> through the <strong>real detector classes</strong> (<code>backtest/replay/engine.ts</code>).<ul>
+<li>Each candle becomes 4 synthetic ticks, in the order O→L→H→C or O→H→L→C (<code>backtest/replay/barToTicks.ts</code>). Volume is split evenly across the 4.</li>
+<li>The filter scores each fire at the instant it fired. Exits are simulated with the stop checked first and a 15:15 time exit (<code>backtest/sim/exit.ts</code>).</li>
+</ul>
+</li>
+<li><strong>Mental model:</strong> an end-to-end test that feeds recorded network responses into your real app code, instead of mocking the screens.</li>
+<li><strong>Honest limits:</strong><ul>
+<li>Synthetic ticks are not real ticks: there&#39;s no real order of trades inside a minute.</li>
+<li>Option detectors can&#39;t be replayed (no option-chain OI).</li>
+<li>Live VWAP includes pre-open ticks, but the backtest starts at 09:15 (finding from 22 Oct).</li>
+</ul>
+</li>
+</ul>
+<h3 id="7-2-biases-that-fool-you-level-2">7.2 Biases that fool you · Level 2</h3>
+<ul>
+<li><strong>Look-ahead bias:</strong> using information that wasn&#39;t available at decision time.<ul>
+<li><strong>Repo example:</strong> the replay fetch&#39;s pre-filter uses <strong>fetch-day quotes</strong> to choose which stocks get history. That&#39;s after the ranking date, so the report states it plainly (<code>backtest/replayReport.ts</code>).</li>
+<li>The liquid ranking itself uses only bars dated on or before 14 Oct, and a test proves it (<code>tests/fetchReplay.test.ts</code>, &quot;NO LOOK-AHEAD&quot;).</li>
+</ul>
+</li>
+<li><strong>Survivorship bias:</strong> testing only on stocks that still exist or still look good today.<ul>
+<li>Point-in-time universes are built in <code>backtest/universes.ts</code>.</li>
+<li>A static list such as <code>watchlist.json</code> is labelled as look-ahead.</li>
+</ul>
+</li>
+</ul>
+<h3 id="7-3-why-small-samples-mean-nothing-level-2">7.3 Why small samples mean nothing · Level 2</h3>
+<ul>
+<li><p><strong>Think first:</strong> you flip a coin 10 times and get 7 heads. Is the coin biased?</p>
+<details><summary>Answer</summary>Probably not. 7 or more heads in 10 fair flips happens about 17% of the time. Ten trades with a 70% win rate is the same story.</details></li>
+<li><p><strong>Day-block bootstrap</strong> (<code>backtest/compare.ts</code>):</p>
+<ul>
+<li>resample <strong>whole days</strong> with replacement, thousands of times;</li>
+<li>recompute the average R each time;</li>
+<li>read the 2.5% and 97.5% quantiles as a confidence interval.</li>
+</ul>
+</li>
+<li><p><strong>Why whole days?</strong> Trades on the same day are correlated (same market). Resampling single trades would overstate certainty.</p>
+</li>
+<li><p><strong>House rule:</strong> <code>n</code> on every row, and a &quot;small sample, not an edge&quot; note wherever n is small. The redesigned dashboard follows this too.</p>
+</li>
+</ul>
+<details class="deep"><summary><span class="h3like">7.4 The EMA study, start to finish · Level 3</span> <span class="badge">deep dive · open</span></summary>
+<ol>
+<li><p><strong>Pre-registration</strong> (<code>backtest/studies/nifty-ema-trend/PREREGISTRATION.md</code>, committed <strong>before any run</strong>):</p>
+<ul>
+<li>the variants V0, V1 and V2;</li>
+<li>the parameters (<code>config/nifty_ema_study.json</code>);</li>
+<li>the costs (2.3 points);</li>
+<li>the analysis plan.</li>
+</ul>
+<p>No tuning afterwards.</p>
+</li>
+<li><p><strong>Result</strong> (<code>SUMMARY.md</code>): every variant was positive on trend days and negative on choppy days, and <strong>about 0 net</strong>.</p>
+</li>
+<li><p><strong>Correction:</strong> the comparison baselines had been charged a different cost (5 bps per leg). A labelled correction re-costed everything on one assumption.</p>
+<ul>
+<li>With 2.3 points, Trend Pulse showed +0.078R.</li>
+<li>Under a <strong>futures cost model, everything is negative</strong>.</li>
+<li>Neither cost model is validated.</li>
+</ul>
+</li>
+<li><p><strong>What it taught:</strong> the honest answer to &quot;does it work?&quot; is &quot;not on this evidence&quot;. The value is in the method:</p>
+<ul>
+<li>pre-register;</li>
+<li>cost everything the same way;</li>
+<li>report the null.</li>
+</ul>
+</li>
+</ol>
+</details><details class="deep"><summary><span class="h3like">7.5 Parity tests · Level 3</span> <span class="badge">deep dive · open</span></summary>
+<p><strong>Why:</strong> if live code and backtest code drift apart, backtest results say nothing about live behaviour.</p>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th>Claim</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>tests/niftyEmaShadow.test.ts</code></td>
+<td>The live EMA shadow, fed tick by tick, produces the <strong>same trades</strong> as the study engine</td>
+<td>177 trades identical across 15 sessions. On the full local cache, 14,839 of 14,839 were identical once both sides had the same cleaned input.</td>
+</tr>
+<tr>
+<td><code>tests/legacyWorkerParity.test.ts</code></td>
+<td>The current alert worker behaves exactly like the old one for every scenario</td>
+<td>It runs both versions&#39; real code side by side and compares every Redis write, send and log line</td>
+</tr>
+<tr>
+<td><code>tests/alertPipeline.test.ts</code></td>
+<td>The signals hook is purely observational</td>
+<td>Behaviour is identical with no hook, a real hook, and a hook that throws</td>
+</tr>
+</tbody></table>
+<details><summary>Part 7 mini quiz</summary>
+
+<ol>
+<li>Why resample days, not trades? <strong>Same-day trades are correlated.</strong></li>
+<li>What makes pre-registration valuable? <strong>You can&#39;t tune to the data after seeing it.</strong></li>
+<li>What did the EMA study conclude? <strong>No edge after costs: about 0 net, and negative under the futures model.</strong></details></li>
+</ol>
+</details><hr>
+<h2 id="part-8-engineering-stories-situation-task-what-i-found-what-i-did-what-i-learned">Part 8: Engineering stories (situation → task → what I found → what I did → what I learned)</h2>
+<p>Each story is real, with sources in the repo, <code>CHANGELOG.md</code> and <code>AGENTS.md</code>.</p>
+<h3 id="8-1-the-holiday-crash-loop">8.1 The holiday crash loop</h3>
+<ul>
+<li><strong>Situation.</strong> 20 Oct was an NSE holiday. The engine started anyway and kept dying.</li>
+<li><strong>Found.</strong> The watchdog exited 1 when the socket stayed silent (there was no market), and Docker restarted it again: <strong>415 restarts</strong> (<code>src/core/sessionGuard.ts</code> header).</li>
+<li><strong>Did.</strong><ul>
+<li>A trading-day gate at boot, using the holiday file shared with the scheduler.</li>
+<li>A watchdog policy: at most 6 restarts a day, exponential backoff, and stand down (exit 0) after 15:15.</li>
+</ul>
+</li>
+<li><strong>Learned.</strong> A restart policy is code too: &quot;restart on failure&quot; plus &quot;the failure is permanent&quot; makes a loop.</li>
+</ul>
+<h3 id="8-2-the-100-symbol-blindness">8.2 The 100-symbol blindness</h3>
+<p>See §5.3. <strong>Learned:</strong> measure what arrives, not what you asked for.</p>
+<h3 id="8-3-the-signals-writer-stall">8.3 The signals-writer stall</h3>
+<ul>
+<li><strong>Situation.</strong> One fire was in the logs but missing from the <code>signals</code> table.</li>
+<li><strong>Found.</strong> Calling <code>flush()</code> with an empty queue left a <code>flushing</code> promise set forever, so later writes queued behind a promise that never resolved.</li>
+<li><strong>Did.</strong><ol>
+<li>Wrote <strong>failing tests first</strong>: three STALL tests failed with actual 1, expected 3.</li>
+<li>Fixed <code>flush()</code> to clear its promise when it finishes.</li>
+<li>Backfilled the lost rows from the logs, flagged <code>recovered_from_log</code>.</li>
+</ol>
+</li>
+<li><strong>Learned.</strong> Write the failing test before the fix. And mark recovered data as recovered.</li>
+</ul>
+<h3 id="8-4-the-sigkill-shutdown-exit-137">8.4 The SIGKILL shutdown (exit 137)</h3>
+<ul>
+<li><p><strong>Situation.</strong> Every 15:30 stop ended with exit code 137, which means killed.</p>
+</li>
+<li><p><strong>Found.</strong> <code>sh</code> was PID 1 and ignored SIGTERM. Docker waited 10 s and sent SIGKILL, so the shutdown handler (flush the signals, close the socket) never ran.</p>
+</li>
+<li><p><strong>Did.</strong> Proved it on a throwaway stub container:</p>
+<ul>
+<li>with <code>exec npx</code>, npm exited in 0.6 s without waiting for its child;</li>
+<li>with <code>exec node</code>, the handler ran and the stub exited 0 in 5.1 s.</li>
+</ul>
+<p>Then shipped <code>exec node --import tsx …</code> plus <code>stop_grace_period: 20s</code>.</p>
+</li>
+<li><p><strong>Learned.</strong> Containers have an init-process story. Prove the fix on a stub before touching production.</p>
+</li>
+</ul>
+<h3 id="8-5-the-mid-session-restart-that-wiped-state">8.5 The mid-session restart that wiped state</h3>
+<ul>
+<li><strong>Situation.</strong> 22 Oct, 11:46: the feed went silent for 34 s and the watchdog restarted the engine.</li>
+<li><strong>Found.</strong> The boot cleanup deleted the regime, the bias, <code>pnl:daily</code> and VCP histories on <strong>every</strong> boot. The dashboard&#39;s daily P&amp;L dropped to only the closes after 11:46. An independent review then found that <strong>the regime engine never read Redis back</strong>, so just keeping the key wouldn&#39;t have been enough.</li>
+<li><strong>Did.</strong> A day-aware cleanup (a <code>engine:boot_day</code> marker), plus re-loading the regime into memory. Reviewed independently and deployed after the close.</li>
+<li><strong>Learned.</strong> Ask &quot;what survives a restart?&quot; for every piece of state.</li>
+</ul>
+<h3 id="8-6-the-same-millisecond-position-id-collision">8.6 The same-millisecond position-id collision</h3>
+<ul>
+<li><strong>Situation.</strong> AEQUS, 11:06:28.169: two detectors fired in the same millisecond.</li>
+<li><strong>Found.</strong> The id was <code>trade_&lt;ms&gt;_&lt;symbol&gt;</code>, so both positions shared it. One overwrote the other in Redis. After the restart only one was counted, and the Postgres close matched <strong>both</strong> rows.</li>
+<li><strong>Did.</strong><ul>
+<li>Unique ids (detector slug + random suffix).</li>
+<li>Closes target the row&#39;s primary key.</li>
+<li>The review found a <strong>blocking ghost race</strong>: a second Redis write could resurrect an already-closed position. Fixed by writing to Postgres first, then making one Redis write.</li>
+</ul>
+</li>
+<li><strong>Learned.</strong> Ids built from timestamps aren&#39;t unique under concurrency. Independent review catches races that tests miss.</li>
+</ul>
+<h3 id="8-7-the-duplicate-alert-and-atomic-claims">8.7 The duplicate alert, and atomic claims</h3>
+<ul>
+<li><strong>Situation.</strong> AEQUS produced two Telegram alerts for one setup.</li>
+<li><strong>Did.</strong> Per-symbol-and-side atomic claims (§4.4). The reviews found a <strong>blocking</strong> bug: option positions never close in-session, so &quot;while open&quot; would have suppressed option alerts all day. The fix uses the 60-minute window for options.</li>
+<li><strong>Learned.</strong> Every assumption (&quot;positions close&quot;) needs checking against the real data paths.</li>
+</ul>
+<h3 id="8-8-optional-the-wrong-side-stop">8.8 (Optional) The wrong-side stop</h3>
+<p>An audit found <strong>0 of 1,584</strong> paper trades with a stop on the wrong side. A guard was still added: such a fire is recorded, flagged <code>invalid_geometry</code>, and never alerted.</p>
+<ul>
+<li><strong>Learned.</strong> Defend the invariants the data says hold today.</li>
+</ul>
+<hr>
+<h2 id="part-8b-security-and-secrets-level-2">Part 8b: Security and secrets · Level 2</h2>
+<p><strong>The token flow:</strong></p>
+<ol>
+<li>At 07:45 <code>quant_auth</code> starts and pings the owner on Telegram.</li>
+<li>The owner completes the Fyers login.</li>
+<li>The auth bridge writes the day&#39;s access token to the <code>token_store</code> volume.</li>
+<li>The engine reads it at boot.</li>
+<li>At <strong>17:15</strong> the token is purged.</li>
+</ol>
+<p>So a stolen token is only useful until the evening.</p>
+<p><strong>Secrets:</strong></p>
+<ul>
+<li>They live only in <code>.env</code> on the host: Telegram bot token, channel and admin ids, and the Fyers app credentials.</li>
+<li>They&#39;re never committed. <code>.env</code> was removed from the dashboard repo in commit <code>5097247</code>.</li>
+<li>The monitor reads the bot token at send time and passes it to curl on stdin, so it never appears in logs or the process list.</li>
+</ul>
+<p><strong>Honest gaps (say these in an interview before you&#39;re asked):</strong></p>
+<ul>
+<li><strong>The dashboard has no login.</strong> Anyone with the URL sees the paper P&amp;L. Authentication is <em>planned</em> with the mobile backend.</li>
+<li><strong>The API is read-only but unauthenticated</strong>, and allows any origin (CORS <code>*</code>).</li>
+<li><strong>The production dashboard calls the API over plain HTTP at the host&#39;s address.</strong> That puts the address in the JS bundle, and browsers block the calls as mixed content. Found 23 Oct. The fix is the owner&#39;s decision: remove <code>VITE_API_URL</code> from the Vercel environment, so the app uses the relative <code>/api</code> proxy.</li>
+</ul>
+<p><strong>Interviewer might ask:</strong> <em>&quot;What&#39;s your biggest security risk?&quot;</em> A strong answer: &quot;An unauthenticated read API and a dashboard without login. The data is paper-only and read-only, so the blast radius is information exposure, not money. But it&#39;s the first thing I&#39;d fix: put auth in front of the API, serve it only through the HTTPS proxy, and stop baking the backend address into the bundle.&quot;</p>
+<hr>
+<h2 id="part-8c-cost-level-1">Part 8c: Cost · Level 1</h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>What it is</th>
+<th>Cost</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>EC2</td>
+<td>one <strong>t3.small</strong> (2 vCPU, 1.9 GiB of memory, 16 GB disk) in <strong>ap-south-1</strong> (Mumbai), checked from instance metadata on 23 Oct</td>
+<td><strong>Unverified:</strong> check the AWS billing console. On-demand pricing for t3.small is published by AWS.</td>
+</tr>
+<tr>
+<td>AWS credits</td>
+<td>—</td>
+<td><strong>Unverified:</strong> owner to confirm</td>
+</tr>
+<tr>
+<td>Vercel</td>
+<td>dashboard hosting</td>
+<td><strong>Unverified:</strong> plan to be confirmed</td>
+</tr>
+<tr>
+<td>Fyers API</td>
+<td>market data</td>
+<td><strong>Unverified:</strong> depends on the account plan</td>
+</tr>
+<tr>
+<td>Telegram</td>
+<td>bot API</td>
+<td>free</td>
+</tr>
+</tbody></table>
+<p><strong>Why a t3.small is enough:</strong> on 22 Oct the engine used about <strong>110 MB of memory and about 4% CPU</strong> (monitor log). The bottleneck is Fyers&#39; limits, not compute.</p>
+<p><strong>Interviewer might ask:</strong> <em>&quot;How would costs scale?&quot;</em> A strong answer: &quot;Compute isn&#39;t the constraint. Data rights and API limits are. Scaling to more symbols means a higher Fyers plan or another data vendor before it means a bigger instance.&quot;</p>
+<hr>
+<h2 id="part-9-trade-offs-and-what-i-39-d-do-differently">Part 9: Trade-offs and what I&#39;d do differently</h2>
+<h3 id="9-1-the-honest-limits-level-2">9.1 The honest limits · Level 2</h3>
+<table>
+<thead>
+<tr>
+<th>Limit</th>
+<th>Why it&#39;s like this</th>
+<th>Cost</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Single host</strong></td>
+<td>Simple, cheap, and the load is tiny</td>
+<td>The host dies, the day is lost. No failover.</td>
+</tr>
+<tr>
+<td><strong>Redis as live state</strong></td>
+<td>Fast, has TTLs, and survives engine restarts</td>
+<td>Not durable like Postgres. The ledger and claims live there.</td>
+</tr>
+<tr>
+<td><strong>Stops derived from VWAP</strong> for equities</td>
+<td>One uniform rule</td>
+<td>They ignore the pattern&#39;s own level (AEQUS: ₹242.62 vs the detectors&#39; ₹242.14 and ₹241.76)</td>
+</tr>
+<tr>
+<td><strong>No per-minute history of our own</strong></td>
+<td>Only Fyers history exists</td>
+<td>Days like 21 Oct can&#39;t be replayed. A <em>planned</em> shadow candle recorder fixes it.</td>
+</tr>
+<tr>
+<td><strong>5 live detectors, 2 of them unbacktestable</strong></td>
+<td>Simplicity after the v2 rewrite</td>
+<td>Small sample per setup</td>
+</tr>
+<tr>
+<td><strong>No proven edge</strong></td>
+<td>Not enough data yet; the one study was null</td>
+<td>Every result needs a badge</td>
+</tr>
+<tr>
+<td><strong>Filter weights are assumptions</strong></td>
+<td>Nothing measured them</td>
+<td>The threshold is set by policy, not by evidence</td>
+</tr>
+</tbody></table>
+<details class="deep"><summary><span class="h3like">9.2 The upgrade path · Level 3</span> <span class="badge">deep dive · open</span></summary>
+<ol>
+<li><strong>The shadow candle recorder:</strong> save the engine&#39;s own 1-minute OHLCV plus index tick counts every day. <em>Planned.</em></li>
+<li><strong>Managed Postgres plus off-host backups,</strong> with a <strong>tested restore</strong>.</li>
+<li><strong>Split the engine:</strong> ingestion and alerting in separate processes, connected by a durable queue (for example Redis Streams).</li>
+<li><strong>Mobile backend with auth:</strong> an authenticated API, and the dashboard behind a login. <em>Planned.</em></li>
+<li><strong>Pre-registered studies</strong> for the regime gate and each detector, before changing any threshold.</li>
+<li><strong>More symbols:</strong> a higher Fyers plan or a data vendor, plus the evening screener actually running. It&#39;s <em>built, not running</em>.</li>
+</ol>
+</details><hr>
+<h2 id="part-10-interview-prep">Part 10: Interview prep</h2>
+<h3 id="10-1-question-bank-levels-1-3">10.1 Question bank · Levels 1–3</h3>
+<p>Each answer is short and honest. Follow-ups are in <em>italics</em>.</p>
+<p><strong>Architecture</strong></p>
+<ol>
+<li><em>What does the system do?</em> It finds NSE intraday setups, scores them, alerts gated ones to Telegram, and records paper trades. No orders. <em>How many detectors? 2 equity and 5 Nifty.</em></li>
+<li><em>Why containers?</em> Reproducible deploys and a one-command rollback through image tags. <em>What&#39;s PID 1 in your engine container? Node, through <code>exec</code>.</em></li>
+<li><em>Why one host?</em> The load is tiny and simplicity is worth more than availability at this stage. <em>What breaks if it dies? The whole day.</em></li>
+<li><em>How does the dashboard reach the API?</em> Through a Vercel rewrite of <code>/api/*</code>. <em>What&#39;s wrong with it today? Production bakes in a plain-HTTP API address, which browsers block as mixed content.</em></li>
+<li><em>What&#39;s the hottest code path?</em> The socket handler. It only parses and emits; all I/O happens behind an event emitter. <em>Why? Never block the event loop.</em></li>
+<li><em>Where does state live?</em> Live state in Redis, durable records in Postgres, the token in a Docker volume. <em>What survives a restart? Redis, and the day-aware cleanup keeps it.</em></li>
+</ol>
+<p><strong>Data and APIs</strong>
+7. <em>What limits shaped the design?</em> 100 WebSocket symbols, and REST at 5/s, 50/min, 5,000/day, with a blocked day after more than 3 breaches. <em>How do you stay under? A shared ledger pacing at 40/min.</em>
+8. <em>How did you find the 100-symbol problem?</em> Stock ticks stopped while index ticks continued. A 26-symbol deploy proved it. <em>Why didn&#39;t the API error? Subscribing &quot;succeeded&quot;.</em>
+9. <em>Why count a request before making it?</em> Fyers counts failed requests too.
+10. <em>What happens on a throttle?</em> Every caller cools down for at least 65 s, the breach is counted, and the job stops at 2.</p>
+<p><strong>Databases and caching</strong>
+11. <em>Why Redis and Postgres?</em> Per-tick state and atomic claims, versus a durable, queryable record.
+12. <em>What&#39;s <code>SET NX</code>?</em> Set only if absent: an atomic &quot;first wins&quot;. <em>Why not GET then SET? There&#39;s a race between the two.</em>
+13. <em>Why Lua scripts?</em> Compare-and-set and compare-and-delete must run atomically.
+14. <em>How are migrations handled?</em> Versioned SQL files, applied explicitly, recorded in <code>schema_migrations</code>. The API never mutates the schema at boot.
+15. <em>What&#39;s in <code>signals</code>?</em> One row per fire, with the full filter breakdown, so &quot;why no alert?&quot; is answerable.</p>
+<p><strong>Reliability and operations</strong>
+16. <em>What does the watchdog do?</em> It restarts on 30 s of feed silence, with backoff, at most 6 times a day, and stands down after 15:15.
+17. <em>What was the holiday crash loop?</em> 415 restarts on a market holiday. Fixed with a trading-day gate.
+18. <em>Why never restart during market hours?</em> A restart refetches history (using quota) and loses in-memory state. On 21 Oct one did both.
+19. <em>How do you deploy?</em> Back up, tag a rollback, rebuild only the engine, leave it stopped; the cron starts it.
+20. <em>How do you monitor?</em> Read-only host cron checks plus phone messages. <em>Why the host cron? It mustn&#39;t depend on the containers it watches.</em>
+21. <em>How are backups tested?</em> Each dump is listed and checked. A full restore is <strong>not tested yet</strong>.
+22. <em>What did the SIGKILL bug teach you?</em> The init process gets the signals. Prove the fix on a stub.</p>
+<p><strong>Testing</strong>
+23. <em>How do you test the alert pipeline?</em> Run the real pipeline with fakes, plus parity against the old worker&#39;s real code.
+24. <em>What&#39;s a parity test?</em> Two implementations must give identical outputs on the same inputs, such as live versus backtest.
+25. <em>How do you test concurrency?</em> <code>Promise.all</code> in tests, plus a real Redis in a throwaway container with 50-way races.
+26. <em>Failing test first?</em> Yes. For the writer stall, three tests failed before the fix.
+27. <em>What&#39;s not covered by tests?</em> Live-market behaviour. That&#39;s what the evidence badges are for.</p>
+<p><strong>Concurrency</strong>
+28. <em>Two detectors fire in the same millisecond: what happens?</em> Today, two alerts. With PR #22, one alert per symbol and side, enforced by an atomic claim.
+29. <em>How do you avoid a claim that never releases?</em> Give it back on every non-delivered path, with compare-and-delete.
+30. <em>What was the ghost race?</em> A second Redis write could resurrect a position a tick had already closed. Fixed by writing to Postgres first, then making one Redis write.</p>
+<p><strong>Security</strong>
+31. <em>Where are secrets?</em> Only in <code>.env</code> on the host. Never committed, never logged.
+32. <em>What&#39;s your biggest risk?</em> An unauthenticated read API and a dashboard with no login.
+33. <em>How long is a stolen token useful?</em> Until the 17:15 purge the same day.</p>
+<p><strong>&quot;Why not X?&quot;</strong>
+34. <em>Why not Python?</em> One language I know well. The latency is network-bound.
+35. <em>Why not Kafka?</em> One producer, one host, small volume; Redis covers it.
+36. <em>Why not Kubernetes?</em> One host and a few services. Compose is enough.
+37. <em>Why not WebSockets for the dashboard?</em> The data flows one way. SSE is simpler.
+38. <em>Why not Jest?</em> <code>node:test</code> through <code>tsx</code> needs no extra framework.</p>
+<p><strong>The hard ones</strong>
+39. <em>Is it profitable?</em> &quot;No evidence that it is. The samples are tiny, and the one pre-registered study showed no edge after costs. The system is built to measure that honestly.&quot;
+40. <em>How do you know the backtest isn&#39;t fooling you?</em> &quot;I don&#39;t fully. That&#39;s why there&#39;s pre-registration, identical cost assumptions, day-block bootstrap confidence intervals, look-ahead tests, live-versus-backtest parity tests, and a stated list of what can&#39;t be replayed.&quot;
+41. <em>How much of this did AI write?</em> &quot;A lot of the code was written with an AI pair programmer. My job was to set the rules, review every change, insist on failing tests and independent reviews, and run the system in production. I can explain every design decision here, and several of the best fixes came from questioning code the AI wrote.&quot;
+42. <em>What would you do differently?</em> Record our own minute data from day one, run auth from day one, and pre-register before building detectors.</p>
+<h3 id="10-2-weak-versus-strong-answers-level-2">10.2 Weak versus strong answers · Level 2</h3>
+<table>
+<thead>
+<tr>
+<th>Question</th>
+<th>Weak</th>
+<th>Strong</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Is it profitable?</td>
+<td>&quot;Yes, about 65% win rate.&quot; (That&#39;s a design comment, not a measurement.)</td>
+<td>&quot;No evidence yet. Here&#39;s how I&#39;d find out.&quot;</td>
+</tr>
+<tr>
+<td>Why Redis?</td>
+<td>&quot;It&#39;s fast.&quot;</td>
+<td>&quot;Atomic claims, TTL cooldowns, and state that survives an engine restart. Postgres is the durable record.&quot;</td>
+</tr>
+<tr>
+<td>How do you deploy?</td>
+<td>&quot;Docker compose up.&quot;</td>
+<td>&quot;After the close: back up, tag a rollback, rebuild only the engine, leave it stopped, then monitor the next boot.&quot;</td>
+</tr>
+<tr>
+<td>What went wrong?</td>
+<td>&quot;Nothing major.&quot;</td>
+<td>&quot;The 100-symbol blindness. Here&#39;s how I found it, proved it and fixed it.&quot;</td>
+</tr>
+<tr>
+<td>Did you test it?</td>
+<td>&quot;Yes, there are tests.&quot;</td>
+<td>&quot;Unit, parity and real-Redis tests, and I label what&#39;s only tested on paper.&quot;</td>
+</tr>
+<tr>
+<td>AI-written?</td>
+<td>&quot;No, I wrote it all.&quot;</td>
+<td>&quot;AI pair-programmed, and I owned review, tests, operations and every decision.&quot;</td>
+</tr>
+</tbody></table>
+<h3 id="10-3-glossary-level-1">10.3 Glossary · Level 1</h3>
+<ul>
+<li><strong>ADR:</strong> average daily range.</li>
+<li><strong>Alert claim:</strong> the Redis key that lets one fire per symbol and side alert.</li>
+<li><strong>Bootstrap:</strong> estimating uncertainty by resampling the data.</li>
+<li><strong>Candle:</strong> the open, high, low and close of a time bucket.</li>
+<li><strong>CE / PE:</strong> call and put options. CE alerts are LONG, PE alerts are SHORT.</li>
+<li><strong>Cooldown:</strong> a TTL key that blocks re-alerting for a while.</li>
+<li><strong>Day-aware cleanup:</strong> the boot cleanup that keeps today&#39;s state on a same-day restart.</li>
+<li><strong>EMA:</strong> exponential moving average.</li>
+<li><strong>Entropy (H):</strong> how spread out the returns are, used as the regime label.</li>
+<li><strong>EV:</strong> expected value after costs.</li>
+<li><strong>Expectancy:</strong> average R per trade.</li>
+<li><strong>Gated:</strong> passed the filter, so alerted.</li>
+<li><strong>Kelly (half):</strong> a position-sizing fraction from win rate and payoff, halved for safety.</li>
+<li><strong>Ledger:</strong> the shared Fyers request counter.</li>
+<li><strong>Look-ahead bias:</strong> using future information in a past decision.</li>
+<li><strong>Paper trade:</strong> a simulated position.</li>
+<li><strong>Parity test:</strong> proof that two implementations agree.</li>
+<li><strong>PID 1:</strong> the first process in a container; it receives the signals.</li>
+<li><strong>Pre-registration:</strong> fixing the test plan before seeing the results.</li>
+<li><strong>R-multiple:</strong> P&amp;L in units of the initial risk.</li>
+<li><strong>Regime:</strong> trending, transition or ranging, from entropy.</li>
+<li><strong>Session TWAP:</strong> the time-weighted average used as the index&#39;s &quot;VWAP&quot;.</li>
+<li><strong>SET NX:</strong> set if not exists.</li>
+<li><strong>Shadow mode:</strong> measure only, never alert.</li>
+<li><strong>SIGTERM / SIGKILL:</strong> a polite stop versus a forced kill (exit 137).</li>
+<li><strong>Survivorship bias:</strong> testing only on survivors.</li>
+<li><strong>Tick:</strong> one price update.</li>
+<li><strong>TTL:</strong> a key&#39;s time to live.</li>
+<li><strong>VWAP:</strong> volume-weighted average price.</li>
+<li><strong>Watchdog:</strong> the restart-on-silence guard.</li>
+</ul>
+<h3 id="10-4-one-page-cheat-sheet-level-1">10.4 One-page cheat sheet · Level 1</h3>
+<ul>
+<li><strong>What:</strong> NSE intraday setup finder. Paper trades plus Telegram alerts. <strong>No orders, no proven edge.</strong></li>
+<li><strong>Stack:</strong> Node and TypeScript on one EC2 t3.small with Docker Compose. Redis for live state, Postgres for the record, Fastify API, React on Vercel, Fyers data, Telegram.</li>
+<li><strong>Flow:</strong> tick → candle → 2 equity and 5 Nifty detectors → filter (score ≥ 78, REGIME and EV hard gates) → alert policy (gated only, per detector per day, cap 20) → Telegram, plus a paper trade.</li>
+<li><strong>Day:</strong> 07:45 token, 09:00 boot, 09:15–15:30 session, 15:15 square-off, 15:30 stop, 16:00 backup, 17:15 purge.</li>
+<li><strong>Constraints:</strong> 100 WebSocket symbols; REST at 5/s, 50/min, 5,000/day; more than 3 breaches blocks the day.</li>
+<li><strong>Best stories:</strong> the 100-symbol blindness, the SIGKILL fix, the writer stall (failing test first), the day-aware cleanup, atomic claims plus the ghost race.</li>
+<li><strong>Evidence:</strong> pre-registration, day-block bootstrap, parity tests, real-Redis tests, badges.</li>
+<li><strong>Honest gaps:</strong> no restore test, no off-host backup, no auth, no proven edge, VWAP-derived stops.</li>
+</ul>
+<h3 id="10-5-the-7-day-study-plan-level-1">10.5 The 7-day study plan · Level 1</h3>
+<table>
+<thead>
+<tr>
+<th>Day</th>
+<th>Read</th>
+<th>Do</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>Parts 0 and 1</td>
+<td>Say both pitches out loud, and draw the architecture from memory</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Part 2</td>
+<td>For each technology, explain why it&#39;s used and what breaks without it</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Part 3</td>
+<td>Work out R for AEQUS and JSLL by hand, and explain each detector in one sentence</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Part 4</td>
+<td>Explain the entropy finding and atomic claims on a whiteboard</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Parts 5 and 6</td>
+<td>Walk through the day timeline and the deploy and rollback flow from memory</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Parts 7, 8, 8b and 8c</td>
+<td>Tell three stories in the situation, found, did, learned format, in under 2 minutes each</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Part 9 and Part 10</td>
+<td>Run the 42-question bank aloud, then re-read the cheat sheet</td>
+</tr>
+</tbody></table>
+</article></main></div>
+<script>
+(function(){var doc=document.getElementById('doc');var q=document.getElementById('q');
+// group into h2 sections for search
+var secs=[],cur=null;Array.prototype.slice.call(doc.childNodes).forEach(function(n){if(n.nodeName==='H2'){cur=document.createElement('section');doc.insertBefore(cur,n);secs.push(cur)}if(cur&&n!==cur)cur.appendChild(n)});
+q.addEventListener('input',function(){var v=q.value.trim().toLowerCase();secs.forEach(function(s){var hit=!v||s.textContent.toLowerCase().indexOf(v)>=0;s.classList.toggle('hidden',!hit);if(v&&hit)s.querySelectorAll('details').forEach(function(d){if(d.textContent.toLowerCase().indexOf(v)>=0)d.open=true})})});
+var t=document.getElementById('t');t.addEventListener('click',function(){var r=document.documentElement;var dark=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;r.dataset.theme=dark?'light':'dark';try{localStorage.setItem('sg-theme',r.dataset.theme)}catch(e){}});
+try{var s=localStorage.getItem('sg-theme');if(s)document.documentElement.dataset.theme=s}catch(e){}
+window.addEventListener('beforeprint',function(){document.querySelectorAll('details').forEach(function(d){d.open=true})});})();
+</script></body></html>
