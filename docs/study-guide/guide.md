@@ -289,3 +289,116 @@ Both are real rows in the `paper_trades` and `signals` tables (§1.4).
 2. Which crontab is in UTC? **The host's.**
 3. When is the database backed up? **16:00 IST.**
 </details>
+
+---
+
+## Part 2: The tech stack, one technology at a time
+
+Each technology gets four answers: **what it is**, **why this project uses it**, **the alternatives and why not**, and **what would break without it**. Versions come from `package.json`, `Dockerfile` and `docker-compose.yml` on `v2`.
+
+### 2.1 TypeScript on Node.js · Level 1
+- **What it is:** JavaScript on the server, with types. `Dockerfile` uses `FROM node:22-slim`, and TypeScript runs directly through `tsx`. The container command is `exec node --import tsx src/ingestion/websocket.ts`.
+- **Why here:**
+  - It's the language you already know.
+  - Node's single-threaded event loop suits a stream of small I/O-bound messages (ticks, Redis calls, HTTP).
+  - Types catch shape mistakes. `npm run typecheck` must stay at 0 errors.
+- **Alternatives:**
+  - Python has better quant libraries, but needs a second language and its own async story.
+  - Go is faster, but the latency here is network-bound, not CPU-bound.
+- **What breaks without it:** nothing magical; you'd rewrite in another language. The real rule that matters is **never block the event loop**. The socket handler only parses and emits. All I/O happens behind `tickEmitter` (`src/ingestion/websocket.ts`).
+- **Analogy:** the JS thread in React Native. A long synchronous loop freezes the UI; here it would freeze tick handling.
+
+### 2.2 The Fyers API and WebSocket · Level 2
+- **What it is:** an Indian broker's market-data API. There's REST for history and quotes, and a WebSocket that pushes ticks. Client: `fyers-api-v3` (^1.7.0).
+- **Why here:** it's the broker account the owner has, and it has free real-time NSE data.
+- **Limits that shaped everything** [Proven, Fyers documentation as quoted in `config/fyers_quota.json`]:
+  - REST: 5 per second, 50 per minute, 5,000 per day. More than 3 per-minute breaches block the day.
+  - WebSocket: 100 symbols (Standard plan).
+- **Alternatives:** a paid feed such as Kite Connect, or scraping (unreliable and against the terms).
+- **What breaks without it:** no data at all. The token expires daily, so `quant_auth` runs every morning.
+
+### 2.3 Redis · Level 2
+- **What it is:** an in-memory key-value store (`redis:7-alpine`, client `redis` ^5.12.1).
+- **Why here:** fast shared state the engine reads and writes on every tick:
+  - VWAP (`vwap:{symbol}:{date}`);
+  - cooldowns;
+  - open positions (`trades:open`);
+  - alert dedup (`alert:sent:*`);
+  - the Fyers quota ledger (`fyers:quota:{day}`).
+
+  It survives an engine restart, because Redis runs in its own container.
+- **Key tools:**
+  - **TTLs:** keys that expire on their own, like cooldowns.
+  - **`SET NX`:** set only if the key doesn't exist. This is an atomic "first one wins".
+  - **Lua scripts:** several commands run atomically.
+- **Alternatives:** in-process memory (lost on restart), or Postgres for everything (slower per tick, and no TTLs).
+- **What breaks without it:** every restart would forget VWAP, cooldowns and open positions. The full key map is in `AGENTS.md` §7.
+- **Analogy:** a global state store that lives outside the app, so it survives an app restart.
+
+### 2.4 PostgreSQL · Level 2
+- **What it is:** a relational database (`postgres:15-alpine`, client `pg` ^8.23.0).
+- **Why here:** the durable record. `paper_trades` holds every position. `signals` holds one row per fire, with the full filter breakdown. Versioned migrations live in `db/migrations/`, and the applied ones are listed in `schema_migrations`.
+- **Alternatives:** SQLite (fine for one host, weaker for concurrent writers), or Redis alone (not a durable record).
+- **What breaks without it:** no history, no evidence and no dashboard history. The daily `pg_dump` (§6.2) protects it.
+
+### 2.5 Docker and Docker Compose · Level 2
+- **What it is:** each service runs in a container built from an image. Compose describes them all in `docker-compose.yml`.
+- **Why here:** one command brings the system up the same way every time. Restart policies:
+  - `always` for Redis, Postgres, the API and the scheduler;
+  - `on-failure` for the engine, so a clean stop stays stopped while a crash restarts.
+- **The two things to really understand:**
+  - **PID 1 and signals.** The engine's command ends with `exec node ...`, so Node is PID 1 and receives the SIGTERM from `docker stop`. Before that, `sh` was PID 1, ignored SIGTERM, and every stop ended in a SIGKILL with exit code 137 (Part 8).
+  - **`stop_grace_period: 20s`.** This gives the shutdown handler time to flush.
+- **Analogy:** a release build. The same artifact runs everywhere, and a rollback is "tag the old image, recreate".
+
+### 2.6 AWS EC2 · Level 1
+- **What it is:** one rented Linux virtual machine (Ubuntu, a 15 GB disk per `df -h`).
+- **Why here:** always on, cheap, simple.
+- **Alternatives:** managed containers (ECS or Fargate) or serverless. Those are more moving parts for a single long-lived WebSocket.
+- **What breaks without it:** the trading day. There's no second host (Part 9).
+
+### 2.7 Cron, the scheduler container and the host crontab · Level 2
+- **What it is:** cron runs commands at fixed times. There are **two** crontabs:
+  - one **inside `quant_scheduler`** (timezone IST) for the daily lifecycle;
+  - the **host's own crontab** (timezone **UTC**) for the read-only monitor and the log export.
+- **Why two:** the monitor must not depend on any container it is watching.
+- **Trading days only:** both use the same `trading_day.sh` and holiday file, `scheduler/nse_holidays.txt`.
+- **Common mistake:** forgetting the timezone. `5 10 * * 1-5` on the host means 15:35 IST.
+
+### 2.8 Telegram through Telegraf · Level 1
+- **What it is:** a bot API. Client `telegraf` ^4.16.3.
+- **Why here:** instant, free alerts on your phone.
+- **Two destinations:** the **channel**, for trade alerts that passed the filter, and the **admin chat**, for operations notices like watchdog trips and monitor FAILs.
+- **What breaks without it:** you'd only see alerts on the dashboard.
+
+### 2.9 Fastify (the API) and Server-Sent Events · Level 2
+- **What it is:** a small, fast Node web framework (`fastify` ^5.8.2).
+- **Why here:** read-only endpoints for the dashboard: `/api/today`, `/api/trades/history`, `/api/trades/heatmap`, `/api/live-pnl`, and the SSE stream `/api/events`. The engine publishes on Redis pub/sub `sse:events`, and the API relays it.
+- **Alternatives:** Express (slower and older), or WebSockets (two-way; this data only flows one way).
+- **What breaks without it:** the dashboard. Trading continues.
+
+### 2.10 The dashboard: React, Vite, Tailwind and Recharts on Vercel · Level 1
+- **What it is:** a single-page app (React 19, Vite 8, Tailwind 4, Recharts 3) in a separate repo, hosted on Vercel.
+- **The trick:** `vercel.json` rewrites `/api/*` to the host's API. The browser only ever talks to Vercel.
+- **Honest state:** one `App.tsx` of 1,124 lines, and **no login**. It has known defects, listed in `docs/dashboard-redesign/AUDIT.md`.
+
+### 2.11 Testing: node:test through tsx, the typecheck and ESLint · Level 1-2
+- **What it is:** Node's built-in test runner (the `test` script is `tsx --test "tests/**/*.test.ts"`). **Not** Jest or vitest.
+- **Scale:** 321 tests pass on `v2` at `2fcbe9e` (`npm test`). There's a strict typecheck (`tsc --noEmit`). ESLint has 20 errors in untouched files that existed before this work.
+- **What the tests prove:**
+  - parity between the live pipeline and the old worker;
+  - parity between the live shadow detector and the backtest;
+  - policy rules;
+  - the quota rules.
+- **What they don't prove:** behaviour against a live market. That's what the badges are for.
+
+<details><summary>Part 2 mini quiz</summary>
+
+1. Why does the engine's command use `exec node`? **So Node is PID 1 and receives SIGTERM, which gives a clean shutdown instead of exit 137.**
+2. Why is Redis a separate container? **So live state survives an engine restart.**
+3. Which crontab runs on UTC? **The host's.**
+4. Which test runner? **`node:test` through `tsx`.**
+5. What does the API write? **Nothing. It's read-only.**
+</details>
+
+**Interviewer might ask:** *"Why not just use Postgres for state?"* A strong answer: "Per-tick reads and writes, TTL-based cooldowns and atomic first-wins claims are what Redis is built for. Postgres is the durable record. I keep the two jobs separate, and the boot cleanup is day-aware, so a mid-session restart doesn't wipe the Redis state."
