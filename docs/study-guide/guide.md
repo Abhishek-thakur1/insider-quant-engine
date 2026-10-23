@@ -924,3 +924,156 @@ So a stolen token is only useful until the evening.
 **Why a t3.small is enough:** on 22 Oct the engine used about **110 MB of memory and about 4% CPU** (monitor log). The bottleneck is Fyers' limits, not compute.
 
 **Interviewer might ask:** *"How would costs scale?"* A strong answer: "Compute isn't the constraint. Data rights and API limits are. Scaling to more symbols means a higher Fyers plan or another data vendor before it means a bigger instance."
+
+---
+
+## Part 9: Trade-offs and what I'd do differently
+
+### 9.1 The honest limits · Level 2
+| Limit | Why it's like this | Cost |
+|---|---|---|
+| **Single host** | Simple, cheap, and the load is tiny | The host dies, the day is lost. No failover. |
+| **Redis as live state** | Fast, has TTLs, and survives engine restarts | Not durable like Postgres. The ledger and claims live there. |
+| **Stops derived from VWAP** for equities | One uniform rule | They ignore the pattern's own level (AEQUS: ₹242.62 vs the detectors' ₹242.14 and ₹241.76) |
+| **No per-minute history of our own** | Only Fyers history exists | Days like 21 Oct can't be replayed. A *planned* shadow candle recorder fixes it. |
+| **5 live detectors, 2 of them unbacktestable** | Simplicity after the v2 rewrite | Small sample per setup |
+| **No proven edge** | Not enough data yet; the one study was null | Every result needs a badge |
+| **Filter weights are assumptions** | Nothing measured them | The threshold is set by policy, not by evidence |
+
+### 9.2 The upgrade path · Level 3
+1. **The shadow candle recorder:** save the engine's own 1-minute OHLCV plus index tick counts every day. *Planned.*
+2. **Managed Postgres plus off-host backups,** with a **tested restore**.
+3. **Split the engine:** ingestion and alerting in separate processes, connected by a durable queue (for example Redis Streams).
+4. **Mobile backend with auth:** an authenticated API, and the dashboard behind a login. *Planned.*
+5. **Pre-registered studies** for the regime gate and each detector, before changing any threshold.
+6. **More symbols:** a higher Fyers plan or a data vendor, plus the evening screener actually running. It's *built, not running*.
+
+---
+
+## Part 10: Interview prep
+
+### 10.1 Question bank · Levels 1–3
+Each answer is short and honest. Follow-ups are in *italics*.
+
+**Architecture**
+1. *What does the system do?* It finds NSE intraday setups, scores them, alerts gated ones to Telegram, and records paper trades. No orders. *How many detectors? 2 equity and 5 Nifty.*
+2. *Why containers?* Reproducible deploys and a one-command rollback through image tags. *What's PID 1 in your engine container? Node, through `exec`.*
+3. *Why one host?* The load is tiny and simplicity is worth more than availability at this stage. *What breaks if it dies? The whole day.*
+4. *How does the dashboard reach the API?* Through a Vercel rewrite of `/api/*`. *What's wrong with it today? Production bakes in a plain-HTTP API address, which browsers block as mixed content.*
+5. *What's the hottest code path?* The socket handler. It only parses and emits; all I/O happens behind an event emitter. *Why? Never block the event loop.*
+6. *Where does state live?* Live state in Redis, durable records in Postgres, the token in a Docker volume. *What survives a restart? Redis, and the day-aware cleanup keeps it.*
+
+**Data and APIs**
+7. *What limits shaped the design?* 100 WebSocket symbols, and REST at 5/s, 50/min, 5,000/day, with a blocked day after more than 3 breaches. *How do you stay under? A shared ledger pacing at 40/min.*
+8. *How did you find the 100-symbol problem?* Stock ticks stopped while index ticks continued. A 26-symbol deploy proved it. *Why didn't the API error? Subscribing "succeeded".*
+9. *Why count a request before making it?* Fyers counts failed requests too.
+10. *What happens on a throttle?* Every caller cools down for at least 65 s, the breach is counted, and the job stops at 2.
+
+**Databases and caching**
+11. *Why Redis and Postgres?* Per-tick state and atomic claims, versus a durable, queryable record.
+12. *What's `SET NX`?* Set only if absent: an atomic "first wins". *Why not GET then SET? There's a race between the two.*
+13. *Why Lua scripts?* Compare-and-set and compare-and-delete must run atomically.
+14. *How are migrations handled?* Versioned SQL files, applied explicitly, recorded in `schema_migrations`. The API never mutates the schema at boot.
+15. *What's in `signals`?* One row per fire, with the full filter breakdown, so "why no alert?" is answerable.
+
+**Reliability and operations**
+16. *What does the watchdog do?* It restarts on 30 s of feed silence, with backoff, at most 6 times a day, and stands down after 15:15.
+17. *What was the holiday crash loop?* 415 restarts on a market holiday. Fixed with a trading-day gate.
+18. *Why never restart during market hours?* A restart refetches history (using quota) and loses in-memory state. On 21 Oct one did both.
+19. *How do you deploy?* Back up, tag a rollback, rebuild only the engine, leave it stopped; the cron starts it.
+20. *How do you monitor?* Read-only host cron checks plus phone messages. *Why the host cron? It mustn't depend on the containers it watches.*
+21. *How are backups tested?* Each dump is listed and checked. A full restore is **not tested yet**.
+22. *What did the SIGKILL bug teach you?* The init process gets the signals. Prove the fix on a stub.
+
+**Testing**
+23. *How do you test the alert pipeline?* Run the real pipeline with fakes, plus parity against the old worker's real code.
+24. *What's a parity test?* Two implementations must give identical outputs on the same inputs, such as live versus backtest.
+25. *How do you test concurrency?* `Promise.all` in tests, plus a real Redis in a throwaway container with 50-way races.
+26. *Failing test first?* Yes. For the writer stall, three tests failed before the fix.
+27. *What's not covered by tests?* Live-market behaviour. That's what the evidence badges are for.
+
+**Concurrency**
+28. *Two detectors fire in the same millisecond: what happens?* Today, two alerts. With PR #22, one alert per symbol and side, enforced by an atomic claim.
+29. *How do you avoid a claim that never releases?* Give it back on every non-delivered path, with compare-and-delete.
+30. *What was the ghost race?* A second Redis write could resurrect a position a tick had already closed. Fixed by writing to Postgres first, then making one Redis write.
+
+**Security**
+31. *Where are secrets?* Only in `.env` on the host. Never committed, never logged.
+32. *What's your biggest risk?* An unauthenticated read API and a dashboard with no login.
+33. *How long is a stolen token useful?* Until the 17:15 purge the same day.
+
+**"Why not X?"**
+34. *Why not Python?* One language I know well. The latency is network-bound.
+35. *Why not Kafka?* One producer, one host, small volume; Redis covers it.
+36. *Why not Kubernetes?* One host and a few services. Compose is enough.
+37. *Why not WebSockets for the dashboard?* The data flows one way. SSE is simpler.
+38. *Why not Jest?* `node:test` through `tsx` needs no extra framework.
+
+**The hard ones**
+39. *Is it profitable?* "No evidence that it is. The samples are tiny, and the one pre-registered study showed no edge after costs. The system is built to measure that honestly."
+40. *How do you know the backtest isn't fooling you?* "I don't fully. That's why there's pre-registration, identical cost assumptions, day-block bootstrap confidence intervals, look-ahead tests, live-versus-backtest parity tests, and a stated list of what can't be replayed."
+41. *How much of this did AI write?* "A lot of the code was written with an AI pair programmer. My job was to set the rules, review every change, insist on failing tests and independent reviews, and run the system in production. I can explain every design decision here, and several of the best fixes came from questioning code the AI wrote."
+42. *What would you do differently?* Record our own minute data from day one, run auth from day one, and pre-register before building detectors.
+
+### 10.2 Weak versus strong answers · Level 2
+| Question | Weak | Strong |
+|---|---|---|
+| Is it profitable? | "Yes, about 65% win rate." (That's a design comment, not a measurement.) | "No evidence yet. Here's how I'd find out." |
+| Why Redis? | "It's fast." | "Atomic claims, TTL cooldowns, and state that survives an engine restart. Postgres is the durable record." |
+| How do you deploy? | "Docker compose up." | "After the close: back up, tag a rollback, rebuild only the engine, leave it stopped, then monitor the next boot." |
+| What went wrong? | "Nothing major." | "The 100-symbol blindness. Here's how I found it, proved it and fixed it." |
+| Did you test it? | "Yes, there are tests." | "Unit, parity and real-Redis tests, and I label what's only tested on paper." |
+| AI-written? | "No, I wrote it all." | "AI pair-programmed, and I owned review, tests, operations and every decision." |
+
+### 10.3 Glossary · Level 1
+- **ADR:** average daily range.
+- **Alert claim:** the Redis key that lets one fire per symbol and side alert.
+- **Bootstrap:** estimating uncertainty by resampling the data.
+- **Candle:** the open, high, low and close of a time bucket.
+- **CE / PE:** call and put options. CE alerts are LONG, PE alerts are SHORT.
+- **Cooldown:** a TTL key that blocks re-alerting for a while.
+- **Day-aware cleanup:** the boot cleanup that keeps today's state on a same-day restart.
+- **EMA:** exponential moving average.
+- **Entropy (H):** how spread out the returns are, used as the regime label.
+- **EV:** expected value after costs.
+- **Expectancy:** average R per trade.
+- **Gated:** passed the filter, so alerted.
+- **Kelly (half):** a position-sizing fraction from win rate and payoff, halved for safety.
+- **Ledger:** the shared Fyers request counter.
+- **Look-ahead bias:** using future information in a past decision.
+- **Paper trade:** a simulated position.
+- **Parity test:** proof that two implementations agree.
+- **PID 1:** the first process in a container; it receives the signals.
+- **Pre-registration:** fixing the test plan before seeing the results.
+- **R-multiple:** P&L in units of the initial risk.
+- **Regime:** trending, transition or ranging, from entropy.
+- **Session TWAP:** the time-weighted average used as the index's "VWAP".
+- **SET NX:** set if not exists.
+- **Shadow mode:** measure only, never alert.
+- **SIGTERM / SIGKILL:** a polite stop versus a forced kill (exit 137).
+- **Survivorship bias:** testing only on survivors.
+- **Tick:** one price update.
+- **TTL:** a key's time to live.
+- **VWAP:** volume-weighted average price.
+- **Watchdog:** the restart-on-silence guard.
+
+### 10.4 One-page cheat sheet · Level 1
+- **What:** NSE intraday setup finder. Paper trades plus Telegram alerts. **No orders, no proven edge.**
+- **Stack:** Node and TypeScript on one EC2 t3.small with Docker Compose. Redis for live state, Postgres for the record, Fastify API, React on Vercel, Fyers data, Telegram.
+- **Flow:** tick → candle → 2 equity and 5 Nifty detectors → filter (score ≥ 78, REGIME and EV hard gates) → alert policy (gated only, per detector per day, cap 20) → Telegram, plus a paper trade.
+- **Day:** 07:45 token, 09:00 boot, 09:15–15:30 session, 15:15 square-off, 15:30 stop, 16:00 backup, 17:15 purge.
+- **Constraints:** 100 WebSocket symbols; REST at 5/s, 50/min, 5,000/day; more than 3 breaches blocks the day.
+- **Best stories:** the 100-symbol blindness, the SIGKILL fix, the writer stall (failing test first), the day-aware cleanup, atomic claims plus the ghost race.
+- **Evidence:** pre-registration, day-block bootstrap, parity tests, real-Redis tests, badges.
+- **Honest gaps:** no restore test, no off-host backup, no auth, no proven edge, VWAP-derived stops.
+
+### 10.5 The 7-day study plan · Level 1
+| Day | Read | Do |
+|---|---|---|
+| 1 | Parts 0 and 1 | Say both pitches out loud, and draw the architecture from memory |
+| 2 | Part 2 | For each technology, explain why it's used and what breaks without it |
+| 3 | Part 3 | Work out R for AEQUS and JSLL by hand, and explain each detector in one sentence |
+| 4 | Part 4 | Explain the entropy finding and atomic claims on a whiteboard |
+| 5 | Parts 5 and 6 | Walk through the day timeline and the deploy and rollback flow from memory |
+| 6 | Parts 7, 8, 8b and 8c | Tell three stories in the situation, found, did, learned format, in under 2 minutes each |
+| 7 | Part 9 and Part 10 | Run the 42-question bank aloud, then re-read the cheat sheet |
