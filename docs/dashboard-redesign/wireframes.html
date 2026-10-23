@@ -1,0 +1,237 @@
+<title>Ninefifteen Redesign Wireframes</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600&display=swap">
+<style>
+/* Layout concept: a review sheet. Proposed tokens up top, then wireframes per view, phone and desktop side by side. */
+:root {
+  /* Proposed product tokens (dark default). This page shows them in its dark theme. */
+  --bg: #f4f6f8; --surface: #ffffff; --surface-2: #eef1f5; --line: #d9dee6;
+  --fg: #16202b; --muted: #5b6878; --accent: #2f6fb2;
+  --gain: #1c8a7a; --loss: #c2552e; --warn: #a86b00;
+  --wire: #b9c3cf; --wire-fill: #e6eaf0;
+  --display: "Fraunces", Georgia, serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --r: 14px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e1319; --surface: #151c24; --surface-2: #1b2430; --line: #26313e;
+  --fg: #e3e9f0; --muted: #8b98a8; --accent: #6ea8e6;
+  --gain: #3cc2ad; --loss: #f0875f; --warn: #e0a83a;
+  --wire: #3a4757; --wire-fill: #1f2934; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0e1319; --surface: #151c24; --surface-2: #1b2430; --line: #26313e;
+  --fg: #e3e9f0; --muted: #8b98a8; --accent: #6ea8e6;
+  --gain: #3cc2ad; --loss: #f0875f; --warn: #e0a83a;
+  --wire: #3a4757; --wire-fill: #1f2934; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--fg); font: 15px/1.55 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 64px }
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 40px }
+h1 { font: 600 2rem/1.15 var(--display); margin: 0; text-wrap: balance }
+h2 { font: 600 1.35rem/1.2 var(--display); margin: 0 0 6px; text-wrap: balance }
+h3 { font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; font-weight: 600 }
+p { margin: 0; max-width: 68ch }
+.lede { color: var(--muted) }
+.pill { display: inline-flex; gap: 6px; align-items: center; font: 500 .75rem var(--mono); padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2) }
+.paper { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent) }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums }
+.gain { color: var(--gain) } .loss { color: var(--loss) }
+section { display: grid; gap: 16px }
+.tokens { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px }
+.tok { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; display: grid; gap: 8px; min-width: 0 }
+.sw { display: flex; gap: 6px; flex-wrap: wrap }
+.sw span { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line) }
+.scale { font-family: var(--mono); font-size: .8rem; color: var(--muted) }
+.view { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 18px; display: grid; gap: 14px }
+.frames { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start }
+@media (max-width: 860px) { .frames { grid-template-columns: 1fr } }
+.phone, .desk { border: 1.5px solid var(--wire); border-radius: 22px; background: var(--bg); padding: 10px; display: grid; gap: 8px; min-width: 0 }
+.phone { max-width: 300px; width: 100% }
+.desk { border-radius: 14px; grid-template-columns: 150px minmax(0, 1fr); gap: 10px }
+.side { border-right: 1px dashed var(--wire); padding-right: 8px; display: grid; gap: 6px; align-content: start }
+.side div { height: 22px; border-radius: 6px; background: var(--wire-fill) }
+.side div.on { background: color-mix(in srgb, var(--accent) 35%, var(--wire-fill)) }
+.main { display: grid; gap: 8px; min-width: 0 }
+.row { display: grid; gap: 8px; grid-template-columns: repeat(var(--c, 2), minmax(0, 1fr)) }
+.box { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 9px 10px; display: grid; gap: 5px; min-width: 0 }
+.lbl { font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted) }
+.big { font: 500 1.15rem var(--mono); font-variant-numeric: tabular-nums }
+.bar { height: 8px; border-radius: 99px; background: var(--wire-fill); position: relative; overflow: hidden }
+.bar i { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 99px }
+.ln { height: 8px; border-radius: 4px; background: var(--wire-fill) }
+.top { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: space-between; font-size: .72rem }
+.navb { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; border-top: 1px dashed var(--wire); padding-top: 6px; font-size: .62rem; color: var(--muted); text-align: center }
+.navb b { color: var(--accent); font-weight: 600 }
+.feed { display: grid; gap: 5px }
+.ev { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 6px; align-items: center; font-size: .72rem }
+.ev .t { font-family: var(--mono); color: var(--muted) }
+.chip { font: 500 .62rem var(--mono); padding: 1px 6px; border-radius: 6px; border: 1px solid var(--line) }
+.chip.ok { color: var(--gain); border-color: color-mix(in srgb, var(--gain) 40%, transparent) }
+.chip.no { color: var(--loss); border-color: color-mix(in srgb, var(--loss) 40%, transparent) }
+.funnel { display: grid; gap: 4px }
+.funnel div { height: 16px; border-radius: 5px; background: color-mix(in srgb, var(--accent) 30%, var(--wire-fill)); font: .62rem/16px var(--mono); padding-left: 6px; color: var(--fg) }
+.tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px }
+.tiles span { aspect-ratio: 1; max-width: 100%; border-radius: 6px; background: var(--wire-fill); border: 1px solid var(--line) }
+.tiles span.u { background: color-mix(in srgb, var(--gain) 35%, var(--wire-fill)) }
+.tiles span.d { background: color-mix(in srgb, var(--loss) 35%, var(--wire-fill)) }
+.tiles span.f { outline: 2px solid var(--accent); outline-offset: -2px }
+.notes { display: grid; gap: 6px; font-size: .9rem; color: var(--muted); padding-left: 18px; margin: 0 }
+.decide { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px }
+.decide .tok b { font-weight: 600; color: var(--fg) }
+.ex { font-size: .7rem; color: var(--muted); font-style: italic }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:10px">
+    <span class="pill paper">Paper trading · wireframes for approval · no code changed</span>
+    <h1>Ninefifteen redesign wireframes</h1>
+    <p class="lede">These are proposals for review, built from the read-only audit of the current single-file dashboard. Every number below is an example, not real data. Each view is shown at phone width (left) and desktop width (right). Feature parity with today's dashboard comes first. The old dashboard stays at <span class="num">/classic</span>.</p>
+  </header>
+
+  <section aria-labelledby="t">
+    <h2 id="t">Design tokens</h2>
+    <p class="lede">These are defined once and used everywhere. Dark is the default. There is one calm accent, and gains and losses are never shown by colour alone.</p>
+    <div class="tokens">
+      <div class="tok"><h3>Colour (dark default)</h3>
+        <div class="sw"><span style="background:#0e1319"></span><span style="background:#151c24"></span><span style="background:#1b2430"></span><span style="background:#26313e"></span><span style="background:#e3e9f0"></span></div>
+        <div class="scale">bg · surface · surface-2 · line · text</div>
+        <div class="sw"><span style="background:#6ea8e6"></span><span style="background:#3cc2ad"></span><span style="background:#f0875f"></span><span style="background:#e0a83a"></span></div>
+        <div class="scale">accent · gain (teal) · loss (coral) · warning</div>
+      </div>
+      <div class="tok"><h3>Gain / loss (colour-blind safe)</h3>
+        <div class="big"><span class="gain">▲ +₹134.40</span>&nbsp;&nbsp;<span class="loss">▼ −₹126.00</span></div>
+        <div class="big"><span class="gain">+1.56R</span>&nbsp;&nbsp;<span class="loss">−1.02R</span></div>
+        <div class="scale">sign + arrow + colour · teal and coral stay distinct for red-green colour blindness</div>
+      </div>
+      <div class="tok"><h3>Type</h3>
+        <div style="font:600 1.3rem var(--display)">Display: Fraunces</div>
+        <div>Body: IBM Plex Sans</div>
+        <div class="num">Figures: IBM Plex Mono · tabular · ₹1,23,456.78</div>
+        <div class="scale">scale 12 · 14 · 16 · 20 · 28 · 40 px</div>
+      </div>
+      <div class="tok"><h3>Shape and motion</h3>
+        <div class="scale">radius 8 / 14 / 20 · spacing 4-pt grid · elevation 0 / 1 / 2</div>
+        <div class="scale">count-up 400 ms · live flash 600 ms · entrance 180 ms</div>
+        <div class="scale">all off under prefers-reduced-motion</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" aria-labelledby="v1">
+    <h2 id="v1">Today: the first screen</h2>
+    <p class="lede">The top bar shows market state, the IST clock, Nifty, stream status and the Paper badge. Below it, P&amp;L is split into gated (alerted) trades and all recorded trades, with excluded rows shown as a visible note.</p>
+    <div class="frames">
+      <div class="phone" aria-label="Phone wireframe: Today">
+        <div class="top"><span class="pill">● OPEN 11:42 IST</span><span class="pill paper">PAPER</span></div>
+        <div class="top"><span class="num">NIFTY 22,688 <span class="loss">▼ −0.4%</span></span><span class="pill">● live</span></div>
+        <div class="box"><span class="lbl">Today · gated (alerted)</span><span class="big"><span class="loss">▼ −₹252.00</span> · <span class="loss">−2.04R</span></span><span class="ex">3 trades · 0 wins · best 0.00R · worst −1.02R</span></div>
+        <div class="box"><span class="lbl">Today · all recorded</span><span class="big"><span class="loss">▼ −₹226.15</span></span><span class="ex">11 closed · 3 skipped · 1 row excluded (duplicate) ⓘ</span></div>
+        <div class="row" style="--c:2"><div class="box"><span class="lbl">Open</span><span class="big">1</span></div><div class="box"><span class="lbl">Alerts</span><span class="big">3 / 20</span></div></div>
+        <div class="box"><span class="lbl">Signals feed</span><div class="feed">
+          <div class="ev"><span class="t">14:13</span><span>JSLL · Momentum S</span><span class="chip ok">85 sent</span></div>
+          <div class="ev"><span class="t">13:54</span><span>AARTIPHARM · VCP L</span><span class="chip no">56 EV</span></div>
+          <div class="ev"><span class="t">11:06</span><span>AEQUS · VCP L</span><span class="chip ok">88 sent</span></div></div></div>
+        <div class="navb"><b>Today</b><span>Positions</span><span>Signals</span><span>Health</span><span>More</span></div>
+      </div>
+      <div class="desk" aria-label="Desktop wireframe: Today">
+        <div class="side"><div class="on"></div><div></div><div></div><div></div><div></div><div></div><div style="margin-top:14px"></div></div>
+        <div class="main">
+          <div class="top"><span class="pill">● MARKET OPEN · 11:42:05 IST</span><span class="num">NIFTY 22,688.2 <span class="loss">▼ −91.4 (−0.40%)</span></span><span class="pill">● stream live · updated 2 s ago</span><span class="pill paper">PAPER</span></div>
+          <div class="row" style="--c:4">
+            <div class="box"><span class="lbl">Gated P&amp;L</span><span class="big loss">▼ −₹252.00</span><span class="ex">−2.04R · 3 trades</span></div>
+            <div class="box"><span class="lbl">All recorded</span><span class="big loss">▼ −₹226.15</span><span class="ex">11 closed · 1 excluded ⓘ</span></div>
+            <div class="box"><span class="lbl">Win rate (gated)</span><span class="big">0 / 3</span><span class="ex">n = 3 · not an edge</span></div>
+            <div class="box"><span class="lbl">Alerts</span><span class="big">3 / 20</span><span class="ex">daily cap</span></div>
+          </div>
+          <div class="row" style="--c:3">
+            <div class="box" style="grid-column:span 2"><span class="lbl">Signals feed: why each fire did or didn't alert</span><div class="feed">
+              <div class="ev"><span class="t">14:13</span><span>JSLL · Stock Momentum Breakout · SHORT</span><span class="chip ok">85 · sent</span></div>
+              <div class="ev"><span class="t">13:54</span><span>AARTIPHARM · Volatility Contraction · LONG</span><span class="chip no">56 · EV</span></div>
+              <div class="ev"><span class="t">11:06</span><span>AEQUS · Volatility Contraction · LONG</span><span class="chip ok">88 · sent</span></div>
+              <div class="ev"><span class="t">10:15</span><span>JTLIND · Volatility Contraction · LONG</span><span class="chip no">77 · score</span></div></div></div>
+            <div class="box"><span class="lbl">Filter funnel</span><div class="funnel"><div style="width:100%">21 fires</div><div style="width:48%">11 score &lt; 78</div><div style="width:33%">7 EV</div><div style="width:14%">3 passed · 3 sent</div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" aria-labelledby="v2">
+    <h2 id="v2">Open positions</h2>
+    <p class="lede">Each position is a card: side, entry, stop, target, live P&amp;L, a bar showing where price sits between stop and target, time since entry, and a 15:15 square-off countdown. Tapping a card opens the trade drawer.</p>
+    <div class="frames">
+      <div class="phone" aria-label="Phone wireframe: positions">
+        <div class="box"><div class="top"><b>JSLL</b><span class="chip">SHORT · intraday</span></div>
+          <div class="row" style="--c:3"><span class="num" style="font-size:.72rem">entry 349.95</span><span class="num loss" style="font-size:.72rem">stop 356.54</span><span class="num gain" style="font-size:.72rem">tgt 340.06</span></div>
+          <div class="bar" aria-label="price position between stop and target"><i style="width:38%"></i></div>
+          <div class="top"><span class="num gain">▲ +₹42.00 live</span><span class="ex">62 min · square-off in 1:02</span></div></div>
+        <div class="box"><div class="ln" style="width:60%"></div><div class="bar"><i style="width:70%"></i></div><div class="ln" style="width:40%"></div></div>
+      </div>
+      <div class="desk" aria-label="Desktop wireframe: positions">
+        <div class="side"><div></div><div class="on"></div><div></div><div></div><div></div></div>
+        <div class="main"><div class="row" style="--c:3">
+          <div class="box"><div class="top"><b>JSLL</b><span class="chip">SHORT</span></div><div class="bar"><i style="width:38%"></i></div><span class="num gain">▲ +₹42.00</span><span class="ex">stop 356.54 · target 340.06</span></div>
+          <div class="box"><div class="ln"></div><div class="bar"><i style="width:55%"></i></div><div class="ln" style="width:50%"></div></div>
+          <div class="box"><div class="ln"></div><div class="bar"><i style="width:20%"></i></div><div class="ln" style="width:50%"></div></div></div>
+          <div class="box"><span class="lbl">Trade drawer (on tap)</span><span class="ex">signal → filter breakdown (each gate's points) → alert → levels → exit reason · the full story of one trade</span></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" aria-labelledby="v3">
+    <h2 id="v3">System health and watchlist heat</h2>
+    <p class="lede">Answers "is it alive?" at a glance: engine state, ticks per 5 minutes, stocks seen out of those tracked, last restart, quota, and the monitor's last PASS or FAIL. Watchlist tiles are coloured by day change, and stocks that fired are outlined.</p>
+    <div class="frames">
+      <div class="phone" aria-label="Phone wireframe: health">
+        <div class="row" style="--c:2"><div class="box"><span class="lbl">Engine</span><span class="big gain">● running</span></div><div class="box"><span class="lbl">Monitor</span><span class="big gain">PASS 11:33</span></div></div>
+        <div class="row" style="--c:2"><div class="box"><span class="lbl">Index ticks / 5 min</span><span class="big">987</span></div><div class="box"><span class="lbl">Stocks seen</span><span class="big">25 / 25</span></div></div>
+        <div class="row" style="--c:2"><div class="box"><span class="lbl">Last restart</span><span class="big">—</span></div><div class="box"><span class="lbl">Fyers quota</span><span class="big">0 breaches</span></div></div>
+        <div class="box"><span class="lbl">Watchlist heat</span><div class="tiles"><span class="u"></span><span class="d f"></span><span class="u"></span><span></span><span class="d"></span><span class="u f"></span><span></span><span class="d"></span><span class="u"></span><span></span></div></div>
+      </div>
+      <div class="desk" aria-label="Desktop wireframe: health">
+        <div class="side"><div></div><div></div><div></div><div class="on"></div><div></div></div>
+        <div class="main"><div class="row" style="--c:3">
+          <div class="box"><span class="lbl">Ticks per 5 min (index)</span><div class="ln" style="height:46px;border-radius:8px"></div><span class="ex">sparkline · flags the post-15:12 drop</span></div>
+          <div class="box"><span class="lbl">Watchlist heat</span><div class="tiles"><span class="u"></span><span class="d f"></span><span class="u"></span><span></span><span class="d"></span><span class="u f"></span><span></span><span class="d"></span><span class="u"></span><span></span></div></div>
+          <div class="box"><span class="lbl">Monitor log</span><div class="ln"></div><div class="ln" style="width:80%"></div><div class="ln" style="width:65%"></div></div></div>
+          <p class="ex">Needs new read-only API data (listed in the audit): heartbeat, monitor result, quota, Nifty level, day change per stock.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" aria-labelledby="v4">
+    <h2 id="v4">History, analytics and Learn</h2>
+    <p class="lede">History has filters (date, detector, side, outcome), an equity curve in R, the activity heatmap, and per-detector tables showing n on every row, with a "small sample, not an edge" note. Learn is lazy-loaded and uses the study guide's verified content.</p>
+    <div class="frames">
+      <div class="phone" aria-label="Phone wireframe: learn">
+        <div class="box"><span class="lbl">Learn · How it works</span><div class="ln"></div><div class="ln" style="width:70%"></div></div>
+        <div class="row" style="--c:2"><div class="box"><span class="lbl">Architecture</span><div class="ln"></div></div><div class="box"><span class="lbl">Life of a tick ▶</span><div class="ln"></div></div><div class="box"><span class="lbl">Day timeline</span><div class="ln"></div></div><div class="box"><span class="lbl">Interview mode</span><div class="ln"></div></div></div>
+        <div class="box"><span class="ex">Paper trading only. No proven trading edge.</span></div>
+      </div>
+      <div class="desk" aria-label="Desktop wireframe: history">
+        <div class="side"><div></div><div></div><div></div><div></div><div class="on"></div></div>
+        <div class="main"><div class="top"><span class="pill">date ▾</span><span class="pill">detector ▾</span><span class="pill">side ▾</span><span class="pill">outcome ▾</span><span class="pill">Export CSV</span></div>
+          <div class="row" style="--c:2"><div class="box"><span class="lbl">Equity curve (R)</span><div class="ln" style="height:60px;border-radius:8px"></div></div>
+          <div class="box"><span class="lbl">Per detector</span><span class="num" style="font-size:.75rem">Momentum · n = 6 · −0.53R</span><span class="num" style="font-size:.75rem">VCP · n = 5 · −2.04R</span><span class="ex">small sample, not an edge</span></div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="d">
+    <h2 id="d">Decisions for you (proposed defaults)</h2>
+    <div class="decide">
+      <div class="tok"><b>Accent and theme</b><p class="lede">One calm blue accent on a dark base, with a light theme available.</p></div>
+      <div class="tok"><b>Keep /classic for</b><p class="lede">2 weeks after the new dashboard goes live, then remove it with your OK.</p></div>
+      <div class="tok"><b>Learn visibility</b><p class="lede">An unlinked route for now. There's no login; adding one belongs to the mobile-backend plan.</p></div>
+      <div class="tok"><b>Phone priority</b><p class="lede">Today, Positions, Signals and Health in the bottom navigation, with the rest under "More".</p></div>
+    </div>
+    <ul class="notes">
+      <li>The signals feed, funnel, health and watchlist heat need new read-only API data. That's a request for you, not something I'd change.</li>
+      <li>Defects found in the current dashboard are listed in the audit, the main one being invented stop and target values in the trade modal.</li>
+      <li>Budget: today's JS bundle is 766,549 B. Charts and Learn would be lazy-loaded, with the size reported at every stage.</li>
+    </ul>
+  </section>
+</div>
