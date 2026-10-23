@@ -79,6 +79,11 @@ fastify.get('/api/today', async (request, reply) => {
 			capitalGated: r.capital_gated || false,
 			actualSize: r.actual_size !== null ? Number(r.actual_size) : (Number(r.qty) || 100),
 			durationClass: r.duration_class || 'INTRADAY',
+			// Read-only additions for the dashboard redesign (2026-10-23): the alert flag, the
+			// declared regime and the row's data-quality flags (duplicate / invalid rows visible).
+			gated: r.gated === true,
+			regimeClass: r.regime_class ?? undefined,
+			dataQuality: Array.isArray(r.data_quality) ? r.data_quality : [],
 		}))
 	}
 })
@@ -133,6 +138,11 @@ fastify.get('/api/trades/history', async (request, reply) => {
 			actualSize: r.actual_size !== null ? Number(r.actual_size) : (Number(r.qty) || 100),
 			durationClass: r.duration_class || 'INTRADAY',
 			exitReason: r.exit_reason || undefined,
+			// Read-only additions (2026-10-23): the recorded levels, so the trade view never has to
+			// invent them, and the data-quality flags.
+			target: r.target_price !== null && r.target_price !== undefined ? Number(r.target_price) : undefined,
+			stopLoss: r.stop_price !== null && r.stop_price !== undefined ? Number(r.stop_price) : undefined,
+			dataQuality: Array.isArray(r.data_quality) ? r.data_quality : [],
 		}))
 	}
 })

@@ -1648,6 +1648,11 @@ Pure logic lives in `src/api/publicData.ts`, wired in `src/api/server.ts`. There
 - **`GET /api/signals?date=YYYY-MM-DD`**: the day's fires from `signals`, newest first, capped at 500. The SQL is parameterised, and a bad date returns 400.
   - **Exposed columns:** detector, score, threshold, filter result, rejecting gate, regime, alerted, suppression reason, `data_quality`, `trade_id`.
   - **Not exposed:** trigger text, quantities, capital fields, the breakdown.
+- **`/api/trades/history` and `/api/today`** get additive, read-only fields:
+  - history rows add `target`, `stopLoss` and `dataQuality`, so the trade view never has to invent levels;
+  - open trades add `gated`, `regimeClass` and `dataQuality`.
+
+  Existing fields are unchanged.
 - **`GET /api/health`**: **coarse** public health, per the owner, because the dashboard has no login.
   - `status`: `live`, `stale`, `closed` or `holiday`.
     - `live` means the newest closed 5-minute Nifty candle in `ema_shadow:nifty:bars5` ended within 10 minutes, during 09:15–15:30 IST on a trading day.

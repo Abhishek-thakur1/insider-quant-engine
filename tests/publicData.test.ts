@@ -60,3 +60,12 @@ test('WIRING: both routes are GET, read-only, and the API still never writes', (
 	assert.doesNotMatch(src, /\b(INSERT INTO|UPDATE paper_trades|UPDATE signals|DELETE FROM)\b/)
 	assert.doesNotMatch(src, /redisClient\.(set|del|hSet|lPush|incr|expire)\(/, 'API never writes Redis')
 })
+
+test('HISTORY / TODAY: read-only additions — recorded levels and data-quality flags, no new writes', () => {
+	const src = fs.readFileSync('src/api/server.ts', 'utf8')
+	assert.match(src, /target: r\.target_price !== null/)
+	assert.match(src, /stopLoss: r\.stop_price !== null/)
+	assert.equal((src.match(/dataQuality: Array\.isArray\(r\.data_quality\)/g) ?? []).length, 2, 'history and today')
+	assert.match(src, /gated: r\.gated === true/)
+	assert.doesNotMatch(src, /(INSERT INTO|UPDATE paper_trades|DELETE FROM)/)
+})

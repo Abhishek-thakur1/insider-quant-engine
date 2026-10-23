@@ -8,7 +8,10 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
   - `GET /api/signals?date=` lists the day's fires from the `signals` table.
   - `GET /api/health` gives coarse public health: status, stocks seen, and ticks per 5 minutes. That last one is `null` until the engine publishes it.
 - **No writes:** no engine change, no migration.
-- **Tests:** `tests/publicData.test.ts`, 5 tests. They check:
+- **Additive read-only fields:**
+  - `/api/trades/history` adds `target`, `stopLoss` and `dataQuality`;
+  - `/api/today` open trades add `gated`, `regimeClass` and `dataQuality`.
+- **Tests:** `tests/publicData.test.ts`, 6 tests. They check:
   - the SQL is SELECT-only, parameterised and capped;
   - which columns are exposed;
   - the status in each state;
