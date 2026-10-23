@@ -620,3 +620,139 @@ It is **not yet live**.
 </details>
 
 **Interviewer might ask:** *"How would you test this concurrency logic?"* A strong answer: "In layers. First, unit tests with an in-memory store that mirrors the Lua semantics. Then the real pipeline twice under `Promise.all`. Then the same claims against a real Redis in a throwaway container, with 50-way concurrency. Live behaviour is the last layer, and I label it separately."
+
+---
+
+## Part 5: Data and the Fyers limits
+
+### 5.1 The limits · Level 1
+
+**Mental model:** a rate-limited third-party API in a mobile app. Go over the limit and you get 429s. Go over it repeatedly and the vendor blocks your key for the day.
+
+| Limit (Fyers Standard plan) | Value | Source |
+|---|---|---|
+| Data REST: per second, per minute, per day | 5 / 50 / 5,000 | Fyers documentation, quoted in `config/fyers_quota.json` |
+| Penalty | more than 3 per-minute breaches in a day blocks the user for the rest of the day | same |
+| WebSocket symbols | **100** per user | `DEFAULT_SUBSCRIPTION_CAP = 100` (`src/core/subscriptionPlan.ts`) |
+
+### 5.2 The quota ledger · Level 2
+
+**Why:** several processes call Fyers REST: the screener, the engine's VWAP seeder, anomaly promotions, and backtest fetches. Each one pacing itself is not enough, because Fyers counts **all** of them together.
+
+**How** (`src/fyers/quota.ts` and `config/fyers_quota.json`):
+- **One shared ledger** per IST day in Redis: `fyers:quota:{day}`, holding `used:<job>`, `breaches`, `exhausted` and `cooldownUntil`.
+- **Pacing below the limit:** 4/s and **40/min**.
+- **Per-job allocations:**
+
+  | Job | Requests per day |
+  |---|---|
+  | screener | 2,200 |
+  | seeder | 300 |
+  | anomaly | 200 |
+  | backtest | 1,500 |
+
+  They add up to the 5,000 daily limit.
+- **Every request is counted *before* the call,** because Fyers counts failed requests too.
+- **On a throttle** (Cloudflare 1015, 429 or −360): everyone cools down for at least 65 seconds, and the breach is counted. At **2 breaches** (below Fyers' 3) the job stops for the day.
+- **For the replay fetch** (PR #20), stricter rules apply:
+  - the **first** throttle stops the run (`maxBreachesPerDay` 1, `maxRetries` 0);
+  - at most 1,000 requests per evening;
+  - it only starts between 15:45 and 16:15 IST;
+  - it needs the owner's OK that evening.
+
+**The incident behind it [Proven, header of `quota.ts`]:** on 20 Oct the first screener run paced at 4 requests per second, which is 240 per minute. Cloudflare throttled it (1015), and it then hit the daily cap: **2,352 of 2,352 requests failed**.
+
+### 5.3 Case study: October's "no alerts" mystery · Level 2
+
+- **Situation.** From 16 Oct, stock alerts stopped completely, while Nifty alerts kept coming.
+- **What we found.** The engine subscribed to **2,189 symbols** (log: `All 2189 symbols subscribed across 11 chunks`). The Standard plan streams only **100 per user**. Index ticks kept arriving; stock ticks for almost everything didn't. The engine never complained, because subscribing "succeeded".
+- **Proof.** We deployed a **26-symbol** plan: watchlist 25 plus Nifty. The first heartbeat showed `active symbols seen 25/25` and `eq→router 2705`. That was the cap. **[Proven, 21 Oct]**
+- **Fix** (`subscriptionPlan.ts`, PR #13):
+  - plan the subscription (watchlist + bench + index + options) at boot;
+  - **refuse to start** if it exceeds `SUBSCRIPTION_CAP`;
+  - log `🧾 Subscription plan: 26/100 symbols …`.
+- **Lesson.** "Success" from an API call doesn't mean the data is flowing. Measure the outcome (ticks per symbol), not the request.
+
+<details><summary>Part 5 mini quiz</summary>
+
+1. Why does the ledger count a request before making it? **Fyers counts failed requests too.**
+2. Why stop at 2 breaches, not 3? **Stay below Fyers' block threshold, with a margin.**
+3. How was the 100-symbol cap proven? **A 26-symbol deploy immediately showed 25 of 25 stocks ticking.**
+</details>
+
+---
+
+## Part 6: Operations
+
+### 6.1 Every cron entry and why at that time · Level 1
+The full table is in §1.5. The principles behind it:
+- the token comes **before** the boot;
+- the boot comes **15 minutes before the open**;
+- the stop comes **at the close**;
+- the backup and the screener come **after the close**;
+- the token purge comes **last**.
+
+The monitor runs from the **host** crontab, so it doesn't depend on the containers it watches. Every job checks `trading_day.sh` against `scheduler/nse_holidays.txt`.
+
+### 6.2 Backups · Level 2
+- **What:** `pg_dump` writes a full, consistent snapshot of the Postgres database to a file. It's like exporting your app's local database so you can rebuild it on a fresh device.
+- **When:**
+  - every trading day at **16:00** (`scheduler/db_backup.sh`);
+  - and **manually before every deploy**, e.g. `~/backups/pre-guard-20261022T1342Z.dump`. Each manual dump is checked: it must list the 3 data tables (`paper_trades`, `signals`, `schema_migrations`).
+- **Honest gaps:**
+  - The script's S3 upload **has never worked** (`S3_BACKUP_BUCKET` path issue, recorded in project memory 18 Oct). Backups only live on the same host. **[Unverified off-host copy: none]**
+  - A full **restore has not been tested** end to end. **[Unverified]**
+
+  In an interview, say exactly that. "We back up daily, but I haven't proven the restore" is a senior-sounding answer.
+
+### 6.3 Staying up · Level 2
+- **Watchdog** (`src/core/sessionGuard.ts`, `websocket.ts`):
+  - if no socket message arrives for **30 s** (checked every 10 s), the engine exits 1 and Docker restarts it;
+  - the next boot backs off **30 s, 60, 120, 240, up to 300 s**;
+  - at most **6 restarts a day**;
+  - **from 15:15 IST it stands down instead** (exit 0).
+- **Session guard:** the engine won't run on a weekend or an NSE holiday. That's the fix for the 20 Oct holiday crash loop: **415 restarts**.
+- **Day-aware boot cleanup** (`src/core/bootCleanup.ts`, deployed 22 Oct):
+  - a **new day** clears yesterday's regime, bias, `pnl:daily` and VCP histories;
+  - a **same-day restart** keeps them and re-loads the regime returns into memory.
+
+  The bug it fixed: the **11:46 restart on 22 Oct** wiped all of these mid-session.
+- **What a restart still loses:** in-memory candles, detector state (for example the opening range), the first tick per symbol, and the EMA shadow's half-built candle.
+
+### 6.4 The deploy procedure · Level 2
+```
+ copy engine log ─▶ pg_dump (+verify) ─▶ tag current image rollback-<sha> ─▶ git pull
+      ─▶ build ONLY quant_engine ─▶ stop ─▶ create --force-recreate (left "Created")
+      ─▶ verify the image has the change ─▶ the 09:00 cron starts it
+ rollback: docker tag …:rollback-<sha> …:latest && docker compose create --force-recreate quant_engine
+```
+*What to notice:*
+- The engine is **never started** by a deploy. The schedule starts it, so a deploy can't accidentally open a live socket after hours.
+- The **log copy comes first**, because a recreate deletes the old container's log. That happened on 22 Oct and the day's log was lost.
+
+**Never restart during market hours (09:00–15:30).** On 21 Oct a manual restart at 11:14 made the VWAP seeder refetch history, used up the day's breach budget, and destroyed the morning's logs. Since then it's a hard rule: during market hours the watchdog handles failures, and people only report.
+
+### 6.5 Monitoring · Level 1
+- **Read-only checks:** host cron, every 15 minutes from 09:03 to 15:40 (`~/evidence/monitor/check.sh`). Each one checks:
+  - container status and restarts;
+  - heartbeat (stocks seen, index ticks per 5 minutes);
+  - errors, the quota ledger, disk and memory;
+  - fires, alerts and the signals count;
+  - EMA shadow output;
+  - the 15:15 square-off and the 15:30 stop.
+- **Phone messages:** a status line at 09:25, a summary at 15:45, and an immediate message on any FAIL (at most once per issue per hour). They go to the admin chat through the same bot path the engine uses. The token is never printed.
+- **Thresholds:**
+  - disk above **80%**;
+  - index ticks below 300 per 5 minutes for 10 minutes;
+  - fewer than 20 of 25 stocks seen;
+  - any 429, 1015 or −360 error.
+
+<details><summary>Part 6 mini quiz</summary>
+
+1. Why does a deploy leave the engine in "Created"? **So it starts on schedule, not after hours.**
+2. What does the watchdog do at 15:20 if the feed goes silent? **It stands down (exit 0), because there's no time to restart before the close.**
+3. What's the honest status of restores? **Never tested end to end.**
+4. Why copy the log before a deploy? **A recreate deletes the old container's log.**
+</details>
+
+**Interviewer might ask:** *"How do you deploy without downtime?"* A strong answer: "I don't need zero downtime, so I chose zero risk instead. Deploys only happen after the close: back up, tag a rollback image, rebuild only the engine and leave it stopped. The morning cron starts the new build, and a monitor checks the boot at 09:03 and 09:25. Rollback is one command."
