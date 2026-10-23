@@ -147,3 +147,12 @@ Append only, with the date, what changed and why. It is empty at registration.
    - signals with no forward bars in their session;
    - S1 or S2 trades without 14 / 20 prior daily bars (the first weeks of the cache, and symbols that start later). H3's paired set uses only entries valid under all four rules.
 6. **Run mechanics:** the collection ran as 6 parallel sandbox shards (`--network none`, empty env file, cache mounted read-only, `sandboxGuard.ts` first). Three shards ran out of Docker memory (exit 137) and were re-run separately. Sessions are independent, so this doesn't affect results.
+
+**2026-10-23, about 20:20 IST. These were added AFTER seeing the full results.** Both are descriptive and change no decision rule.
+
+7. **Live data: rows the engine itself flags as non-outcomes are excluded from the live tables.** These are `synthetic_close` (235 rows, the ₹0 / 0R closes invented by the removed boot sweep; AGENTS.md describes them as "signal occurrence only") and `index_option_proxy` (18 Nifty rows at index-level prices, all of them also synthetic).
+   - §2.1 had said "Included: `status = 'CLOSED'`".
+   - Found while checking why all Nifty rows had R = 0.000.
+   - The report also shows the mean R over every CLOSED row, so the owner's figure stays comparable.
+   - `capital_skipped` rows are kept: P&L is ₹0 because qty is 0, but R is computed from prices.
+8. **H3 decomposition** (report table D2): gross R at 0× cost and the median stop distance per rule. Added because the pre-registered H3 rule flagged S1 for every detector-side, and costs in R scale with entry ÷ risk, so a wider stop pays less cost per R. This table separates geometry from that cost dilution. The H3 verdicts themselves are reported as the rule gives them.

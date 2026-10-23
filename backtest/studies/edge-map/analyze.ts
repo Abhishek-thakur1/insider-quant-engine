@@ -346,6 +346,25 @@ function main(): void {
 	}
 	res.h3 = h3
 	log()
+	// Deviation 8 (descriptive, added after seeing results; not a decision input): how much of
+	// H3 is stop geometry vs cost dilution. Costs in R scale with entry/risk, so a wider stop
+	// pays less cost per R. Gross (0×) means and median stop distance per rule.
+	log('### D2. H3 decomposed (descriptive, deviation 8): gross R at 0× cost, and median stop distance')
+	log()
+	log('| Detector-side | Split | S0 gross | S1 gross | S2 gross | S3 gross | median stop distance, bps of entry: S0 / S1 / S2 / S3 |')
+	log('|---|---|---|---|---|---|---|')
+	const med = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[s.length >> 1]! : NaN }
+	const h3d: unknown[] = []
+	for (const ds of dss) for (const w of ['train', 'test'] as const) {
+		const ids = common.filter((i) => { const t = tradesBy.S0.get(i)!; return t.ds === ds && (w === 'train' ? t.day < SPLIT : t.day >= SPLIT) })
+		if (!ids.length) continue
+		const g = rules.map((r) => mean(ids.map((i) => tradesBy[r].get(i)!.gross)))
+		const d = rules.map((r) => med(ids.map((i) => { const t = tradesBy[r].get(i)!; return (t.risk / t.entry) * 10_000 })))
+		h3d.push({ ds, split: w, n: ids.length, gross: g, medianStopBps: d })
+		log(`| ${ds} | ${w} | ${g.map((x) => fmt(x)).join(' | ')} | ${d.map((x) => x.toFixed(0)).join(' / ')} |`)
+	}
+	res.h3Decomposed = h3d
+	log()
 
 	// ── costs ──
 	log('## E. Cost sensitivity (S0, mean net R by cost multiple; base 17 bps round trip, ASSUMED)')
@@ -377,7 +396,12 @@ function main(): void {
 
 	// ── live (descriptive) ──
 	const pt = parseCsv(fs.readFileSync(path.join(liveDir, 'paper_trades.csv'), 'utf8'))
-	const closed = pt.filter((r) => r.status === 'CLOSED')
+	const closedAll = pt.filter((r) => r.status === 'CLOSED')
+	// AGENTS.md data-quality table: synthetic_close = ₹0/0R close invented by the removed boot sweep
+	// ("signal occurrence only"); index_option_proxy = Nifty option rows at index-level prices.
+	const notOutcome = (r: Record<string, string>) => /synthetic_close|index_option_proxy/.test(r.data_quality ?? '')
+	const closed = closedAll.filter((r) => !notOutcome(r))
+	const liveAllRecorded = mean(closedAll.map((r) => Number(r.r_multiple)))
 	const liveT = closed.map((r) => {
 		const entry = Number(r.entry_price), stop = Number(r.stop_price), side = r.direction as Side
 		const ms = Date.parse(r.entry_time!.replace(' ', 'T').replace(/\+00$/, 'Z'))
@@ -387,7 +411,9 @@ function main(): void {
 	const liveAllMean = mean(liveT.map((t) => t.r))
 	log('## G. Live paper trades (descriptive only; R as recorded = gross)')
 	log()
-	log(`Frozen export: ${pt.length} rows, ${closed.length} CLOSED, ${pt.filter((r) => r.status === 'ORPHANED').length} ORPHANED (excluded), ${new Set(liveT.map((t) => t.day)).size} sessions. Mean recorded R over all CLOSED: ${fmt(liveAllMean, 4)} (owner's earlier figure: n=1,556, 0.004). Wrong-side geometry: ${liveT.filter((t) => t.ws).length}.`)
+	log(`Frozen export: ${pt.length} rows, ${closedAll.length} CLOSED, ${pt.filter((r) => r.status === 'ORPHANED').length} ORPHANED (excluded). Mean recorded R over all ${closedAll.length} CLOSED: ${fmt(liveAllRecorded, 4)} (owner's earlier figure: n=1,556, 0.004).`)
+	log()
+	log(`Excluded as not outcomes (deviation 7): ${closedAll.length - closed.length} rows flagged \`synthetic_close\` (${closedAll.filter((r) => /synthetic_close/.test(r.data_quality ?? '')).length}) or \`index_option_proxy\` (${closedAll.filter((r) => /index_option_proxy/.test(r.data_quality ?? '')).length}). Kept: ${closed.length} over ${new Set(liveT.map((t) => t.day)).size} sessions, mean recorded R ${fmt(liveAllMean, 4)}. \`capital_skipped\` rows are kept: their P&L is ₹0 because qty is 0, but R is computed from prices. Wrong-side geometry among kept: ${liveT.filter((t) => t.ws).length}.`)
 	log()
 	log('| Detector-side | Time of day | n | days | mean gross R [95% CI] | mean net R at 1× (valid geometry only) [95% CI] |')
 	log('|---|---|---|---|---|---|')
@@ -407,7 +433,7 @@ function main(): void {
 	const scored = sg.filter((s) => s.trade_id && byId.has(s.trade_id)).map((s) => ({ score: Number(s.score), ...byId.get(s.trade_id!)! }))
 	log()
 	log(`Live scored trades (signals log from 2026-10-21): n=${scored.length}, below the n ≥ ${FLOOR} floor, so calibration is **insufficient** on live data and not tested.`)
-	res.live = { rows: pt.length, closed: closed.length, meanR: liveAllMean, wrongSide: liveT.filter((t) => t.ws).length, table: liveRows, scored: scored.length }
+	res.live = { rows: pt.length, closedAll: closedAll.length, meanRAllRecorded: liveAllRecorded, closed: closed.length, meanR: liveAllMean, wrongSide: liveT.filter((t) => t.ws).length, table: liveRows, scored: scored.length }
 
 	fs.writeFileSync(path.join(outDir, 'results.json'), JSON.stringify(res, null, 1))
 	fs.writeFileSync(path.join(outDir, 'tables.md'), md.join('\n') + '\n')
