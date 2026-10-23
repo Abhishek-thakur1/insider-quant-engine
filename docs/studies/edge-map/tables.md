@@ -176,6 +176,53 @@ Marginals (net R at 1×), each factor alone:
 | VCP-LONG | train | -0.028 | -0.180 | -0.332 | -0.635 | -0.939 | -1.6 |
 | VCP-LONG | test | -0.019 | -0.174 | -0.328 | -0.637 | -0.946 | -1.1 |
 
+## H. Broker cost model (FYERS, equity intraday, NSE) and cost-to-risk (descriptive, deviation 9)
+
+Every rate is an **assumption** taken from fyers.in/charges-list and the FYERS support article, fetched 2026-10-23. Not checked against a contract note. Slippage is the harness assumption.
+
+| Component | Rate (assumed) | ₹10,000 notional, bps | ₹50,000 notional, bps | ₹1,00,000 notional, bps |
+|---|---|---|---|---|
+| Brokerage (both legs) | ₹20 or 0.03% per order, lower | 6.00 | 6.00 | 4.00 |
+| STT (sell leg) | 0.025% of sell value | 2.50 | 2.50 | 2.50 |
+| NSE transaction charge (both legs) | 0.0018299% | 0.37 | 0.37 | 0.37 |
+| Clearing charge (both legs) | 0.0005% | 0.10 | 0.10 | 0.10 |
+| SEBI turnover fee (both legs) | ₹10 per crore | 0.02 | 0.02 | 0.02 |
+| NSE IPFT (both legs) | ₹10 per crore (sources differ) | 0.02 | 0.02 | 0.02 |
+| Stamp duty (buy leg) | 0.002% of buy value | 0.20 | 0.20 | 0.20 |
+| GST | 18% of brokerage + exchange + clearing + SEBI + IPFT | 1.17 | 1.17 | 0.81 |
+| Slippage (both legs) | 5 bps per leg (harness assumption) | 10.00 | 10.00 | 10.00 |
+| **Total round trip** | | **20.38** | **20.38** | **18.02** |
+
+Live paper trades are sized at about ₹10,000 notional (median ₹9,440 over 710 sized closed trades; ₹9,748 since 15 Oct), so the broker total used below is **20.4 bps** round trip, against the pre-registered 17 bps.
+
+Break-even cost (S0, gross mean R ÷ mean cost-per-bps in R) against that total:
+
+| Detector-side | Split | Break-even, bps | Broker total, bps | Mean net R at broker total |
+|---|---|---|---|---|
+| SMB-LONG | train | 0.6 | 20.4 | -0.299 |
+| SMB-LONG | test | 1.6 | 20.4 | -0.293 |
+| SMB-SHORT | train | 7.5 | 20.4 | -0.181 |
+| SMB-SHORT | test | 5.8 | 20.4 | -0.212 |
+| VCP-LONG | train | -1.6 | 20.4 | -0.392 |
+| VCP-LONG | test | -1.1 | 20.4 | -0.389 |
+
+Cost-to-risk: cost per trade as a percent of R = 20.4 bps × entry ÷ (10,000 × stop distance). Test split, per stop rule. "≤10%" is the share of trades whose cost is at most 10% of R (the shadow-candidate filter).
+
+| Detector-side | Rule | n | median cost, % of R | mean cost, % of R | share with cost ≤ 10% of R |
+|---|---|---|---|---|---|
+| SMB-LONG | S0 | 6770 | 27.2% | 31.9% | 1.6% |
+| SMB-LONG | S1 | 6748 | 14.8% | 15.2% | 10.4% |
+| SMB-LONG | S2 | 6742 | 31.1% | 32.1% | 0.1% |
+| SMB-LONG | S3 | 6770 | 36.7% | 38.0% | 0.0% |
+| SMB-SHORT | S0 | 4983 | 25.2% | 29.6% | 3.2% |
+| SMB-SHORT | S1 | 4972 | 14.7% | 15.1% | 11.7% |
+| SMB-SHORT | S2 | 4969 | 30.8% | 31.7% | 0.1% |
+| SMB-SHORT | S3 | 4983 | 40.7% | 41.3% | 0.0% |
+| VCP-LONG | S0 | 11810 | 31.8% | 37.0% | 2.5% |
+| VCP-LONG | S1 | 11761 | 13.9% | 14.6% | 15.9% |
+| VCP-LONG | S2 | 11746 | 29.4% | 30.7% | 0.1% |
+| VCP-LONG | S3 | 11810 | 40.1% | 43.2% | 0.0% |
+
 ## F. S0 wrong-side trades (stop on the wrong side of entry; live exits on the first tick)
 
 | Detector-side | Split | n | mean gross P&L, bps of notional [95% CI] |
@@ -207,5 +254,13 @@ Excluded as not outcomes (deviation 7): 235 rows flagged `synthetic_close` (235)
 | VCP-LONG | T1 | 171 | 20 | -0.044 [-0.202, +0.127] | -0.322 [-0.480, -0.164] (n=171) |
 | VCP-LONG | T2 | 388 | 23 | -0.097 [-0.325, +0.126] | -0.389 [-0.634, -0.154] (n=388) |
 | VCP-LONG | T3 | 228 | 23 | +0.151 [-0.087, +0.359] | -0.088 [-0.331, +0.115] (n=228) |
+
+Live cost-to-risk at the FYERS total (20.4 bps, section H), valid geometry only:
+
+| Detector-side | n | median cost, % of R | mean cost, % of R | share with cost ≤ 10% of R |
+|---|---|---|---|---|
+| SMB-LONG | 300 | 26.1% | 30.6% | 6.7% |
+| SMB-SHORT | 251 | 24.5% | 28.8% | 10.0% |
+| VCP-LONG | 787 | 26.4% | 32.8% | 7.4% |
 
 Live scored trades (signals log from 2026-10-21): n=18, below the n ≥ 30 floor, so calibration is **insufficient** on live data and not tested.

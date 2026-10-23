@@ -103,7 +103,36 @@ export function simExit(side: Side, entry: number, stop: number, target: number,
 	const last = fwd[fwd.length - 1]
 	return last ? { exit: last.c, reason: 'session-end' } : { exit: entry, reason: 'no-forward-data' }
 }
-export const parseSL = (trigger: string): number | null => { const m = trigger.match(/SL ₹\s*([\d,]+(?:\.\d+)?)/); return m ? Number(m[1]!.replace(/,/g, '')) : null }
+
+/**
+ * FYERS equity-intraday cost per round trip at a given notional, per component, in bps of notional.
+ * ASSUMED rates from fyers.in/charges-list + FYERS support (fetched 2026-10-23): brokerage ₹20 or 0.03%
+ * per executed order (lower); STT 0.025% sell; NSE transaction 0.0018299% (other sources: 0.00297%);
+ * clearing 0.0005%; SEBI ₹10/crore; NSE IPFT ₹10/crore (support article; the charges list says ₹0.01);
+ * stamp 0.002% buy; GST 18% on brokerage + exchange + clearing + SEBI + IPFT. Slippage 5 bps per leg.
+ */
+export function fyersComponents(notional: number): Array<{ name: string; rate: string; bps: number }> {
+	const legBrok = Math.min(20, 0.0003 * notional)
+	const perLeg = (rate: number) => 2 * rate * notional
+	const brokerage = 2 * legBrok, exch = perLeg(0.000018299), clearing = perLeg(0.000005), sebi = perLeg(1e-6), ipft = perLeg(1e-6)
+	const stt = 0.00025 * notional, stamp = 0.00002 * notional
+	const gst = 0.18 * (brokerage + exch + clearing + sebi + ipft)
+	const slip = 2 * 0.0005 * notional
+	const b = (rupees: number) => (rupees / notional) * 10_000
+	return [
+		{ name: 'Brokerage (both legs)', rate: '₹20 or 0.03% per order, lower', bps: b(brokerage) },
+		{ name: 'STT (sell leg)', rate: '0.025% of sell value', bps: b(stt) },
+		{ name: 'NSE transaction charge (both legs)', rate: '0.0018299%', bps: b(exch) },
+		{ name: 'Clearing charge (both legs)', rate: '0.0005%', bps: b(clearing) },
+		{ name: 'SEBI turnover fee (both legs)', rate: '₹10 per crore', bps: b(sebi) },
+		{ name: 'NSE IPFT (both legs)', rate: '₹10 per crore (sources differ)', bps: b(ipft) },
+		{ name: 'Stamp duty (buy leg)', rate: '0.002% of buy value', bps: b(stamp) },
+		{ name: 'GST', rate: '18% of brokerage + exchange + clearing + SEBI + IPFT', bps: b(gst) },
+		{ name: 'Slippage (both legs)', rate: '5 bps per leg (harness assumption)', bps: b(slip) },
+	]
+}
+
+export const parseSL =(trigger: string): number | null => { const m = trigger.match(/SL ₹\s*([\d,]+(?:\.\d+)?)/); return m ? Number(m[1]!.replace(/,/g, '')) : null }
 
 // ── daily ATR(14, Wilder) and ADR(20) known BEFORE each session ─────────────
 function dailyRefs(symbol: string): Map<string, { atr: number | null; adr: number | null }> {
@@ -382,6 +411,52 @@ function main(): void {
 	res.costs = costRows
 	log()
 
+	// ── H. broker costs and cost-to-risk (deviation 9: owner request 23 Oct evening, descriptive) ──
+	log('## H. Broker cost model (FYERS, equity intraday, NSE) and cost-to-risk (descriptive, deviation 9)')
+	log()
+	log('Every rate is an **assumption** taken from fyers.in/charges-list and the FYERS support article, fetched 2026-10-23. Not checked against a contract note. Slippage is the harness assumption.')
+	log()
+	const comps = fyersComponents
+	const notionals = [10_000, 50_000, 100_000]
+	log(`| Component | Rate (assumed) | ${notionals.map((n) => `₹${n.toLocaleString('en-IN')} notional, bps`).join(' | ')} |`)
+	log(`|---|---|${notionals.map(() => '---').join('|')}|`)
+	const table = notionals.map((n) => comps(n))
+	for (const [i, c] of table[0]!.entries()) log(`| ${c.name} | ${c.rate} | ${table.map((t) => t[i]!.bps.toFixed(2)).join(' | ')} |`)
+	const totals = table.map((t) => t.reduce((a, c) => a + c.bps, 0))
+	log(`| **Total round trip** | | ${totals.map((x) => `**${x.toFixed(2)}**`).join(' | ')} |`)
+	log()
+	const liveBps = totals[0]!
+	log(`Live paper trades are sized at about ₹10,000 notional (median ₹9,440 over 710 sized closed trades; ₹9,748 since 15 Oct), so the broker total used below is **${liveBps.toFixed(1)} bps** round trip, against the pre-registered 17 bps.`)
+	log()
+	log('Break-even cost (S0, gross mean R ÷ mean cost-per-bps in R) against that total:')
+	log()
+	log('| Detector-side | Split | Break-even, bps | Broker total, bps | Mean net R at broker total |')
+	log('|---|---|---|---|---|')
+	const brokerRows: unknown[] = []
+	for (const ds of dss) for (const w of ['train', 'test'] as const) {
+		const xs = split(S0, w).filter((t) => t.ds === ds)
+		const be = mean(xs.map((t) => t.gross)) / mean(xs.map((t) => costR(1, t.entry, t.risk)))
+		const nb = mean(xs.map((t) => t.gross - costR(liveBps, t.entry, t.risk)))
+		brokerRows.push({ ds, split: w, breakEvenBps: be, brokerBps: liveBps, netR: nb })
+		log(`| ${ds} | ${w} | ${be.toFixed(1)} | ${liveBps.toFixed(1)} | ${fmt(nb)} |`)
+	}
+	log()
+	log(`Cost-to-risk: cost per trade as a percent of R = ${liveBps.toFixed(1)} bps × entry ÷ (10,000 × stop distance). Test split, per stop rule. "≤10%" is the share of trades whose cost is at most 10% of R (the shadow-candidate filter).`)
+	log()
+	log('| Detector-side | Rule | n | median cost, % of R | mean cost, % of R | share with cost ≤ 10% of R |')
+	log('|---|---|---|---|---|---|')
+	const ctr: unknown[] = []
+	const pctR = (t: Trade) => costR(liveBps, t.entry, t.risk) * 100
+	const medOf = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[s.length >> 1]! : NaN }
+	for (const ds of dss) for (const r of rules) {
+		const xs = split([...tradesBy[r].values()], 'test').filter((t) => t.ds === ds).map(pctR)
+		const row = { ds, rule: r, n: xs.length, median: medOf(xs), mean: mean(xs), le10: xs.filter((x) => x <= 10).length / xs.length }
+		ctr.push(row)
+		log(`| ${ds} | ${r} | ${row.n} | ${row.median.toFixed(1)}% | ${row.mean.toFixed(1)}% | ${(row.le10 * 100).toFixed(1)}% |`)
+	}
+	res.broker = { notionals, totals, liveBps, breakEven: brokerRows, costToRisk: ctr }
+	log()
+
 	// ── wrong-side S0 ──
 	log('## F. S0 wrong-side trades (stop on the wrong side of entry; live exits on the first tick)')
 	log()
@@ -428,6 +503,21 @@ function main(): void {
 		liveRows.push({ ds, tod: td, gross: g, net: nn })
 		log(`| ${ds} | ${td} | ${g.n} | ${g.days} | ${fmt(g.mean)} ${ci(g)} | ${fmt(nn.mean)} ${ci(nn)} (n=${nn.n}) |`)
 	}
+	const liveBpsH = fyersComponents(10_000).reduce((a, c) => a + c.bps, 0)
+	log()
+	log(`Live cost-to-risk at the FYERS total (${liveBpsH.toFixed(1)} bps, section H), valid geometry only:`)
+	log()
+	log('| Detector-side | n | median cost, % of R | mean cost, % of R | share with cost ≤ 10% of R |')
+	log('|---|---|---|---|---|')
+	const liveCtr: unknown[] = []
+	for (const ds of liveDs) {
+		const xs = liveT.filter((t) => t.ds === ds && !t.ws && t.risk > 0).map((t) => costR(liveBpsH, t.entry, t.risk) * 100).sort((a, b) => a - b)
+		if (!xs.length) continue
+		const row = { ds, n: xs.length, median: xs[xs.length >> 1]!, mean: mean(xs), le10: xs.filter((x) => x <= 10).length / xs.length }
+		liveCtr.push(row)
+		log(`| ${ds} | ${row.n} | ${row.median.toFixed(1)}% | ${row.mean.toFixed(1)}% | ${(row.le10 * 100).toFixed(1)}% |`)
+	}
+	res.liveCostToRisk = liveCtr
 	const sg = parseCsv(fs.readFileSync(path.join(liveDir, 'signals.csv'), 'utf8'))
 	const byId = new Map(liveT.map((t) => [t.id, t]))
 	const scored = sg.filter((s) => s.trade_id && byId.has(s.trade_id)).map((s) => ({ score: Number(s.score), ...byId.get(s.trade_id!)! }))

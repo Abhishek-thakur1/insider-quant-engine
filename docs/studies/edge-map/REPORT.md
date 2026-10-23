@@ -94,6 +94,45 @@ The base is 17 bps round trip: 5 bps slippage per leg (the harness default) plus
 
 **Gross expectancy is close to zero.** SMB-SHORT is the only clearly positive one, at +0.08 to +0.11R, and it breaks even at about 6-7 bps round trip. That's below the 10 bps of slippage alone. **This is the main finding:** with stops 65-85 bps wide, any realistic cost decides the result.
 
+### 6b. Your broker's costs: FYERS equity intraday on NSE (assumptions, Unverified)
+Added at the owner's request (deviation 9, descriptive). The rates are from [fyers.in/charges-list](https://fyers.in/charges-list) and the [FYERS statutory-charges article](https://support.fyers.in/portal/en/kb/articles/what-are-the-statutory-charges-on-trades-at-fyers-stt-gst-sebi-turnover-fee-ipft-etc), fetched 2026-10-23. **Every line is an assumption.** None has been checked against a FYERS contract note. Live paper trades are sized at about **₹10,000 notional**: median ₹9,440 over 710 sized closed trades, and ₹9,748 since 15 Oct.
+
+| Component | Rate (assumed) | bps of notional at ₹10,000 | at ₹1,00,000 |
+|---|---|---|---|
+| Brokerage, both legs | ₹20 or 0.03% per executed order, whichever is lower. At ₹10k that's ₹3 per leg; the cap doesn't bind | 6.00 | 4.00 |
+| STT, sell leg | 0.025% of sell value | 2.50 | 2.50 |
+| NSE transaction charge, both legs | 0.0018299% (FYERS list; other sources quote 0.00297%, which would add about 0.2 bps) | 0.37 | 0.37 |
+| Clearing charge, both legs | 0.0005% | 0.10 | 0.10 |
+| SEBI turnover fee, both legs | ₹10 per crore | 0.02 | 0.02 |
+| NSE IPFT, both legs | ₹10 per crore (support article; the charges list says ₹0.01, so I used the higher) | 0.02 | 0.02 |
+| Stamp duty, buy leg | 0.002% of buy value (some sources say 0.003%, which would add 0.1 bps) | 0.20 | 0.20 |
+| GST | 18% of brokerage + exchange + clearing + SEBI + IPFT | 1.17 | 0.81 |
+| Slippage, both legs | 5 bps per leg (the harness assumption, not measured) | 10.00 | 10.00 |
+| **Total, round trip** | | **20.4** | **18.0** |
+
+- **Charges alone are 10.4 bps** at ₹10,000. Brokerage dominates them, because 0.03% is below the ₹20 cap at this size. Slippage adds another 10 bps.
+- **The pre-registered base of 17 bps was optimistic** for your trade size.
+
+**Break-even cost against the FYERS total (S0, the live stop):**
+
+| Detector-side | Break-even, train / test | FYERS total | Mean net R at the FYERS total, test |
+|---|---|---|---|
+| SMB-LONG | 0.6 / 1.6 bps | 20.4 bps | −0.293 |
+| SMB-SHORT | 7.5 / 5.8 bps | 20.4 bps | −0.212 |
+| VCP-LONG | below 0 / below 0 | 20.4 bps | −0.389 |
+
+The best break-even (SMB-SHORT, about 6-7.5 bps) is **less than the charges alone**, before any slippage.
+
+**Cost per trade as a percent of R (cost-to-risk ratio),** at 20.4 bps: cost = 20.4 bps × entry ÷ (10,000 × stop distance).
+
+| Detector-side | Live trades: median (mean) | Live: share ≤ 10% of R | Replay test, S0 live stop: median | S0 share ≤ 10% | Replay test, S1 ATR stop: median | S1 share ≤ 10% |
+|---|---|---|---|---|---|---|
+| SMB-LONG | 26.1% (30.6%), n=300 | 6.7% | 27.2% | 1.6% | 14.8% | 10.4% |
+| SMB-SHORT | 24.5% (28.8%), n=251 | 10.0% | 25.2% | 3.2% | 14.7% | 11.7% |
+| VCP-LONG | 26.4% (32.8%), n=787 | 7.4% | 31.8% | 2.5% | 13.9% | 15.9% |
+
+**About a quarter to a third of every R goes on costs** with the live VWAP stop. To win, a trade has to clear roughly 0.25-0.3R before it earns anything, and gross expectancy is about 0. Even the ATR stop, twice as wide, leaves a median cost of about 14-15% of R. This is the measured basis for the cost-to-risk filter on the shadow candidates (`docs/studies/shadow-candidates/PREREGISTRATION.md`).
+
 ## 7. Wrong-side stops, in their own table (Tested on paper)
 These are trades whose live stop (VWAP × 0.998 / × 1.002) sits on the wrong side of entry, with stop ≥ entry for a LONG. The pre-registration keeps them out of H1-H3 (deviation 2).
 

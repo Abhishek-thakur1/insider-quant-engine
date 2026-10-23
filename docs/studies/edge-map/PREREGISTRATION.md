@@ -156,3 +156,7 @@ Append only, with the date, what changed and why. It is empty at registration.
    - The report also shows the mean R over every CLOSED row, so the owner's figure stays comparable.
    - `capital_skipped` rows are kept: P&L is ₹0 because qty is 0, but R is computed from prices.
 8. **H3 decomposition** (report table D2): gross R at 0× cost and the median stop distance per rule. Added because the pre-registered H3 rule flagged S1 for every detector-side, and costs in R scale with entry ÷ risk, so a wider stop pays less cost per R. This table separates geometry from that cost dilution. The H3 verdicts themselves are reported as the rule gives them.
+
+**2026-10-23, about 20:50 IST. Added after results, at the owner's request.** This is descriptive and changes no decision rule.
+
+9. **Broker costs and cost-to-risk** (report §6b, tables §H). These add a per-component FYERS equity-intraday cost model, with each rate marked as assumed; the break-even cost against that total; and the cost per trade as a percent of R by detector-side and stop rule, for live and replay, including the share of trades at or below 10% of R. The pre-registered decisions still use the 17 bps base. At the live ₹10,000 notional the FYERS total is 20.4 bps.

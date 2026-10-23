@@ -7,7 +7,7 @@ import '../backtest/core/bootEnv.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { MEAN, SLOPE, bh, estimate, holm, parseCsv, parseSL, simExit, tier, tod } from '../backtest/studies/edge-map/analyze.js'
+import { MEAN, SLOPE, bh, estimate, fyersComponents, holm, parseCsv, parseSL, simExit, tier, tod } from '../backtest/studies/edge-map/analyze.js'
 
 const IST = 330 * 60_000
 const at = (hhmm: string) => Date.parse(`2024-03-04T${hhmm}:00Z`) - IST
@@ -64,4 +64,16 @@ test('EDGE-MAP PARSE: trigger SL and a quoted CSV with embedded commas, quotes a
 	assert.equal(rows.length, 2)
 	assert.equal(rows[0]!.j, '{"a":1,"b":2}')
 	assert.equal(rows[1]!.j, 'line1\nline2')
+})
+
+test('EDGE-MAP FYERS COSTS: brokerage cap, one-sided STT and stamp, GST base', () => {
+	const bps = (n: number, name: string) => fyersComponents(n).find((c) => c.name.startsWith(name))!.bps
+	assert.ok(Math.abs(bps(10_000, 'Brokerage') - 6) < 1e-9, '0.03% of ₹10k = ₹3 per leg = 6 bps round trip')
+	assert.ok(Math.abs(bps(100_000, 'Brokerage') - 4) < 1e-9, '₹20 cap per leg at ₹1L = 4 bps round trip')
+	assert.ok(Math.abs(bps(10_000, 'STT') - 2.5) < 1e-9)
+	assert.ok(Math.abs(bps(10_000, 'Stamp') - 0.2) < 1e-9)
+	const g = fyersComponents(10_000)
+	const base = ['Brokerage', 'NSE transaction', 'Clearing', 'SEBI', 'NSE IPFT'].reduce((a, n) => a + g.find((c) => c.name.startsWith(n))!.bps, 0)
+	assert.ok(Math.abs(g.find((c) => c.name === 'GST')!.bps - 0.18 * base) < 1e-9)
+	assert.ok(Math.abs(bps(10_000, 'Slippage') - 10) < 1e-9)
 })
