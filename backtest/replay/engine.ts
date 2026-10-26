@@ -47,6 +47,7 @@ import { feedTick, resetCandles } from '../../src/utils/candleAggregator.js'
 import { resetStructure } from '../../src/utils/marketStructure.js'
 import { pruneStaleStrikes } from '../../src/utils/optionUtils.js'
 import { pushNiftyReturn, resetRegimeState } from '../../src/utils/regimeDetector.js'
+import { resetDiagnostics } from '../../src/core/detectorDiagnostics.js'
 import { NIFTY_SYMBOL } from '../config.js'
 import { getMemoryRedis } from '../core/memoryRedis.js'
 import { setVirtualNow, istMinutesOf, MARKET_CLOSE_MIN } from '../core/clock.js'
@@ -133,6 +134,7 @@ export const replaySession = async (inputs: ReplayInputs): Promise<SessionResult
 	const redis = getMemoryRedis()
 	redis.flushAll()
 	resetRegimeState()
+	resetDiagnostics() // "why no alert" dedupe/caps are per session, like every other singleton
 	pruneStaleStrikes([]) // clears the option tick store entirely
 	for (const symbol of [...equitySymbols, NIFTY_SYMBOL]) {
 		resetCandles(symbol)

@@ -33,6 +33,7 @@ import type { IDetector, TickData } from '../../core/types.js'
 import { redisClient } from '../../config/redis.js'
 import { getVwap } from '../../utils/vwapUtils.js'
 import { getBestStrike } from '../../utils/optionUtils.js'
+import { noteBlocked } from '../../core/detectorDiagnostics.js'
 
 // ─── TUNABLE CONSTANTS ────────────────────────────────────────
 const RANGE_BUILD_CANDLES = 1 // Use first 5-min candle as opening range
@@ -77,7 +78,10 @@ export class NiftyOpeningRangeExplosionDetector implements IDetector {
 		const now = liveTick.timestamp
 
 		if (m < RANGE_START) return
-		if (m > ACTIVE_END) return
+		if (m > ACTIVE_END) {
+			noteBlocked(this.name, liveTick.timestamp, null, 'window_closed', { activeEndMin: ACTIVE_END })
+			return
+		}
 
 		// ── Build 3-min candle ──────────────────────────────────────────
 		if (!this.currentCandle) {
@@ -119,6 +123,7 @@ export class NiftyOpeningRangeExplosionDetector implements IDetector {
 				this.orHigh = Math.max(this.orHigh, c.high)
 				this.orLow = Math.min(this.orLow, c.low)
 			}
+			noteBlocked(this.name, closed.startTs, null, 'range_building')
 			return // still building range
 		}
 
@@ -129,6 +134,7 @@ export class NiftyOpeningRangeExplosionDetector implements IDetector {
 			console.log(
 				`[NiftyORE] 🔒 Opening Range Locked | High: ${this.orHigh} | Low: ${this.orLow} | Spread: ${(this.orHigh - this.orLow).toFixed(0)} pts`,
 			)
+			noteBlocked(this.name, closed.startTs, null, 'lock_candle_not_evaluated', { close: closed.close, orHigh: this.orHigh, orLow: this.orLow })
 			return
 		}
 
@@ -136,10 +142,16 @@ export class NiftyOpeningRangeExplosionDetector implements IDetector {
 		if (this.orHigh === 0 || this.orLow === Infinity) return
 
 		const cooldownKey = `cooldown:v2:nifty_ore`
-		if (await redisClient.get(cooldownKey)) return
+		if (await redisClient.get(cooldownKey)) {
+			noteBlocked(this.name, closed.startTs, null, 'cooldown')
+			return
+		}
 
 		const vwap = await getVwap(this.symbol)
-		if (!vwap) return
+		if (!vwap) {
+			noteBlocked(this.name, closed.startTs, null, 'vwap_missing')
+			return
+		}
 
 		const bodyPct = (Math.abs(closed.close - closed.open) / closed.open) * 100
 		const rangeSize = this.orHigh - this.orLow
@@ -147,6 +159,7 @@ export class NiftyOpeningRangeExplosionDetector implements IDetector {
 		// Skip if range was too wide (volatile open — less predictive)
 		if (rangeSize > 120) {
 			console.log(`[NiftyORE] ⚠️ Range too wide (${rangeSize.toFixed(0)} pts) — skipping ORB`)
+			noteBlocked(this.name, closed.startTs, null, 'range_too_wide', { range: rangeSize, max: 120 })
 			return
 		}
 
@@ -160,7 +173,10 @@ export class NiftyOpeningRangeExplosionDetector implements IDetector {
 			const best = getBestStrike('CE', closed.close)
 			const sl = Number((this.orLow - 5).toFixed(2)) // SL below OR low
 			const risk = closed.close - sl
-			if (risk <= 0 || risk > 80) return
+			if (risk <= 0 || risk > 80) {
+				noteBlocked(this.name, closed.startTs, 'LONG', 'risk_cap', { risk, cap: 80, close: closed.close, stop: sl })
+				return
+			}
 
 			const t1 = Number((closed.close + risk * 1.5).toFixed(2))
 			const t2 = Number((closed.close + risk * 2.5).toFixed(2))
@@ -196,7 +212,10 @@ export class NiftyOpeningRangeExplosionDetector implements IDetector {
 			const best = getBestStrike('PE', closed.close)
 			const sl = Number((this.orHigh + 5).toFixed(2)) // SL above OR high
 			const risk = sl - closed.close
-			if (risk <= 0 || risk > 80) return
+			if (risk <= 0 || risk > 80) {
+				noteBlocked(this.name, closed.startTs, 'SHORT', 'risk_cap', { risk, cap: 80, close: closed.close, stop: sl })
+				return
+			}
 
 			const t1 = Number((closed.close - risk * 1.5).toFixed(2))
 			const t2 = Number((closed.close - risk * 2.5).toFixed(2))
@@ -219,6 +238,15 @@ export class NiftyOpeningRangeExplosionDetector implements IDetector {
 			})
 
 			await redisClient.setEx(cooldownKey, COOLDOWN_SECS, 'true')
+			return
 		}
+		noteBlocked(this.name, closed.startTs, closed.close > this.orHigh + BUFFER_PTS ? 'LONG' : closed.close < this.orLow - BUFFER_PTS ? 'SHORT' : null, oreMissReason(closed, this.orHigh, this.orLow, bodyPct, vwap), { close: closed.close, orHigh: this.orHigh, orLow: this.orLow, bodyPct, vwap })
 	}
+}
+
+/** Which condition kept a locked-range candle from firing (mirrors the LONG / SHORT checks above). */
+export const oreMissReason = (c: { open: number; close: number }, orHigh: number, orLow: number, bodyPct: number, vwap: number): string => {
+	if (c.close > orHigh + BUFFER_PTS) return !(c.close > c.open) ? 'candle_not_bullish' : bodyPct < MIN_BODY_PCT ? 'body_too_small' : !(vwap <= c.close) ? 'vwap_misaligned' : 'unknown'
+	if (c.close < orLow - BUFFER_PTS) return !(c.close < c.open) ? 'candle_not_bearish' : bodyPct < MIN_BODY_PCT ? 'body_too_small' : !(vwap >= c.close) ? 'vwap_misaligned' : 'unknown'
+	return 'no_break'
 }

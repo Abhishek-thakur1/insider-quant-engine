@@ -2,6 +2,12 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## `feat/nifty-block-diagnostics`: logging only, not deployed
+
+- **"Why no alert" records for the Nifty detectors** (AGENTS.md §11.23): ORE, Trend Pulse and VWAP Reclaim note the reason a closed candle didn't fire (risk cap, body too small, warm-up, cooldown, outside window, ...).
+  - Bounded: one per detector per candle, 300 per detector per day, Redis list `diag:nifty:{date}` (500, 36 h TTL), `[Diag]` log lines.
+  - Kill switch `NIFTY_DIAG_ENABLED=false`. No change to alerts, gates, thresholds or positions; the parity test proves identical signals on 26 Oct's bars.
+
 ## `docs/study-guide` (PR #25): docs only, merged 26 Oct; no code, config or deploy change
 
 - **Interview-ready study guide** in `docs/study-guide/`:

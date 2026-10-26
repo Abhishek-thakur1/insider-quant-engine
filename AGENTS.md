@@ -1163,6 +1163,7 @@ version live in `backtest/core/symbolClass.ts`, with a test pinning the five aff
 | `orb:{15\|30}min:{high\|low}:{sym}` | price | 8 h | **`orbDetector` (dormant)** | nothing in the live path (was NiftyLiquiditySweep, now archived) |
 | `HTF_TREND:{sym}` | `BULLISH\|BEARISH` | — | **nothing** | `BaseDetector.isDailyTrendAligned` |
 | `alert:sent:{IST-date}:{detector}:{symbol}` | timestamp (SET NX) | 36 h | `alertPolicy.reserveAlertSlot` | itself — one Telegram alert per detector+symbol per day. Nifty option symbols dedup on `NIFTY`. **Never cleared at boot.** |
+| `diag:nifty:{IST-date}` | list of JSON "why no alert" records | 36 h | `detectorDiagnostics.noteBlocked` (Nifty ORE, Trend Pulse, VWAP Reclaim) | observation only; LTRIM to 500, ≤ 300 records per detector per day. Kill switch `NIFTY_DIAG_ENABLED=false`. **Never cleared at boot.** |
 | `alert:count:{IST-date}` | counter | 36 h | `alertPolicy.reserveAlertSlot` | itself — daily cap. **Never cleared at boot.** |
 | `trades:open` | hash `<position id>` → JSON `OpenPosition` | none | `positionTracker.registerTrade` (and again with `dbId` after the INSERT) | `positionTracker.init` at boot. Id = `trade_<ms>_<symbol>_<detector slug>_<6 hex>` since 2026-10-22 (§11.19); legacy `trade_<ms>_<symbol>` entries still load. The id is opaque: nothing parses it. **Never cleared at boot.** |
 | `ema_shadow:nifty:bars5` | list of closed 5-min Nifty candles (JSON `{t,o,h,l,c}`), capped at 1,500 | none | `NiftyEmaShadow` (`redisBarStore`) | itself at boot — EMA warm-up history. **Never cleared at boot** (listed in the boot-cleanup comment). |
@@ -1697,6 +1698,28 @@ Tests: `tests/publicData.test.ts`, and `tests/sseHeartbeat.test.ts`. The latter 
 `docs/study-guide/` holds the owner's interview study guide: `guide.md` is the source and `index.html` is built from it by `build.mjs`. `VERIFICATION.md` lists every checked path and number.
 
 **When behaviour changes, update the guide too:** the filter, the alert policy, the cron times, the deploy steps or the quota rules. A stale guide teaches wrong answers. Paper trading only, with no proven edge: keep the evidence badges honest.
+
+## 11.23 Nifty "why no alert" diagnostics, logging only (2026-10-26, branch `feat/nifty-block-diagnostics`, not deployed)
+
+On 26 Oct Nifty moved 22,386 → 22,700 with no Nifty alert, and the reasons had to be rebuilt from bars.
+`src/core/detectorDiagnostics.ts` now records them as they happen.
+
+- **What:** when ORE, Trend Pulse or VWAP Reclaim evaluates a closed candle and doesn't fire, it calls
+  `noteBlocked(detector, candleStartMs, side, reason, nums)`. Reasons: `window_*`, `range_building`,
+  `lock_candle_not_evaluated` (ORE, §6.12), `warmup`, `cooldown`, `vwap_missing`, `range_too_wide`,
+  `body_too_small`, `overextended`, `risk_cap` (with risk, cap, close, stop), and a final miss reason
+  (`no_break`, `candle_not_bullish`/`bearish`, `vwap_misaligned`, `no_higher_highs`, `no_lower_lows`,
+  `vwap_distance`, `mixed_direction`, `no_cross`).
+- **Bounds:** one record per detector per candle (the first reason wins); each `window_*` reason once per
+  detector per day; 300 records per detector per day; Redis list `diag:nifty:{IST-date}` trimmed to 500,
+  36 h TTL (§7); one `[Diag]` log line per record.
+- **Safety:** `noteBlocked` is synchronous, never awaited by a detector and never throws; the Redis write
+  is fire-and-forget with errors swallowed. It changes no alert, gate, threshold, cooldown or position.
+  `tests/niftyDiagnostics.test.ts` replays 26 Oct's bars with diagnostics on and off and asserts
+  identical signals, and checks the bounds and the kill switch (`NIFTY_DIAG_ENABLED=false`).
+- **Replay:** `backtest/replay/engine.ts` calls `resetDiagnostics()` per session.
+- **ORE note:** the call sites follow the current lock behaviour; if PR #31 (lock candle) merges, the
+  `lock_candle_not_evaluated` record goes away with the early return.
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 

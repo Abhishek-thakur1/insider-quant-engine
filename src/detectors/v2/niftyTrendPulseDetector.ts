@@ -35,6 +35,7 @@ import type { IDetector, TickData } from '../../core/types.js'
 import { redisClient } from '../../config/redis.js'
 import { getVwap } from '../../utils/vwapUtils.js'
 import { getBestStrike } from '../../utils/optionUtils.js'
+import { noteBlocked } from '../../core/detectorDiagnostics.js'
 
 // ─── TUNABLE CONSTANTS ────────────────────────────────────────
 const CANDLE_MS = 5 * 60 * 1000 // 5-min candles
@@ -78,7 +79,11 @@ export class NiftyTrendPulseDetector implements IDetector {
 	private avgVolume: number = 0 // rolling avg of last 10 candle volumes
 
 	public async analyze(liveTick: TickData): Promise<void> {
-		if (!isActiveWindow()) return
+		if (!isActiveWindow()) {
+			const wm = getISTMinutes()
+			noteBlocked(this.name, liveTick.timestamp, null, wm < WINDOW_1_START ? 'window_not_open' : wm < WINDOW_2_START ? 'window_midday_pause' : 'window_closed')
+			return
+		}
 
 		const now = liveTick.timestamp
 
@@ -122,20 +127,32 @@ export class NiftyTrendPulseDetector implements IDetector {
 		const volSample = this.closedCandles.slice(-10)
 		this.avgVolume = volSample.reduce((s, c) => s + c.volume, 0) / volSample.length
 
-		if (this.closedCandles.length < CONFIRMS_NEEDED + 1) return
+		if (this.closedCandles.length < CONFIRMS_NEEDED + 1) {
+			noteBlocked(this.name, closed.startTs, null, 'warmup', { candles: this.closedCandles.length, need: CONFIRMS_NEEDED + 1 })
+			return
+		}
 
 		const cooldownKey = `cooldown:v2:nifty_pulse`
-		if (await redisClient.get(cooldownKey)) return
+		if (await redisClient.get(cooldownKey)) {
+			noteBlocked(this.name, closed.startTs, null, 'cooldown')
+			return
+		}
 
 		const vwap = await getVwap(this.symbol)
-		if (!vwap) return
+		if (!vwap) {
+			noteBlocked(this.name, closed.startTs, null, 'vwap_missing')
+			return
+		}
 
 		const recent = this.closedCandles.slice(-CONFIRMS_NEEDED) // last 2 closed candles
 		const current = closed
 
 		// ── FILTER 1: Real body (not a doji / indecision candle) ────────
 		const bodyPct = (Math.abs(current.close - current.open) / current.open) * 100
-		if (bodyPct < MIN_BODY_PCT) return
+		if (bodyPct < MIN_BODY_PCT) {
+			noteBlocked(this.name, closed.startTs, null, 'body_too_small', { bodyPct, min: MIN_BODY_PCT })
+			return
+		}
 
 		// ── FILTER 2: Volume confirmation (participation, not thin air) ──
 		const isVolConfirmed = this.avgVolume > 0 && current.volume >= this.avgVolume * VOL_CONFIRM_MULT
@@ -158,7 +175,10 @@ export class NiftyTrendPulseDetector implements IDetector {
 			const best = getBestStrike('CE', current.close)
 			const indexSl = Number((Math.min(...recent.map((c) => c.low)) - 10).toFixed(2))
 			const risk = current.close - indexSl
-			if (risk <= 0 || risk > 60) return // reject anomalies
+			if (risk <= 0 || risk > 60) {
+				noteBlocked(this.name, closed.startTs, 'LONG', 'risk_cap', { risk, cap: 60, close: current.close, stop: indexSl })
+				return // reject anomalies
+			}
 
 			const t1 = Number((current.close + risk * 1.5).toFixed(2))
 			const t2 = Number((current.close + risk * 2.5).toFixed(2))
@@ -193,7 +213,10 @@ export class NiftyTrendPulseDetector implements IDetector {
 			const best = getBestStrike('PE', current.close)
 			const indexSl = Number((Math.max(...recent.map((c) => c.high)) + 10).toFixed(2))
 			const risk = indexSl - current.close
-			if (risk <= 0 || risk > 60) return
+			if (risk <= 0 || risk > 60) {
+				noteBlocked(this.name, closed.startTs, 'SHORT', 'risk_cap', { risk, cap: 60, close: current.close, stop: indexSl })
+				return
+			}
 
 			const t1 = Number((current.close - risk * 1.5).toFixed(2))
 			const t2 = Number((current.close - risk * 2.5).toFixed(2))
@@ -220,6 +243,12 @@ export class NiftyTrendPulseDetector implements IDetector {
 			})
 
 			await redisClient.setEx(cooldownKey, COOLDOWN_SECONDS, 'true')
+			return
 		}
+		noteBlocked(this.name, closed.startTs, allBullish ? 'LONG' : allBearish ? 'SHORT' : null, pulseMissReason(allBullish, allBearish, hasHH, hasLL, isAboveVwap, isBelowVwap), { close: current.close, vwapDistPct, bodyPct })
 	}
 }
+
+/** Which condition kept a closed candle from firing (mirrors the LONG / SHORT checks above). */
+export const pulseMissReason = (allBullish: boolean, allBearish: boolean, hasHH: boolean, hasLL: boolean, above: boolean, below: boolean): string =>
+	allBullish ? (!hasHH ? 'no_higher_highs' : !above ? 'vwap_distance' : 'unknown') : allBearish ? (!hasLL ? 'no_lower_lows' : !below ? 'vwap_distance' : 'unknown') : 'mixed_direction'
