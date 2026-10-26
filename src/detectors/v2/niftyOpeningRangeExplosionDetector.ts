@@ -129,7 +129,8 @@ export class NiftyOpeningRangeExplosionDetector implements IDetector {
 			console.log(
 				`[NiftyORE] 🔒 Opening Range Locked | High: ${this.orHigh} | Low: ${this.orLow} | Spread: ${(this.orHigh - this.orLow).toFixed(0)} pts`,
 			)
-			return
+			// No return: the candle that just closed is the first breakout candidate. Returning here
+			// skipped it (26 Oct: the 09:20 candle closed below the range low and was never checked).
 		}
 
 		if (!this.rangeLocked) return

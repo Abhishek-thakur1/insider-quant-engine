@@ -1135,6 +1135,20 @@ so even if routing were fixed those would still misclassify.
 The correct test needs a strike: `/\d{3,}\s*(CE|PE)$/`. Both the faithful and the correct
 version live in `backtest/core/symbolClass.ts`, with a test pinning the five affected symbols.
 **Not yet fixed** — found during backtest work, whose guardrails forbid modifying `websocket.ts`.
+
+### 6.12 Nifty Opening Range Explosion: the lock candle was never evaluated (found 2026-10-26; fix in branch `fix/ore-lock-candle`, not deployed)
+
+`niftyOpeningRangeExplosionDetector.ts` builds the opening range from the first 5-minute candle. It locks the range when the second candle closes, and that lock block (lines 125-133 on `v2`) ended in `return`.
+- **The defect:** the second candle, the first candle that could break out, was never checked.
+- **26 Oct:** the 09:20 candle closed at 22410.15, below range low − 5 (22431.5), and was skipped.
+- **Fix:** the lock no longer returns; the candle that closed falls through to the breakout checks.
+- **Test:** `tests/niftyOreLock.test.ts` runs the real detector through the replay harness. A 40-point range with a lock-candle breakdown gives `[]` before the fix and one SHORT after.
+
+**Related constraint (unchanged; not a code defect, but it limits the detector):**
+- The stop sits at the opposite range edge ± 5, and risk is capped at 80 points.
+- So any breakout's risk is more than **range + 10**, and **ORE can never fire when the opening range is 70 points or wider**.
+- 26 Oct's range was 80 points, so even with this fix it could not have fired. The second test pins that with 26 Oct's real bars.
+- Changing the cap or the stop is a threshold decision for the owner (use `SHADOW_MODE` first).
 ---
 
 ## 7. Redis key reference

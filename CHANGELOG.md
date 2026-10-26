@@ -2,6 +2,12 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased: `fix/ore-lock-candle` (PR; not merged, not deployed; live detector change needs the owner's approval)
+
+- **Nifty Opening Range Explosion now evaluates the candle that closes at the range lock** (AGENTS.md §6.12). Before, the lock step returned and skipped it: the 26 Oct 09:20 candle, a close below the range low, was never checked.
+- **Tests:** `tests/niftyOreLock.test.ts`, 2 tests. The lock-candle breakdown fails before the fix and passes after. 26 Oct's real bars give no fire either way.
+- **Documented, not changed:** ORE cannot fire when the opening range is 70 points or wider, because the stop sits at the opposite edge ± 5 under an 80-point risk cap.
+
 ## `docs/study-guide` (PR #25): docs only, merged 26 Oct; no code, config or deploy change
 
 - **Interview-ready study guide** in `docs/study-guide/`:
