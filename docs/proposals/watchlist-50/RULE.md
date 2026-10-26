@@ -67,3 +67,7 @@ Fyers calls, no hand-picked 'trending' names".
 ## Deviations
 
 (none yet)
+
+- **2026-10-26, about 22:45 IST: a correction to a fact, not to the rule.**
+  - **The seeder.** "Fixed consequences" said the VWAP seeder makes one history call per name at each boot. That is true only for a restart after 09:15. At the normal 09:00 boot the seeder skips and makes no call (`seedHistoricalVwap`, "Before 09:15 IST … Skipping").
+  - **The owner picks.** These are proposed in `docs/proposals/owner-picks/`, and BSE, MCX and PAYTM are on both lists. Whether this list refills the three places with BAJAJ-AUTO, KEI and INDIGO, or stops at 47 added, is for the owner to decide. The ranking itself is unchanged.
