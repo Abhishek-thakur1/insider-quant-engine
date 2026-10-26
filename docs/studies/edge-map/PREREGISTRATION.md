@@ -167,3 +167,33 @@ Append only, with the date, what changed and why. It is empty at registration.
    - **Replay:** S0 trades, train and test, gross and net at the 20.4 bps FYERS total.
    - **Live:** a new read-only snapshot (`edge-map-freeze-2026-10-26`, `signals.csv` sha256 `2674cc79…`, `paper_trades.csv` sha256 `58bcff81…`), with signals joined to closed trades through `trade_id` and synthetic_close / index_option_proxy excluded.
    - **Unchanged:** the original live freeze of 23 Oct still drives §G; nothing else in the tables changed (diff: 29 lines added, 0 removed).
+
+**2026-10-26, about 22:30 IST. Written BEFORE any liquidity or spread number was computed, at the owner's request.** This is descriptive and changes no decision rule.
+
+11. **Liquidity and a spread proxy for the watchlist candidates** (tables §J). The question is whether the 10 bps round-trip slippage assumption (5 bps per leg, §4 and §H) is too low for any name. Live paper orders are about ₹10,000 notional, so impact is ignored. The round-trip cost of crossing is taken as about one full quoted spread.
+   - **Names:**
+     - the 25 live watchlist names (`watchlist.json`, written 20 Oct);
+     - the 25 added names proposed in PR #34;
+     - the owner picks BSE, MCX, PAYTM and ATHERENERG.
+     - Each name is listed once, with every group it belongs to.
+   - **No Fyers call.** Only data that already exists is used:
+     - **(a) The backtest cache** (`res-D`, `res-1`, last bar 2026-09-07).
+     - **(b) The engine's own Redis VWAP state:** `vwap:{symbol}:{date}`, exported read-only on 26 Oct.
+       - For an equity, its `cumulativePV` is Σ price × volume of the ticks the engine received, plus Σ typical × volume of seeded 1-minute candles. That is the day's traded value as the engine observed it, not an exchange figure.
+       - A day counts only if the engine saw the full session. The test is that the Nifty key for that day holds 370-400 one-minute candles. Days outside that band (partial sessions, or the 776 / 757 double-runs on 8-9 Sep) are dropped. That band was chosen from the coverage counts alone; no equity value had been read.
+   - **ADTV, two columns:**
+     - from (a): the mean of close × volume over the last 20 daily bars to 2026-09-07;
+     - from (b): the mean `cumulativePV` over the last up-to-20 qualifying days, with their count n.
+     - Both are in ₹ crore.
+   - **Spread proxy, primary:** Abdi-Ranaldo (2017) on 1-minute bars from (a), over the last 5 cached sessions.
+     - Bars from 09:20 to 15:15 only, which skips the auctions and the square-off. Only pairs of consecutive bars within a session are used.
+     - Formula: S = √max(0, 4 · mean[(c_t − η_t)(c_t − η_{t+1})]), with η = (ln H + ln L)/2 and c = ln C, given in bps.
+   - **Spread proxy, secondary (shown, not used for the flag):** Corwin-Schultz (2012) on the last 20 daily bars from (a), with the overnight adjustment, negative two-day estimates set to 0, and the mean taken. On daily bars it is known to rise with volatility, so for liquid names it is expected to read high.
+   - **Flag, fixed now:**
+     - "10 bps likely too low" if the primary estimate is above 10 bps;
+     - "unknown" if there are no 1-minute bars for the name (no flag either way; ADTV from (b) is shown where it exists).
+   - **Limits:**
+     - Both estimators are proxies for the spread, not measured fills.
+     - The cache is 7 weeks old.
+     - (b) covers only the days each name was on a watchlist.
+     - Nothing here is a cost measurement.
