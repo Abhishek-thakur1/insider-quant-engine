@@ -1164,6 +1164,7 @@ version live in `backtest/core/symbolClass.ts`, with a test pinning the five aff
 | `HTF_TREND:{sym}` | `BULLISH\|BEARISH` | — | **nothing** | `BaseDetector.isDailyTrendAligned` |
 | `alert:sent:{IST-date}:{detector}:{symbol}` | timestamp (SET NX) | 36 h | `alertPolicy.reserveAlertSlot` | itself — one Telegram alert per detector+symbol per day. Nifty option symbols dedup on `NIFTY`. **Never cleared at boot.** |
 | `alert:count:{IST-date}` | counter | 36 h | `alertPolicy.reserveAlertSlot` | itself — daily cap. **Never cleared at boot.** |
+| `trades:open` | hash `<position id>` → JSON `OpenPosition` | none | `positionTracker.registerTrade` (and again with `dbId` after the INSERT) | `positionTracker.init` at boot. Id = `trade_<ms>_<symbol>_<detector slug>_<6 hex>` since 2026-10-22 (§11.19); legacy `trade_<ms>_<symbol>` entries still load. The id is opaque: nothing parses it. **Never cleared at boot.** |
 | `ema_shadow:nifty:bars5` | list of closed 5-min Nifty candles (JSON `{t,o,h,l,c}`), capped at 1,500 | none | `NiftyEmaShadow` (`redisBarStore`) | itself at boot — EMA warm-up history. **Never cleared at boot** (listed in the boot-cleanup comment). |
 
 > **2026-10-06:** cooldown keys (`cooldown:*`, `v2:cooldown:*`, `v2:session_open:*`) are **no
@@ -1640,6 +1641,56 @@ The regime then restarted from zero. Worse, the regime engine reads only its **i
 - the EMA shadow's half-built candle.
 
 Tests: `tests/bootCleanup.test.ts`.
+
+## 11.19 Unique position ids, row-addressed closes (2026-10-22, branch `fix/position-id`)
+
+**Why:** on Oct 22 at 11:06 two detectors fired AEQUS LONG in the same millisecond. Both positions got the id `trade_<ms>_NSE:AEQUS-EQ`.
+- The second overwrote the first in `trades:open`.
+- After the 11:46 restart only one was reloaded, so `pnl:daily` counted one close.
+- Postgres rows were closed with `WHERE symbol AND entry_time`, which matches **both** same-millisecond rows.
+
+**Now:**
+- `positionStatus.newPositionId` builds `trade_<ms>_<symbol>_<detector slug>_<6 hex>`.
+- **Order:** registration is INSERT, then `dbId`, then **one** `trades:open` write, then the in-memory entry. A position is invisible to `processTick` until its row id is known. That way a close can't race the INSERT, and no second write can resurrect a closed position as a ghost (the independent review found this). `dbId` survives a restart.
+- The close UPDATE and the orphan UPDATE target `id = dbId` (`positionStatus.rowMatch`). Positions registered before this change still use the legacy symbol + entry_time match.
+- The API and dashboard never parse the id. The API returns `paper_trades.id`; SSE events carry the position object and are only compared for equality.
+
+**Parity:** `legacyWorkerParity` checks that the new id extends the old one, then compares everything else exactly.
+
+Tests: `tests/positionId.test.ts`.
+
+## 11.20 Dashboard API additions, read-only (2026-10-23, branch `feat/api-signals-health`)
+
+Pure logic lives in `src/api/publicData.ts`, wired in `src/api/server.ts`. There is no engine change, no migration and no write. Deploy **the API container alone**, outside market hours, with a fresh `pg_dump`. The owner approved deploying it on Fri 23 Oct after the close; `quant_engine` is not rebuilt or recreated.
+
+- **`GET /api/signals?date=YYYY-MM-DD`**: the day's fires from `signals`, newest first, capped at 500. The SQL is parameterised, and a bad date returns 400.
+  - **Exposed columns:** detector, score, threshold, filter result, rejecting gate, regime, alerted, suppression reason, `data_quality`, `trade_id`.
+  - **Not exposed:** trigger text, quantities, capital fields, the breakdown.
+- **`/api/trades/history` and `/api/today`** get additive, read-only fields:
+  - history rows add `target`, `stopLoss` and `dataQuality`, so the trade view never has to invent levels;
+  - open trades add `gated`, `regimeClass` and `dataQuality`.
+
+  Existing fields are unchanged.
+- **`GET /api/health`**: **coarse** public health, per the owner, because the dashboard has no login.
+  - `status`: `live`, `stale`, `closed` or `holiday`.
+    - `live` means the newest closed 5-minute Nifty candle in `ema_shadow:nifty:bars5` ended within 10 minutes, during 09:15–15:30 IST on a trading day.
+    - `stale` means it's inside the session with no recent candle.
+  - `stocksSeenToday`: the count of `vwap:*:{today}` keys, excluding the index.
+  - `ticksPer5m`: currently `null`. The engine logs it but doesn't publish it, so a later engine change is needed.
+  - **No** quota, monitor, restart or host details.
+- **`/api/events` keep-alive** (`src/api/sseHeartbeat.ts`): an SSE comment `: ping <ms>` every 25 s (`SSE_HEARTBEAT_MS`), stopped on client close. EventSource ignores comments, so no client change is needed.
+  - **Why:** the Vercel `/api` rewrite closed the idle stream after 151 s on both production domains (measured 2026-10-23 10:16 IST with no position open; re-measured 19:10 IST, 150 s, 0 pings).
+  - **Unverified:** whether the cut is an idle timeout (the heartbeat fixes it) or a hard cap (it doesn't). After the API deploy, run `scripts/sse_soak.sh` (one read-only GET through ninefifteen's `/api`, 300 s). PASS means the stream held past 151 s with pings arriving.
+
+- **`quant_api` loses its anonymous `/app/node_modules` volume** (`docker-compose.yml`). This is the first of four services, approved per service by the owner on 2026-10-23.
+  - **Why:** nothing bind-mounts source over `/app`, so the mount had no purpose. Compose carries the old anonymous volume into every recreate: on 2026-10-23 `quant_api`, `quant_engine` and `quant_auth` all still mounted volumes from 2026-09-09. A future dependency change would be built into the image and silently masked. Their lockfiles matched the images on 23 Oct, so nothing is wrong yet.
+  - **Leftovers:** orphaned volumes came from `compose down` and `docker rm` without `-v`. 4 were removed on 23 Oct.
+  - **Deploy:** with PR #24, the API container alone, outside market hours.
+    - After it's recreated, check that it's healthy and that `docker inspect quant_api` shows no `/app/node_modules` mount (it now uses the image's own).
+    - Then remove its old volume by full id (`f20993a259ec…`) with `docker volume rm`, after the same three checks: 0 containers in any state, no `PG_VERSION`/`pg_wal`/`global/pg_control`, and only npm package folders. **Never** `prune`.
+  - **The other services:** `quant_engine`, `quant_auth` and `quant_screener` follow on separate later evenings, never with the PR #22 deploy, so any problem traces to one change.
+
+Tests: `tests/publicData.test.ts`, and `tests/sseHeartbeat.test.ts`. The latter puts a local proxy that cuts idle connections at 300 ms in front of the stream: it reproduces the cut without the heartbeat, and the stream survives 4× that window with it. That's an emulation; the real check is the soak script.
 
 ## 11.21 Study guide (docs only, 2026-10-23, branch `docs/study-guide`)
 

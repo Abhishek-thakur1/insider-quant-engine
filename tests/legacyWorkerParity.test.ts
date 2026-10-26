@@ -89,7 +89,19 @@ for (const sc of scenarios) {
 		const after = await runWorker('current', newSource, sc)
 
 		assert.ok(before.effects.length > 0, 'old worker produced no effects — harness not wired')
-		assert.deepEqual(after.effects, before.effects)
+		// The ONE intended difference (2026-10-22, fix/position-id): the position id gained a
+		// detector slug + random suffix, `trade_<ms>_<symbol>` → `trade_<ms>_<symbol>_<det>_<6 hex>`.
+		// Check that shape against the old id, then compare everything else exactly.
+		const oldIds = before.effects.filter((e) => e[0] === 'registerTrade').map((e) => (e[1] as { id: string }).id)
+		const normalized = after.effects.map((e) => {
+			if (e[0] !== 'registerTrade') return e
+			const pos = e[1] as { id: string }
+			const old = oldIds.shift()!
+			assert.match(pos.id, /^trade_\d+_.+_[A-Za-z0-9]+_[0-9a-f]{6}$/, 'new id shape')
+			assert.ok(pos.id.startsWith(`${old}_`), `new id ${pos.id} extends the old ${old}`)
+			return ['registerTrade', { ...pos, id: old }] as Effect
+		})
+		assert.deepEqual(normalized, before.effects)
 
 		// The old worker never logs signals; the new one logs exactly one row per fire.
 		assert.equal(before.signalRows.length, 0)

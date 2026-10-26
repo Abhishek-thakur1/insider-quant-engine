@@ -2,6 +2,10 @@ import Fastify from 'fastify'
 import { redisClient, bootRedis } from '../config/redis.js'
 import { pool } from '../config/db.js'
 import { schemaProblem } from '../db/migrate.js'
+import { coarseHealth, mapSignalRow, signalsQuery } from './publicData.js'
+import { startSseHeartbeat } from './sseHeartbeat.js'
+import { loadHolidays } from '../core/sessionGuard.js'
+import { getISTDateString } from '../utils/marketHours.js'
 
 const fastify = Fastify({ logger: true })
 
@@ -76,6 +80,11 @@ fastify.get('/api/today', async (request, reply) => {
 			capitalGated: r.capital_gated || false,
 			actualSize: r.actual_size !== null ? Number(r.actual_size) : (Number(r.qty) || 100),
 			durationClass: r.duration_class || 'INTRADAY',
+			// Read-only additions for the dashboard redesign (2026-10-23): the alert flag, the
+			// declared regime and the row's data-quality flags (duplicate / invalid rows visible).
+			gated: r.gated === true,
+			regimeClass: r.regime_class ?? undefined,
+			dataQuality: Array.isArray(r.data_quality) ? r.data_quality : [],
 		}))
 	}
 })
@@ -130,6 +139,11 @@ fastify.get('/api/trades/history', async (request, reply) => {
 			actualSize: r.actual_size !== null ? Number(r.actual_size) : (Number(r.qty) || 100),
 			durationClass: r.duration_class || 'INTRADAY',
 			exitReason: r.exit_reason || undefined,
+			// Read-only additions (2026-10-23): the recorded levels, so the trade view never has to
+			// invent them, and the data-quality flags.
+			target: r.target_price !== null && r.target_price !== undefined ? Number(r.target_price) : undefined,
+			stopLoss: r.stop_price !== null && r.stop_price !== undefined ? Number(r.stop_price) : undefined,
+			dataQuality: Array.isArray(r.data_quality) ? r.data_quality : [],
 		}))
 	}
 })
@@ -162,6 +176,33 @@ fastify.get('/api/trades/heatmap', async (request, reply) => {
 	}
 })
 
+// REST: every fire of a day from the signals table — read-only (src/api/publicData.ts)
+fastify.get('/api/signals', async (request, reply) => {
+	const date = String((request.query as any)?.date ?? getISTDateString())
+	const q = signalsQuery(date)
+	if (!q) return reply.code(400).send({ success: false, error: 'date must be YYYY-MM-DD' })
+	const res = await pool.query(q.sql, q.params)
+	return { success: true, date, count: res.rowCount, data: res.rows.map(mapSignalRow) }
+})
+
+// REST: coarse public health — status, ticks per 5 min, stocks seen; nothing else (owner, 2026-10-23)
+const HOLIDAYS = loadHolidays()
+fastify.get('/api/health', async () => {
+	const now = Date.now()
+	const today = getISTDateString(now)
+	const last = await redisClient.lRange('ema_shadow:nifty:bars5', -1, -1)
+	let lastBarStartMs: number | null = null
+	try {
+		lastBarStartMs = last[0] ? Number(JSON.parse(last[0]).t) || null : null
+	} catch {
+		lastBarStartMs = null
+	}
+	let stocksSeenToday = 0
+	for await (const batch of redisClient.scanIterator({ MATCH: `vwap:*:${today}`, COUNT: 500 }))
+		stocksSeenToday += batch.filter((k) => !k.includes('-INDEX:')).length
+	return { success: true, data: coarseHealth({ nowMs: now, holidays: HOLIDAYS, lastBarStartMs, stocksSeenToday }) }
+})
+
 // SSE Stream Endpoint
 fastify.get('/api/events', (request, reply) => {
 	const query = request.query as any
@@ -175,12 +216,15 @@ fastify.get('/api/events', (request, reply) => {
 	})
 
 	reply.raw.write('retry: 3000\n\n')
+	// keep-alive comment every 25 s so an idle-timeout proxy (the Vercel /api rewrite) keeps the stream open
+	const stopHeartbeat = startSseHeartbeat((chunk) => reply.raw.write(chunk))
 
 	const clientObj = { reply, includeUngated }
 	clients.add(clientObj)
 	console.log(`[SSE] Client connected. Active clients: ${clients.size} (includeUngated: ${includeUngated})`)
 
 	request.raw.on('close', () => {
+		stopHeartbeat()
 		clients.delete(clientObj)
 		console.log(`[SSE] Client disconnected. Active clients: ${clients.size}`)
 	})
