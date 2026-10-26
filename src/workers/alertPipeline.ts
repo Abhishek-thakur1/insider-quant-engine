@@ -14,6 +14,7 @@
 
 import type { FilterDecision } from '../detectors/janeStreetFilter.js'
 import type { OpenPosition } from '../core/positionTracker.js'
+import { newPositionId } from '../core/positionStatus.js'
 import type { AlertPayload } from './telegramWorker.js'
 import type { SignalDraft } from '../db/signalRecord.js'
 import {
@@ -59,6 +60,8 @@ export interface PipelineDeps {
 	getAlertStore(): Promise<AlertStore>
 	/** Symbol+side duplicate claims (alertPolicy.claimSymbolSide). */
 	getClaimStore(): Promise<ClaimStore>
+	/** Random suffix of the position id (positionStatus.newPositionId); tests pin it. */
+	randomIdSuffix?: () => string
 	sendChannel(text: string, markdown: boolean): Promise<unknown>
 	sendAdmin(text: string): Promise<unknown>
 	now(): number
@@ -222,7 +225,7 @@ export const runAlertPipeline = async (
 		// One clock read for the position id and both claims, so a give-back always matches
 		// the stored claim exactly (review finding 3).
 		const nowMs = deps.now()
-		const positionId = `trade_${nowMs}_${data.symbol}`
+		const positionId = newPositionId(nowMs, data.symbol, data.detectorName || 'UNKNOWN', deps.randomIdSuffix) // the ONE id for claim, position and flags
 		const symKeys = symbolSideKeys(getISTDateString(nowMs), data.side, data.symbol)
 		const myClaim: SymbolClaim = { ts: nowMs, positionId }
 		// Option paper positions never close in-session (registered as 'NIFTY 22650 CE', ticks

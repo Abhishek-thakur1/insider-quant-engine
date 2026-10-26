@@ -308,6 +308,7 @@ export const makeDeps = (sc: Scenario, effects: Effect[], claims: ClaimStore = m
 	}),
 	getAlertStore: async () => makeStore(effects, sc),
 	getClaimStore: async () => claims,
+	randomIdSuffix: () => '000000',
 	sendChannel: async (text, markdown) => {
 		effects.push(['send', markdown, text])
 		if (sc.sendFail === 'both' || (sc.sendFail === 'markdown' && markdown))

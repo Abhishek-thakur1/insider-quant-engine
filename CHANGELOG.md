@@ -33,6 +33,41 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 - **Only an alerted fire keeps the paper claim** (owner decision): on a capital skip, failed send, cap reached, duplicate or error, the claim is released.
 - **Concurrent inversion fixed** (4th review): an alerted fire that was flagged at insert because a concurrent holder was later not alerted re-takes the paper claim and drops its flag (paper row and signals row).
 - **Tests:** 19, 340 overall.
+## `docs/study-guide` (PR #25): docs only, merged 26 Oct; no code, config or deploy change
+
+- **Interview-ready study guide** in `docs/study-guide/`:
+  - `guide.md`: the Markdown source, Parts 0–10 plus security and cost;
+  - `index.html`: one self-contained page with a sticky contents list, search, light and dark themes, Level 3 sections collapsed, print CSS, and 4 inline SVG diagrams. It makes no external requests.
+  - `VERIFICATION.md`: 51 paths resolved, 20 numbers checked, 7 open items;
+  - `OUTLINE.md`.
+- **Worked example:** AEQUS 11:06 LONG on 22 Oct, with JSLL as the post-restart counter-example.
+- **Dashboard redesign planning:** `docs/dashboard-redesign/AUDIT.md` and `wireframes.html`.
+- **Rebuild the HTML:** `npm install --no-save marked@14.1.4 && node docs/study-guide/build.mjs`.
+
+## `feat/api-signals-health` (PR #24): API container only, deployed outside market hours
+
+- **New read-only endpoints for the dashboard redesign** (AGENTS.md §11.20):
+  - `GET /api/signals?date=` lists the day's fires from the `signals` table.
+  - `GET /api/health` gives coarse public health: status, stocks seen, and ticks per 5 minutes. That last one is `null` until the engine publishes it.
+- **No writes:** no engine change, no migration.
+- **Additive read-only fields:**
+  - `/api/trades/history` adds `target`, `stopLoss` and `dataQuality`;
+  - `/api/today` open trades add `gated`, `regimeClass` and `dataQuality`.
+- **Stream keep-alive** (AGENTS.md §11.20): `/api/events` sends an SSE comment every 25 s, so the Vercel `/api` rewrite stops cutting the idle stream at 151 s. This is unverified until the deploy; `scripts/sse_soak.sh` is the post-deploy check. `tests/sseHeartbeat.test.ts` has 5 tests, including one through an emulated idle-timeout proxy.
+- **`quant_api` uses the image's own `node_modules`** (AGENTS.md §11.20). The anonymous `/app/node_modules` volume is removed from compose; compose had been carrying a 9 Sep volume into every recreate. The old volume is removed by id after the deploy, with the three checks. Engine, auth and screener follow on separate evenings.
+- **Tests:** `tests/publicData.test.ts`, 6 tests. They check:
+  - the SQL is SELECT-only, parameterised and capped;
+  - which columns are exposed;
+  - the status in each state;
+  - that health has only the coarse fields;
+  - that the API never writes.
+
+## `fix/position-id` (PR #23): merged and deployed 23 Oct after the close (engine image built, container left Created; first live session Mon 26 Oct)
+
+- **Unique position ids** (AGENTS.md §11.19): `trade_<ms>_<symbol>_<detector slug>_<6 hex>`. Same-millisecond fires on one symbol no longer overwrite each other in `trades:open`. That happened to AEQUS on Oct 22, and `pnl:daily` counted it once.
+- **Closes and orphan marking target the row's own primary key** (`dbId`, persisted with the position). Before, they matched by symbol + entry_time, which hits every same-millisecond row. Legacy positions keep the old match.
+- **Unchanged:** the API, the dashboard and the DB schema. No migration.
+- **Tests:** `tests/positionId.test.ts`, 4 tests. The same-millisecond pipeline test fails on the old id. Parity checks that the new id extends the old one.
 
 ## `feat/fetch-replay` — merged (PR #20); offline tooling, nothing fetched yet
 

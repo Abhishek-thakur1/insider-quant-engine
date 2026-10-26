@@ -1,10 +1,13 @@
 import { redisClient } from '../config/redis.js'
 import { pool } from '../config/db.js'
 import type { TickData } from './types.js'
-import { insertStatusFor, isOrphanedAtBoot, istDate } from './positionStatus.js'
+import { insertStatusFor, isOrphanedAtBoot, istDate, rowMatch } from './positionStatus.js'
 
 export interface OpenPosition {
+	/** Unique: `trade_<ms>_<symbol>_<detector>_<6 hex>` (positionStatus.newPositionId); legacy `trade_<ms>_<symbol>` rows still load. */
 	id: string
+	/** paper_trades primary key, set right after the INSERT; UPDATEs target it (positionStatus.rowMatch). */
+	dbId?: number | null
 	symbol: string
 	side: 'LONG' | 'SHORT'
 	entryPrice: number
@@ -65,12 +68,13 @@ class PositionTracker {
 
 	private async markOrphaned(pos: OpenPosition) {
 		try {
+			const m = rowMatch(pos, 1)
 			await pool.query(
 				`UPDATE paper_trades
 				 SET status = 'ORPHANED',
 				     data_quality = CASE WHEN 'orphaned' = ANY(data_quality) THEN data_quality ELSE array_append(data_quality, 'orphaned') END
-				 WHERE symbol = $1 AND status IN ('OPEN', 'SKIPPED') AND entry_time = to_timestamp($2 / 1000.0)`,
-				[pos.symbol, pos.timestamp],
+				 WHERE ${m.where} AND status IN ('OPEN', 'SKIPPED')`,
+				m.params,
 			)
 			await redisClient.hDel('trades:open', pos.id)
 			console.warn(`[PositionTracker] 👻 ${pos.symbol} ${pos.side} from ${istDate(pos.timestamp)} was never closed — marked ORPHANED (no exit recorded).`)
@@ -111,13 +115,14 @@ class PositionTracker {
 	}
 
 	public async registerTrade(pos: OpenPosition): Promise<number | null> {
-		// Save to Redis for persistence and API access
-		await redisClient.hSet('trades:open', pos.id, JSON.stringify(pos))
-		// Track in memory for ultra-fast tick checking
-		this.addToMemory(pos)
-
-		// Insert into Postgres. Capital-skipped signals (actual size 0) go in as
-		// SKIPPED, not OPEN — they are not positions (see positionStatus.ts).
+		// Postgres FIRST, then one Redis write and the in-memory entry (2026-10-22). Writing
+		// trades:open before the INSERT and again after it let a tick close the position during
+		// the INSERT, and the second write then resurrected it as a ghost in trades:open. A
+		// position only becomes visible to processTick once its row id is known, so every close
+		// addresses exactly its own row.
+		//
+		// Capital-skipped signals (actual size 0) go in as SKIPPED, not OPEN — they are not
+		// positions (see positionStatus.ts).
 		const { status, dataQuality: statusFlags } = insertStatusFor(pos)
 		const dataQuality = [...statusFlags, ...(pos.dataQuality ?? [])]
 		let tradeId: number | null = null
@@ -133,6 +138,21 @@ class PositionTracker {
 		} catch (dbErr) {
 			console.error('[PositionTracker] ❌ Postgres insert error:', dbErr)
 		}
+		// The row's primary key travels with the position (closes and orphan marking address
+		// exactly this row, also after a restart reloads trades:open). Insert failed → no dbId →
+		// the legacy symbol + entry_time match.
+		if (tradeId !== null) pos.dbId = tradeId
+
+		// Save to Redis for persistence. The row is already committed, so a Redis error must not
+		// abandon it: still track the position in memory so this session closes it (review of
+		// f16a33d). Only a restart before its exit would lose it.
+		try {
+			await redisClient.hSet('trades:open', pos.id, JSON.stringify(pos))
+		} catch (redisErr) {
+			console.error(`[PositionTracker] ❌ trades:open write failed for ${pos.symbol} (row ${tradeId ?? 'none'}) — tracked in memory only:`, redisErr)
+		}
+		// Track in memory for ultra-fast tick checking
+		this.addToMemory(pos)
 
 		// Publish signal_event for open
 		redisClient.publish('sse:events', JSON.stringify({
@@ -222,12 +242,13 @@ class PositionTracker {
 						? Number(r_multiple_raw.toFixed(4))
 						: null
 
+					const m = rowMatch(pos, 6)
 					await pool.query(
 						`UPDATE paper_trades 
 						 SET exit_price = $1, exit_time = to_timestamp($2 / 1000.0), realized_pnl = $3, r_multiple = $4, exit_reason = $5,
 						     status = CASE WHEN status = 'SKIPPED' THEN 'SKIPPED' ELSE 'CLOSED' END
-						 WHERE symbol = $6 AND status IN ('OPEN', 'SKIPPED') AND entry_time = to_timestamp($7 / 1000.0)`,
-						[closedPos.exitPrice, closedPos.exitTimestamp, closedPos.pnl, r_multiple, exitReason, pos.symbol, pos.timestamp]
+						 WHERE ${m.where} AND status IN ('OPEN', 'SKIPPED')`,
+						[closedPos.exitPrice, closedPos.exitTimestamp, closedPos.pnl, r_multiple, exitReason, ...m.params]
 					)
 				} catch (dbErr) {
 					console.error('[PositionTracker] ❌ Postgres update error:', dbErr)
