@@ -59,7 +59,14 @@ export const MAX_STALE_TRADING_DAYS = 3
 /** A warning when the watchlist is older than 3 trading days or the job never ran; else null. */
 export const screenerStaleness = (nowMs = Date.now()): string | null => {
 	const meta = readMeta()
-	if (!meta?.asOf) return `screener output not found in ${screenerDataDir()} — using the baked-in watchlist.json`
+	if (!meta?.asOf) {
+		// Without the meta file the watchlist's age is unknown. Name the file actually in use: the
+		// volume's watchlist.json when it exists (resolveScreenerFile), else the image's baked-in copy.
+		const fromJob = path.join(screenerDataDir(), 'watchlist.json')
+		return fs.existsSync(fromJob)
+			? `watchlist_meta.json not found in ${screenerDataDir()} — using ${fromJob}; its age can't be checked`
+			: `screener output not found in ${screenerDataDir()} — using the baked-in watchlist.json`
+	}
 	const today = getISTDateString(nowMs)
 	const missed = tradingDaysBetween(meta.asOf, today, loadHolidays() ?? new Set())
 	return missed > MAX_STALE_TRADING_DAYS
