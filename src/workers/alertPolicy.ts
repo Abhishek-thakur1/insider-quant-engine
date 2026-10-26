@@ -216,7 +216,7 @@ export const levelGeometryProblem = (o: { side: 'LONG' | 'SHORT'; entry: number;
 //   - paper:sym:…  taken before registerTrade → the loser's paper row is flagged
 //                  data_quality 'duplicate_signal' (excluded from pnl:daily and the
 //                  API's stats; still recorded — recording fails open);
-//   - alert:sym:…  taken just before the per-detector slot → the loser is not sent,
+//   - alert:sym:…  taken just after the per-detector slot is claimed → the loser is not sent,
 //                  signals row alert_suppressed_reason 'DUPLICATE', no cap slot used.
 // No message editing, nothing sent for a duplicate. Opposite sides never collide;
 // Nifty options share 'NIFTY' (dedupSymbol), side LONG = CE, SHORT = PE.

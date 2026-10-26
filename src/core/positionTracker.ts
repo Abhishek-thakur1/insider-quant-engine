@@ -229,7 +229,12 @@ class PositionTracker {
 				// Update daily PnL counter — a duplicate_signal row is the same trade counted
 				// twice (owner, 2026-10-22), so it stays out of the daily P&L.
 				if (!pos.dataQuality?.includes('duplicate_signal')) pipeline.incrByFloat('pnl:daily', closedPos.pnl)
-				await pipeline.exec()
+				try {
+					await pipeline.exec()
+				} catch (err) {
+					this.closingIds.delete(pos.id) // not closed: the next tick retries, and removeFlag may write it again
+					throw err
+				}
 
 				// Update Postgres
 				try {
