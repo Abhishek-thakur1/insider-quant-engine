@@ -1708,7 +1708,7 @@ before costs. One SELECT, read-only, sends nothing itself; at most `MAX_ROWS` (2
 
 - **Hook (host, outside the repo):** `~/evidence/monitor/check.sh` MODE=summary sends it as a *second*
   admin message after the existing summary, so the summary itself is unchanged. No engine, API or
-  container change; it needs only the script present in the host checkout.
+  container change; the script is copied alone to `~/evidence/monitor/` (no host `git pull`, so engine rebuild sources are untouched).
 - Nothing changes what reaches the alert channel: the digest goes to the admin chat, like the summary.
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
