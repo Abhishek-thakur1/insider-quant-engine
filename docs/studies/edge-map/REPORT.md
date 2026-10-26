@@ -133,6 +133,28 @@ The best break-even (SMB-SHORT, about 6-7.5 bps) is **less than the charges alon
 
 **About a quarter to a third of every R goes on costs** with the live VWAP stop. To win, a trade has to clear roughly 0.25-0.3R before it earns anything, and gross expectancy is about 0. Even the ATR stop, twice as wide, leaves a median cost of about 14-15% of R. This is the measured basis for the cost-to-risk filter on the shadow candidates (`docs/studies/shadow-candidates/PREREGISTRATION.md`).
 
+### 6c. EV calibration: does the filter's EV predict realized R? (descriptive, added 26 Oct, deviation 10)
+EV is the filter's expected value in price points at signal time. Its hard gate rejects EV ≤ 0. The buckets were fixed from EV value quantiles, not outcomes. Full table: `tables.md` §I.
+
+**Replay** (S0 live-stop trades, gross R and net R at the 20.4 bps FYERS total, day-block bootstrap):
+
+| EV bucket | Train: n, gross R [95% CI] | Test: n, gross R [95% CI] | Test: net R |
+|---|---|---|---|
+| < 0 (the gate rejects these) | 5,097, −0.016 [−0.052, +0.020] | 3,041, −0.000 [−0.044, +0.044] | −0.428 |
+| 0-1 | 10,835, +0.005 [−0.018, +0.028] | 5,103, +0.007 [−0.025, +0.039] | −0.354 |
+| 1-3 | 8,917, +0.029 [+0.005, +0.052] | 5,003, −0.008 [−0.043, +0.026] | −0.348 |
+| 3-10 | 10,050, +0.007 [−0.016, +0.031] | 6,350, +0.030 [−0.003, +0.063] | −0.287 |
+| ≥ 10 | 4,875, +0.023 [−0.009, +0.056] | 4,066, +0.045 [+0.006, +0.083] | −0.238 |
+
+Slope of gross R per EV point: train +0.0014 [−0.0004, +0.0032], test +0.0018 [−0.0001, +0.0036].
+
+**Live:** the signals log since 21 Oct, frozen 26 Oct at 19:48 IST, has 49 fires. 29 of them link to a closed paper trade: 5 at EV 0-1, 12 at 1-3 and 12 at 3-10. All are under 30, too small to mean anything. EV < 0 fires never become paper trades, because the EV gate blocks recording.
+
+**What it means:**
+- **The EV gate doesn't separate winners from losers.** Gross R is about 0 in every bucket, including the EV < 0 trades it rejects. The slope's CI includes 0 in both splits.
+- **Net R does improve with EV,** from −0.43R to −0.24R on test. This is plausibly the same cost effect as §5: higher-EV setups tend to have wider stops, so costs are a smaller share of R. This is unverified, because this table doesn't split by stop width.
+- **Every bucket is net negative.** Nothing here suggests changing the gate; this is a measurement only.
+
 ## 7. Wrong-side stops, in their own table (Tested on paper)
 These are trades whose live stop (VWAP × 0.998 / × 1.002) sits on the wrong side of entry, with stop ≥ entry for a LONG. The pre-registration keeps them out of H1-H3 (deviation 2).
 

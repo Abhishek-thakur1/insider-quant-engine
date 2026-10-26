@@ -223,6 +223,35 @@ Cost-to-risk: cost per trade as a percent of R = 20.4 bps × entry ÷ (10,000 ×
 | VCP-LONG | S2 | 11746 | 29.4% | 30.7% | 0.1% |
 | VCP-LONG | S3 | 11810 | 40.1% | 43.2% | 0.0% |
 
+## I. EV calibration: realized R by the filter's EV bucket (descriptive, deviation 10)
+
+EV is the filter's expected value in price points at signal time (the hard gate requires EV > 0). Replay: S0 live-stop trades, gross R and net R at the FYERS total (20.4 bps). Day-block bootstrap, 10000 reps, seed 20261023. Every row shows n. No test is run; this only asks whether higher EV goes with higher realized R.
+
+| Split | EV bucket | n | mean gross R [95% CI] | mean net R at FYERS cost [95% CI] |
+|---|---|---|---|---|
+| train | < 0 | 5097 | -0.016 [-0.052, +0.020] | -0.430 [-0.467, -0.393] |
+| train | 0-1 | 10835 | +0.005 [-0.018, +0.028] | -0.336 [-0.359, -0.311] |
+| train | 1-3 | 8917 | +0.029 [+0.005, +0.052] | -0.300 [-0.324, -0.276] |
+| train | 3-10 | 10050 | +0.007 [-0.016, +0.031] | -0.304 [-0.327, -0.280] |
+| train | >= 10 | 4875 | +0.023 [-0.009, +0.056] | -0.253 [-0.287, -0.219] |
+| test | < 0 | 3041 | -0.000 [-0.044, +0.044] | -0.428 [-0.475, -0.383] |
+| test | 0-1 | 5103 | +0.007 [-0.025, +0.039] | -0.354 [-0.387, -0.319] |
+| test | 1-3 | 5003 | -0.008 [-0.043, +0.026] | -0.348 [-0.383, -0.313] |
+| test | 3-10 | 6350 | +0.030 [-0.003, +0.063] | -0.287 [-0.322, -0.253] |
+| test | >= 10 | 4066 | +0.045 [+0.006, +0.083] | -0.238 [-0.278, -0.198] |
+
+Slope of gross R per EV point (EV clipped to [−5, 30] to limit outliers): train +0.0014 [-0.0004, +0.0032], test +0.0018 [-0.0001, +0.0036] (descriptive).
+
+Live (signals log since 2026-10-21, frozen live-2026-10-26): 49 fires, 49 with EV, 29 linked to a closed paper trade. Gross R as recorded.
+
+| EV bucket | n | mean gross R [95% CI] |
+|---|---|---|
+| < 0 | 0 | — — |
+| 0-1 | 5 | -0.048 [-1.100, +0.280] (n < 30: too small to mean anything) |
+| 1-3 | 12 | -0.013 [-0.308, +1.085] (n < 30: too small to mean anything) |
+| 3-10 | 12 | +0.006 [-0.610, +0.588] (n < 30: too small to mean anything) |
+| >= 10 | 0 | — — |
+
 ## F. S0 wrong-side trades (stop on the wrong side of entry; live exits on the first tick)
 
 | Detector-side | Split | n | mean gross P&L, bps of notional [95% CI] |
