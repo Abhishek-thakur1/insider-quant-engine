@@ -2,6 +2,14 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased: `fix/vwap-ttl` (not merged, not deployed)
+
+- **The daily VWAP keys expire.** `vwap:{symbol}:{date}` is written with a 36 h TTL (`VWAP_TTL_SECS`) by both `updateVwap` and the seeder. Before, it had none, and 4,485 symbol-days had accumulated by 26 Oct (AGENTS.md §7).
+- **Unchanged:** the VWAP values themselves; same-day reads (`getVwap`, the seeder's `isSeeded`, the API's `stocksSeenToday`); mid-session restarts (the key is refreshed on every write).
+- **Lost:** the history the edge-map §J liquidity table read (its inputs were exported on 26 Oct and are committed with it).
+- **Old keys:** they still have no TTL. A proposal for removing them, not a command that has been run: `docs/proposals/vwap-key-cleanup.md`.
+- Test: `tests/vwapTtl.test.ts`.
+
 ## Unreleased: `fix/orphan-skips-skipped` (PR #29; not merged, not deployed)
 
 - **Boot orphaning now changes only OPEN rows** (AGENTS.md §11.22). Capital-skipped (SKIPPED) rows left in `trades:open` keep their status instead of becoming ORPHANED.
