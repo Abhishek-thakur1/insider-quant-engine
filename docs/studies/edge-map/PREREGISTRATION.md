@@ -168,7 +168,7 @@ Append only, with the date, what changed and why. It is empty at registration.
    - **Live:** a new read-only snapshot (`edge-map-freeze-2026-10-26`, `signals.csv` sha256 `2674cc79…`, `paper_trades.csv` sha256 `58bcff81…`), with signals joined to closed trades through `trade_id` and synthetic_close / index_option_proxy excluded.
    - **Unchanged:** the original live freeze of 23 Oct still drives §G; nothing else in the tables changed (diff: 29 lines added, 0 removed).
 
-**2026-10-26, about 22:30 IST. Written BEFORE any liquidity or spread number was computed, at the owner's request.** This is descriptive and changes no decision rule.
+**2026-10-26, about 22:00 IST. Written BEFORE any liquidity or spread number was computed, at the owner's request.** This is descriptive and changes no decision rule.
 
 11. **Liquidity and a spread proxy for the watchlist candidates** (tables §J). The question is whether the 10 bps round-trip slippage assumption (5 bps per leg, §4 and §H) is too low for any name. Live paper orders are about ₹10,000 notional, so impact is ignored. The round-trip cost of crossing is taken as about one full quoted spread.
    - **Names:**
