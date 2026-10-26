@@ -32,8 +32,8 @@ const ALPHA = 0.05
 const EDGE_MIN_R = 0.05
 
 type Side = 'LONG' | 'SHORT'
-interface Sig { det: string; day: string; ts: number; symbol: string; side: Side; price: number; vwap: number; trigger: string; gate: { passed: boolean; score: number; regime: string; rejectedAt: string | null } | null }
-interface Trade { day: string; ds: string; tod: string; regime: string; tier: string; score: number; passed: boolean; entry: number; risk: number; gross: number }
+interface Sig { det: string; day: string; ts: number; symbol: string; side: Side; price: number; vwap: number; trigger: string; gate: { passed: boolean; score: number; regime: string; rejectedAt: string | null; ev?: number } | null }
+interface Trade { day: string; ds: string; tod: string; regime: string; tier: string; score: number; passed: boolean; entry: number; risk: number; gross: number; ev?: number | undefined }
 
 const DET_SHORT: Record<string, string> = { volatility_contraction: 'VCP', stock_momentum_breakout: 'SMB', 'Volatility_Contraction_V2': 'VCP', 'Stock Momentum Breakout': 'SMB' }
 export const tod = (ms: number): string => { const m = istMinutesOf(ms); return m < 10 * 60 + 30 ? 'T1' : m < 13 * 60 + 30 ? 'T2' : 'T3' }
@@ -175,7 +175,7 @@ const fmt = (x: number, d = 3) => (Number.isFinite(x) ? (x >= 0 ? '+' : '') + x.
 const ci = (e: Est) => (Number.isFinite(e.lo) ? `[${fmt(e.lo)}, ${fmt(e.hi)}]` : '—')
 
 function main(): void {
-	const [replayDir, liveDir, outDir] = process.argv.slice(2)
+	const [replayDir, liveDir, outDir, evLiveDir] = process.argv.slice(2)
 	if (!replayDir || !liveDir || !outDir) throw new Error('usage: analyze.ts <replay-dir> <live-dir> <out-dir>')
 	fs.mkdirSync(outDir, { recursive: true })
 	const md: string[] = []
@@ -213,7 +213,7 @@ function main(): void {
 		if (!fwd.length) { counts.noForward++; return }
 		const ds = `${DET_SHORT[s.det] ?? s.det}-${s.side}`
 		const isLong = s.side === 'LONG'
-		const base = { day: s.day, ds, tod: tod(s.ts), regime: s.gate.regime, tier: tier(s.gate.score), score: s.gate.score, passed: s.gate.passed, entry: s.price }
+		const base = { day: s.day, ds, tod: tod(s.ts), regime: s.gate.regime, tier: tier(s.gate.score), score: s.gate.score, passed: s.gate.passed, entry: s.price, ev: s.gate.ev }
 		const dir = isLong ? 1 : -1
 		const add = (rule: Rule, stop: number) => {
 			const risk = Math.abs(s.price - stop)
@@ -455,6 +455,51 @@ function main(): void {
 		log(`| ${ds} | ${r} | ${row.n} | ${row.median.toFixed(1)}% | ${row.mean.toFixed(1)}% | ${(row.le10 * 100).toFixed(1)}% |`)
 	}
 	res.broker = { notionals, totals, liveBps, breakEven: brokerRows, costToRisk: ctr }
+	log()
+
+	// ── I. EV calibration (deviation 10: owner request 26 Oct, descriptive, added after results) ──
+	// Does the filter's expected value (EV, in price points, the hard gate needs EV > 0) line up with
+	// realized R? Buckets fixed from the EV value quantiles (not outcomes): <0, 0-1, 1-3, 3-10, >=10.
+	const EV_BUCKETS: [string, (v: number) => boolean][] = [['< 0', (v) => v < 0], ['0-1', (v) => v >= 0 && v < 1], ['1-3', (v) => v >= 1 && v < 3], ['3-10', (v) => v >= 3 && v < 10], ['>= 10', (v) => v >= 10]]
+	const evBps = fyersComponents(10_000).reduce((a, c) => a + c.bps, 0)
+	log('## I. EV calibration: realized R by the filter\'s EV bucket (descriptive, deviation 10)')
+	log()
+	log(`EV is the filter's expected value in price points at signal time (the hard gate requires EV > 0). Replay: S0 live-stop trades, gross R and net R at the FYERS total (${evBps.toFixed(1)} bps). Day-block bootstrap, ${REPS} reps, seed ${SEED}. Every row shows n. No test is run; this only asks whether higher EV goes with higher realized R.`)
+	log()
+	log('| Split | EV bucket | n | mean gross R [95% CI] | mean net R at FYERS cost [95% CI] |')
+	log('|---|---|---|---|---|')
+	const evRows: unknown[] = []
+	for (const w of ['train', 'test'] as const) for (const [name, inB] of EV_BUCKETS) {
+		const xs = split(S0, w).filter((t) => typeof t.ev === 'number' && inB(t.ev as number))
+		const g = estimate(xs, (t) => t.day, MEAN<Trade>((t) => t.gross), `ev|${w}|${name}|g`)
+		const nn = estimate(xs, (t) => t.day, MEAN<Trade>((t) => t.gross - costR(evBps, t.entry, t.risk)), `ev|${w}|${name}|n`)
+		evRows.push({ split: w, bucket: name, gross: g, net: nn })
+		log(`| ${w} | ${name} | ${g.n} | ${fmt(g.mean)} ${ci(g)} | ${fmt(nn.mean)} ${ci(nn)} |`)
+	}
+	const evSlope = (w: 'train' | 'test') => estimate(split(S0, w).filter((t) => typeof t.ev === 'number'), (t) => t.day, SLOPE<Trade>((t) => Math.max(-5, Math.min(30, t.ev as number)), (t) => t.gross), `ev-slope|${w}`)
+	const es = { train: evSlope('train'), test: evSlope('test') }
+	log()
+	log(`Slope of gross R per EV point (EV clipped to [−5, 30] to limit outliers): train ${fmt(es.train.mean, 4)} [${fmt(es.train.lo, 4)}, ${fmt(es.train.hi, 4)}], test ${fmt(es.test.mean, 4)} [${fmt(es.test.lo, 4)}, ${fmt(es.test.hi, 4)}] (descriptive).`)
+	res.evCalibration = { buckets: evRows, slope: es, costBps: evBps }
+	if (evLiveDir) {
+		const sg2 = parseCsv(fs.readFileSync(path.join(evLiveDir, 'signals.csv'), 'utf8'))
+		const pt2 = new Map(parseCsv(fs.readFileSync(path.join(evLiveDir, 'paper_trades.csv'), 'utf8')).map((r) => [r.id!, r]))
+		const joined = sg2.filter((s) => s.ev_value && s.trade_id && pt2.get(s.trade_id)?.status === 'CLOSED' && !/synthetic_close|index_option_proxy/.test(pt2.get(s.trade_id)!.data_quality ?? ''))
+			.map((s) => ({ ev: Number(s.ev_value), r: Number(pt2.get(s.trade_id!)!.r_multiple), day: String(s.trade_date) }))
+		log()
+		log(`Live (signals log since 2026-10-21, frozen ${path.basename(evLiveDir)}): ${sg2.length} fires, ${sg2.filter((s) => s.ev_value).length} with EV, ${joined.length} linked to a closed paper trade. Gross R as recorded.`)
+		log()
+		log('| EV bucket | n | mean gross R [95% CI] |')
+		log('|---|---|---|')
+		const liveEv: unknown[] = []
+		for (const [name, inB] of EV_BUCKETS) {
+			const xs = joined.filter((j) => inB(j.ev))
+			const e = estimate(xs, (j) => j.day, MEAN((j) => j.r), `ev-live|${name}`)
+			liveEv.push({ bucket: name, est: e })
+			log(`| ${name} | ${e.n} | ${fmt(e.mean)} ${ci(e)}${e.n > 0 && e.n < 30 ? ' (n < 30: too small to mean anything)' : ''} |`)
+		}
+		res.evCalibrationLive = { fires: sg2.length, linkedClosed: joined.length, buckets: liveEv }
+	}
 	log()
 
 	// ── wrong-side S0 ──

@@ -160,3 +160,10 @@ Append only, with the date, what changed and why. It is empty at registration.
 **2026-10-23, about 20:50 IST. Added after results, at the owner's request.** This is descriptive and changes no decision rule.
 
 9. **Broker costs and cost-to-risk** (report §6b, tables §H). These add a per-component FYERS equity-intraday cost model, with each rate marked as assumed; the break-even cost against that total; and the cost per trade as a percent of R by detector-side and stop rule, for live and replay, including the share of trades at or below 10% of R. The pre-registered decisions still use the 17 bps base. At the live ₹10,000 notional the FYERS total is 20.4 bps.
+
+**2026-10-26, about 20:00 IST. Added after results, at the owner's request.** This is descriptive and changes no decision rule.
+
+10. **EV calibration** (report §6c, tables §I): realized R by the filter's EV bucket. The buckets (< 0, 0-1, 1-3, 3-10, ≥ 10 points) were fixed from EV value quantiles before looking at outcomes.
+   - **Replay:** S0 trades, train and test, gross and net at the 20.4 bps FYERS total.
+   - **Live:** a new read-only snapshot (`edge-map-freeze-2026-10-26`, `signals.csv` sha256 `2674cc79…`, `paper_trades.csv` sha256 `58bcff81…`), with signals joined to closed trades through `trade_id` and synthetic_close / index_option_proxy excluded.
+   - **Unchanged:** the original live freeze of 23 Oct still drives §G; nothing else in the tables changed (diff: 29 lines added, 0 removed).
