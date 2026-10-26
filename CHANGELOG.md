@@ -5,6 +5,7 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 ## Unreleased — `feat/duplicate-alert-policy` (not merged, not deployed; owner: Monday evening at the earliest)
 
 - **One alert per symbol + side** (AGENTS.md §11.18).
+  - **Resurrect race, fixed (26 Oct):** `removeFlag` no longer writes a position that is mid-close back into `trades:open`. Test: `tests/removeFlagRace.test.ts`, which fails without the fix.
   - **When it applies:** a second fire on the same symbol + side, from any detector, while the first position is open, or within 60 minutes when it's closed.
   - **Telegram:** nothing is sent and no cap slot is used. The signals row is `DUPLICATE`.
   - **Paper trade:** still recorded, but flagged `duplicate_signal` on both the paper row and the signals row. It's excluded from `pnl:daily` and from the API's today, history and heatmap endpoints unless `?includeDuplicates=true`.

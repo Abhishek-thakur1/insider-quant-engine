@@ -35,6 +35,9 @@ export interface ClosedPosition extends OpenPosition {
 class PositionTracker {
 	private openPositions = new Map<string, OpenPosition[]>()
 	private lastPnlPublishTime = new Map<string, number>()
+	// Ids processTick is closing: out of trades:open already, still in memory until its Postgres
+	// UPDATE returns. removeFlag must not write them back (PR #22 review: resurrect race).
+	private closingIds = new Set<string>()
 	private isInitialized = false
 
 	// Load open positions from Redis on boot. trades:open is NOT cleared at boot
@@ -98,8 +101,6 @@ class PositionTracker {
 		return this.getOpenPositions().reduce((sum, pos) => sum + (pos.entryPrice * (pos.actualSize ?? pos.size)), 0)
 	}
 
-	// Returns the paper_trades.id of the inserted row (null if the insert failed),
-	// so the signals log can link the signal to its trade.
 	/** Remove one data_quality flag (duplicate policy: an alerted trade is the one counted). */
 	public async removeFlag(positionId: string, tradeId: number | null, flag: string): Promise<void> {
 		// Postgres first: if it fails, nothing else changes (memory, pnl:daily and the row stay consistent).
@@ -110,10 +111,13 @@ class PositionTracker {
 			const pos = list.find((p) => p.id === positionId)
 			if (!pos) continue
 			if (pos.dataQuality) pos.dataQuality = pos.dataQuality.filter((f) => f !== flag)
+			if (this.closingIds.has(pos.id)) continue // closing: its trades:open entry is gone, keep it gone
 			await redisClient.hSet('trades:open', pos.id, JSON.stringify(pos))
 		}
 	}
 
+	// Returns the paper_trades.id of the inserted row (null if the insert failed),
+	// so the signals log can link the signal to its trade.
 	public async registerTrade(pos: OpenPosition): Promise<number | null> {
 		// Postgres FIRST, then one Redis write and the in-memory entry (2026-10-22). Writing
 		// trades:open before the INSERT and again after it let a tick close the position during
@@ -217,6 +221,7 @@ class PositionTracker {
 					exitReason
 				}
 
+				this.closingIds.add(pos.id) // before the first await: removeFlag sees it from here on
 				// Atomic Redis operations: remove from open, push to history
 				const pipeline = redisClient.multi()
 				pipeline.hDel('trades:open', pos.id)
@@ -283,6 +288,7 @@ class PositionTracker {
 		}
 
 		if (remaining.length !== positions.length) {
+			for (const p of positions) if (!remaining.includes(p)) this.closingIds.delete(p.id)
 			if (remaining.length === 0) {
 				this.openPositions.delete(symbol)
 				this.lastPnlPublishTime.delete(symbol)
