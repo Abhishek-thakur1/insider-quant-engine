@@ -293,3 +293,70 @@ Live cost-to-risk at the FYERS total (20.4 bps, section H), valid geometry only:
 | VCP-LONG | 787 | 26.4% | 32.8% | 7.4% |
 
 Live scored trades (signals log from 2026-10-21): n=18, below the n ≥ 30 floor, so calibration is **insufficient** on live data and not tested.
+
+## J. Liquidity and spread proxy for the watchlist candidates (descriptive, deviation 11)
+
+The method was fixed in deviation 11 and committed before this table was computed. No Fyers call was made. The **flag** compares the primary spread estimate with the 10 bps round-trip slippage assumption (5 bps per leg). ADTV is in ₹ crore.
+
+- **Cache ADTV:** the mean close × volume over the last 20 daily bars to 2026-09-07 (`res-D`).
+- **Engine ADTV:** the mean daily Σ price × volume the engine itself observed (Redis `vwap:{symbol}:{date}`, read-only export on 26 Oct, `liquidity_vwap_export_2026-10-26.tsv`, sha256 `1377782454ac…`), over up to 20 full-session days. n is the number of days; 28 days qualify, from 2026-09-10 to 2026-10-26. It is not an exchange figure.
+- **AR 1-min:** the Abdi-Ranaldo round-trip spread estimate in bps, from the last 5 cached sessions (2026-09-01..2026-09-07; for PAYTM 2026-08-31..2026-09-04, because its 1-minute file ends on 4 Sep; 09:20-15:15 only). 0.0 means the covariance came out negative and was floored.
+- **CS daily:** the Corwin-Schultz estimate in bps from 20 daily bars. It is volatility-dominated on daily bars and expected to read high, so it is shown but not used for the flag.
+
+| Symbol | Group | Cache ADTV | Engine ADTV (n, days) | AR 1-min, bps | CS daily, bps | Flag |
+|---|---|---|---|---|---|---|
+| RELIANCE | core | 1383.8 | 1709.5 (20, 2026-09-24..2026-10-26) | 1.1 | 54.6 | ok |
+| TCS | core | 596.8 | 1328.2 (20, 2026-09-24..2026-10-26) | 0.9 | 54.2 | ok |
+| HDFCBANK | core | 1877.6 | 2138.2 (20, 2026-09-24..2026-10-26) | 1.1 | 29.2 | ok |
+| INFY | core | no cache | 1706.2 (19, 2026-09-25..2026-10-26) | — | — | unknown |
+| ICICIBANK | core | 1217.2 | 1585.9 (20, 2026-09-24..2026-10-26) | 1.9 | 41.1 | ok |
+| AARTIPHARM | screener | no cache | 43.7 (17, 2026-09-25..2026-10-26) | — | — | unknown |
+| AEQUS | screener | no cache | 103.2 (15, 2026-09-30..2026-10-26) | — | — | unknown |
+| CAPILLARY | screener | no cache | 19.9 (16, 2026-09-25..2026-10-26) | — | — | unknown |
+| GALLANTT | screener | no cache | 471.7 (8, 2026-10-12..2026-10-26) | — | — | unknown |
+| GENESYS | screener | no cache | 13.6 (17, 2026-09-25..2026-10-26) | — | — | unknown |
+| JAMNAAUTO | screener | no cache | 42.1 (13, 2026-09-30..2026-10-26) | — | — | unknown |
+| JAYKAY | screener | no cache | 34.2 (18, 2026-09-25..2026-10-26) | — | — | unknown |
+| JGCHEM | screener | no cache | 25.8 (18, 2026-09-25..2026-10-26) | — | — | unknown |
+| JINDWORLD | screener | no cache | 6.7 (18, 2026-09-25..2026-10-26) | — | — | unknown |
+| JSLL | screener | no cache | 53.9 (13, 2026-10-05..2026-10-26) | — | — | unknown |
+| JTLIND | screener | no cache | 27.7 (18, 2026-09-25..2026-10-26) | — | — | unknown |
+| MOTISONS | screener | no cache | 38.0 (17, 2026-09-25..2026-10-26) | — | — | unknown |
+| MRPL | screener | no cache | 340.0 (15, 2026-09-30..2026-10-26) | — | — | unknown |
+| RISHABH | screener | no cache | 14.3 (18, 2026-09-25..2026-10-26) | — | — | unknown |
+| ROLEXRINGS | screener | no cache | 37.1 (10, 2026-09-25..2026-10-26) | — | — | unknown |
+| RPEL | screener | no cache | 16.3 (18, 2026-09-25..2026-10-26) | — | — | unknown |
+| RPTECH | screener | no cache | 31.3 (18, 2026-09-25..2026-10-26) | — | — | unknown |
+| RSYSTEMS | screener | no cache | 239.8 (15, 2026-09-29..2026-10-26) | — | — | unknown |
+| SUNTV | screener | no cache | 88.3 (14, 2026-10-01..2026-10-26) | — | — | unknown |
+| SYNCOMF | screener | no cache | 44.3 (16, 2026-09-29..2026-10-26) | — | — | unknown |
+| BSE | #34, owner | 1648.8 | 2152.5 (12, 2026-09-10..2026-10-15) | 1.8 | 73.1 | ok |
+| MCX | #34, owner | 855.2 | 633.5 (9, 2026-09-10..2026-09-24) | 0.0 | 97.3 | ok |
+| SBIN | #34 | 841.2 | 721.7 (9, 2026-09-10..2026-09-24) | 2.0 | 46.1 | ok |
+| ADANIENSOL | #34 | 689.0 | 277.9 (10, 2026-09-10..2026-10-01) | 2.4 | 108.3 | ok |
+| PAYTM | #34, owner | 649.6 | 787.6 (9, 2026-09-10..2026-09-24) | 3.7 | 93.6 | ok |
+| AXISBANK | #34 | 584.3 | 612.9 (9, 2026-09-10..2026-09-24) | 1.6 | 35.4 | ok |
+| KALYANKJIL | #34 | 547.8 | 381.5 (10, 2026-09-10..2026-10-07) | 4.7 | 87.4 | ok |
+| DIXON | #34 | 520.7 | 448.4 (9, 2026-09-10..2026-09-24) | 3.4 | 101.3 | ok |
+| TATASTEEL | #34 | 507.7 | 463.6 (9, 2026-09-10..2026-09-24) | 1.4 | 50.2 | ok |
+| BAJFINANCE | #34 | 499.9 | 644.0 (9, 2026-09-10..2026-09-24) | 1.9 | 44.0 | ok |
+| KOTAKBANK | #34 | 477.6 | 428.2 (9, 2026-09-10..2026-09-24) | 3.4 | 55.9 | ok |
+| HAL | #34 | 449.4 | 326.9 (10, 2026-09-10..2026-09-29) | 2.9 | 55.5 | ok |
+| HINDZINC | #34 | 406.2 | 231.2 (9, 2026-09-10..2026-09-24) | 3.1 | 73.1 | ok |
+| DIVISLAB | #34 | 388.7 | 475.7 (9, 2026-09-10..2026-09-24) | 1.7 | 54.1 | ok |
+| SOLARINDS | #34 | 387.2 | 728.4 (9, 2026-09-10..2026-09-24) | 4.9 | 59.6 | ok |
+| BEL | #34 | 379.0 | 374.5 (9, 2026-09-10..2026-09-24) | 2.8 | 54.7 | ok |
+| TVSMOTOR | #34 | 378.7 | 293.8 (12, 2026-09-10..2026-10-13) | 2.5 | 33.5 | ok |
+| COFORGE | #34 | 378.0 | 421.3 (12, 2026-09-10..2026-10-09) | 2.1 | 46.7 | ok |
+| HINDALCO | #34 | 360.0 | 364.9 (10, 2026-09-10..2026-10-15) | 2.7 | 60.9 | ok |
+| TECHM | #34 | 347.3 | 359.0 (13, 2026-09-10..2026-10-15) | 2.1 | 82.7 | ok |
+| POLYCAB | #34 | 339.1 | 219.9 (9, 2026-09-10..2026-09-24) | 2.4 | 56.9 | ok |
+| VEDL | #34 | 321.3 | 207.9 (10, 2026-09-10..2026-10-13) | 3.0 | 59.0 | ok |
+| TEJASNET | #34 | 297.2 | 91.9 (10, 2026-09-10..2026-09-25) | 4.2 | 81.0 | ok |
+| NTPC | #34 | 281.6 | 241.4 (9, 2026-09-10..2026-09-24) | 2.0 | 58.2 | ok |
+| ULTRACEMCO | #34 | 279.0 | 300.8 (9, 2026-09-10..2026-09-24) | 2.9 | 41.6 | ok |
+| ATHERENERG | owner | no cache | 516.8 (1, 2026-10-12..2026-10-12) | — | — | unknown |
+
+**Summary.** 29 names have 1-minute bars. None is above 10 bps; the highest is SOLARINDS at 4.9 bps. 22 names have no 1-minute bars, so their flag is "unknown": INFY, AARTIPHARM, AEQUS, CAPILLARY, GALLANTT, GENESYS, JAMNAAUTO, JAYKAY, JGCHEM, JINDWORLD, JSLL, JTLIND, MOTISONS, MRPL, RISHABH, ROLEXRINGS, RPEL, RPTECH, RSYSTEMS, SUNTV, SYNCOMF, ATHERENERG.
+
+Among the "unknown" names, the lowest engine ADTV are JINDWORLD ₹6.7 cr, GENESYS ₹13.6 cr, RISHABH ₹14.3 cr, RPEL ₹16.3 cr, CAPILLARY ₹19.9 cr. These are the screener names the live paper trades have been taking. The cost model in §H applies the same 10 bps to them, and that is **unverified** for them. No spread estimate exists for them without new data.
