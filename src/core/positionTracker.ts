@@ -1,7 +1,7 @@
 import { redisClient } from '../config/redis.js'
 import { pool } from '../config/db.js'
 import type { TickData } from './types.js'
-import { insertStatusFor, isOrphanedAtBoot, istDate, rowMatch } from './positionStatus.js'
+import { insertStatusFor, isOrphanedAtBoot, istDate, orphanUpdate, rowMatch } from './positionStatus.js'
 
 export interface OpenPosition {
 	/** Unique: `trade_<ms>_<symbol>_<detector>_<6 hex>` (positionStatus.newPositionId); legacy `trade_<ms>_<symbol>` rows still load. */
@@ -59,7 +59,7 @@ class PositionTracker {
 				this.addToMemory(pos)
 				loaded++
 			}
-			console.log(`[PositionTracker] 🔄 Loaded ${loaded} open positions from Redis (${orphaned} prior-day INTRADAY marked ORPHANED).`)
+			console.log(`[PositionTracker] 🔄 Loaded ${loaded} open positions from Redis (${orphaned} prior-day INTRADAY leftovers dropped; OPEN rows marked ORPHANED, SKIPPED rows unchanged).`)
 			this.isInitialized = true
 		} catch (err) {
 			console.error('[PositionTracker] ❌ Init error:', err)
@@ -68,16 +68,15 @@ class PositionTracker {
 
 	private async markOrphaned(pos: OpenPosition) {
 		try {
-			const m = rowMatch(pos, 1)
-			await pool.query(
-				`UPDATE paper_trades
-				 SET status = 'ORPHANED',
-				     data_quality = CASE WHEN 'orphaned' = ANY(data_quality) THEN data_quality ELSE array_append(data_quality, 'orphaned') END
-				 WHERE ${m.where} AND status IN ('OPEN', 'SKIPPED')`,
-				m.params,
-			)
+			// Only an OPEN row becomes ORPHANED; a SKIPPED (capital-skipped) row keeps its status.
+			const q = orphanUpdate(rowMatch(pos, 1))
+			const res = await pool.query(q.text, q.params)
 			await redisClient.hDel('trades:open', pos.id)
-			console.warn(`[PositionTracker] 👻 ${pos.symbol} ${pos.side} from ${istDate(pos.timestamp)} was never closed — marked ORPHANED (no exit recorded).`)
+			if ((res.rowCount ?? 0) > 0) {
+				console.warn(`[PositionTracker] 👻 ${pos.symbol} ${pos.side} from ${istDate(pos.timestamp)} was never closed — marked ORPHANED (no exit recorded).`)
+			} else {
+				console.log(`[PositionTracker] 🧹 ${pos.symbol} ${pos.side} from ${istDate(pos.timestamp)} dropped from tracking; its row is not OPEN (e.g. SKIPPED), so its status is unchanged.`)
+			}
 		} catch (err) {
 			// Leave it in Redis so the next boot retries; don't track it in memory.
 			console.error(`[PositionTracker] ❌ Failed to mark ${pos.symbol} ORPHANED:`, err)
