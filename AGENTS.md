@@ -1698,6 +1698,19 @@ Tests: `tests/publicData.test.ts`, and `tests/sseHeartbeat.test.ts`. The latter 
 
 **When behaviour changes, update the guide too:** the filter, the alert policy, the cron times, the deploy steps or the quota rules. A stale guide teaches wrong answers. Paper trading only, with no proven edge: keep the evidence badges honest.
 
+## 11.24 Near-miss digest for the 15:45 admin summary (2026-10-26, branch `feat/near-miss-digest`, host script, not deployed)
+
+`scripts/ops/near_miss_digest.sh` prints every fire of the IST day that did **not** pass the filter: time,
+symbol, side, detector, score/threshold, rejecting gate (REGIME / EV / SCORE / FILTER ERROR) with the EV or
+regime reason, and the paper outcome so far (CLOSED R and exit reason, OPEN, SKIPPED, ORPHANED, or "no paper
+row" for EV/REGIME rejects, which create none). Headed **"NOT ALERTS, review only"**; paper R is as stored,
+before costs. One SELECT, read-only, sends nothing itself; at most `MAX_ROWS` (25) rows, the rest counted.
+
+- **Hook (host, outside the repo):** `~/evidence/monitor/check.sh` MODE=summary sends it as a *second*
+  admin message after the existing summary, so the summary itself is unchanged. No engine, API or
+  container change; it needs only the script present in the host checkout.
+- Nothing changes what reaches the alert channel: the digest goes to the admin chat, like the summary.
+
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
 The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 

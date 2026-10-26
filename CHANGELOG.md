@@ -2,6 +2,10 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## `feat/near-miss-digest`: host script only, not deployed
+
+- **Near-miss digest** (AGENTS.md §11.24): `scripts/ops/near_miss_digest.sh` lists the day's rejected fires (detector, side, score, gate, reason, paper outcome so far), labelled "NOT ALERTS". It is sent as a second admin message after the 15:45 summary. Read-only; no engine rebuild.
+
 ## `docs/study-guide` (PR #25): docs only, merged 26 Oct; no code, config or deploy change
 
 - **Interview-ready study guide** in `docs/study-guide/`:
