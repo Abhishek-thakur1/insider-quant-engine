@@ -360,3 +360,177 @@ The method was fixed in deviation 11 and committed before this table was compute
 **Summary.** 29 names have 1-minute bars. None is above 10 bps; the highest is SOLARINDS at 4.9 bps. 22 names have no 1-minute bars, so their flag is "unknown": INFY, AARTIPHARM, AEQUS, CAPILLARY, GALLANTT, GENESYS, JAMNAAUTO, JAYKAY, JGCHEM, JINDWORLD, JSLL, JTLIND, MOTISONS, MRPL, RISHABH, ROLEXRINGS, RPEL, RPTECH, RSYSTEMS, SUNTV, SYNCOMF, ATHERENERG.
 
 Among the "unknown" names, the lowest engine ADTV are JINDWORLD ₹6.7 cr, GENESYS ₹13.6 cr, RISHABH ₹14.3 cr, RPEL ₹16.3 cr, CAPILLARY ₹19.9 cr. These are the screener names the live paper trades have been taking. The cost model in §H applies the same 10 bps to them, and that is **unverified** for them. No spread estimate exists for them without new data.
+
+## K. Liquid-only cut (descriptive, deviation 12)
+
+The cutoff and method were fixed in deviation 12 and committed (`f4b0f9d`) before any number in this section was computed. Liquidity is the **engine-recorded** ADTV: the mean daily Σ price × volume over full-session days in the 26 Oct Redis export (`liquidity_engine_adtv.csv`, 871 equities). **Liquid** means ≥ ₹15 crore (535 symbols). The **≥ ₹50 crore** sensitivity (313 symbols) is shown and not used for any statement. No new data was used, and no Fyers call was made.
+
+**Code:** the same `analyze.ts`, with its new `EDGE_SYMBOLS_FILE` filter, and the same seed, bootstrap and freezes. Reproduction check: the unfiltered rerun matches §A-§I of this file exactly, all 295 lines.
+
+- **Replay universe:** 90 symbols, all with engine days.
+  - Liquid at ₹15 cr: 82. The 8 thin names are JUSTDIAL, AURIONPRO, UBL, KSOLVES, EPIGRAL, NUVOCO, SBFC and WAAREERTL.
+  - At ₹50 cr: 71.
+  - **Anachronism:** the liquidity is measured on Sep-Oct 2026 and applied to sessions back to 2021.
+- **Live:** the 23 Oct freeze, as in §G. Every equity paper trade's symbol has engine days, so there is no "unknown" bucket.
+
+### K1. §C (H2 edge map) summary by cut
+
+| Cut | Summary |
+|---|---|
+| All symbols (as registered) | Cells with any trade: 78. Train cells at n ≥ 30 (tested, BH q=0.1): **56**. BH discoveries: **46**. Confirmed on test (Holm): **26**. Meeting the full "edge found" rule: **0**. |
+| Liquid ≥ ₹15 cr | Cells with any trade: 78. Train cells at n ≥ 30 (tested, BH q=0.1): **54**. BH discoveries: **44**. Confirmed on test (Holm): **26**. Meeting the full "edge found" rule: **0**. |
+| Sensitivity ≥ ₹50 cr | Cells with any trade: 78. Train cells at n ≥ 30 (tested, BH q=0.1): **50**. BH discoveries: **41**. Confirmed on test (Holm): **27**. Meeting the full "edge found" rule: **0**. |
+
+### K2. §C edge map, liquid ≥ ₹15 cr only
+
+| Cell | Train n | Train mean [95% CI] | p | Test n | Test mean [95% CI] | Status |
+|---|---|---|---|---|---|---|
+| SMB-LONG|T1|ranging|<60 | 12 | -0.430 [-1.109, +0.300] | — | 2 | +1.270 [+1.249, +1.292] | below floor, not tested |
+| SMB-LONG|T1|transition|60-69 | 193 | -0.270 [-0.436, -0.103] | 0.0018 | 107 | -0.219 [-0.449, +0.001] | discovery, not confirmed |
+| SMB-LONG|T1|transition|70-77 | 2 | -0.907 [-1.221, -0.592] | — | 3 | +0.369 [-0.760, +1.317] | below floor, not tested |
+| SMB-LONG|T1|transition|<60 | 631 | -0.428 [-0.515, -0.336] | 0.0000 | 255 | -0.207 [-0.352, -0.064] | discovery, not confirmed |
+| SMB-LONG|T1|trending|60-69 | 324 | -0.255 [-0.382, -0.128] | 0.0002 | 219 | -0.316 [-0.468, -0.164] | confirmed (below edge rule) |
+| SMB-LONG|T1|trending|70-77 | 454 | -0.372 [-0.475, -0.266] | 0.0000 | 265 | -0.111 [-0.252, +0.030] | discovery, not confirmed |
+| SMB-LONG|T1|trending|<60 | 35 | -0.545 [-0.883, -0.171] | 0.0034 | 12 | -0.636 [-1.178, +0.054] | discovery, not confirmed |
+| SMB-LONG|T1|trending|>=78 | 57 | -0.353 [-0.625, -0.062] | 0.0184 | 36 | -0.077 [-0.444, +0.309] | discovery, not confirmed |
+| SMB-LONG|T2|ranging|<60 | 13 | -0.096 [-0.702, +0.803] | — | 8 | -0.225 [-1.205, +0.708] | below floor, not tested |
+| SMB-LONG|T2|transition|60-69 | 89 | -0.309 [-0.569, -0.044] | 0.0224 | 74 | -0.163 [-0.481, +0.131] | discovery, not confirmed |
+| SMB-LONG|T2|transition|70-77 | 68 | -0.069 [-0.464, +0.301] | 0.7572 | 55 | -0.094 [-0.556, +0.393] | tested, not significant |
+| SMB-LONG|T2|transition|<60 | 59 | -0.272 [-0.587, +0.030] | 0.0738 | 54 | -0.058 [-0.438, +0.269] | discovery, not confirmed |
+| SMB-LONG|T2|transition|>=78 | 5 | +0.890 [+0.182, +1.196] | — | 6 | +0.272 [-0.597, +1.117] | below floor, not tested |
+| SMB-LONG|T2|trending|60-69 | 1665 | -0.278 [-0.332, -0.224] | 0.0000 | 992 | -0.317 [-0.391, -0.244] | confirmed (below edge rule) |
+| SMB-LONG|T2|trending|70-77 | 2330 | -0.215 [-0.263, -0.168] | 0.0000 | 1429 | -0.271 [-0.330, -0.212] | confirmed (below edge rule) |
+| SMB-LONG|T2|trending|<60 | 563 | -0.294 [-0.385, -0.203] | 0.0000 | 361 | -0.399 [-0.525, -0.271] | confirmed (below edge rule) |
+| SMB-LONG|T2|trending|>=78 | 1805 | -0.172 [-0.225, -0.119] | 0.0000 | 1140 | -0.204 [-0.269, -0.140] | confirmed (below edge rule) |
+| SMB-LONG|T3|ranging|<60 | 4 | -0.252 [-0.698, +0.388] | — | 1 | -1.195 — | below floor, not tested |
+| SMB-LONG|T3|transition|60-69 | 23 | +0.076 [-0.338, +0.538] | — | 16 | +0.008 [-0.106, +0.261] | below floor, not tested |
+| SMB-LONG|T3|transition|70-77 | 19 | +0.260 [-0.576, +0.779] | — | 14 | -0.266 [-0.532, -0.081] | below floor, not tested |
+| SMB-LONG|T3|transition|<60 | 13 | -0.206 [-0.807, +0.183] | — | 5 | +0.230 [-0.224, +0.771] | below floor, not tested |
+| SMB-LONG|T3|transition|>=78 | 6 | +0.323 [-0.537, +1.023] | — | 2 | +0.593 [-0.087, +1.274] | below floor, not tested |
+| SMB-LONG|T3|trending|60-69 | 495 | -0.245 [-0.326, -0.163] | 0.0000 | 279 | -0.214 [-0.312, -0.113] | confirmed (below edge rule) |
+| SMB-LONG|T3|trending|70-77 | 1022 | -0.261 [-0.319, -0.203] | 0.0000 | 549 | -0.191 [-0.265, -0.118] | confirmed (below edge rule) |
+| SMB-LONG|T3|trending|<60 | 65 | -0.440 [-0.659, -0.214] | 0.0002 | 39 | -0.561 [-0.753, -0.335] | confirmed (below edge rule) |
+| SMB-LONG|T3|trending|>=78 | 1177 | -0.187 [-0.237, -0.139] | 0.0000 | 631 | -0.174 [-0.254, -0.091] | confirmed (below edge rule) |
+| SMB-SHORT|T1|ranging|<60 | 4 | -0.699 [-1.348, -0.073] | — | 1 | -1.212 — | below floor, not tested |
+| SMB-SHORT|T1|transition|60-69 | 114 | -0.187 [-0.394, -0.003] | 0.0470 | 53 | -0.315 [-0.621, +0.002] | discovery, not confirmed |
+| SMB-SHORT|T1|transition|70-77 | 3 | +0.440 [-0.113, +1.287] | — | 0 | — — | below floor, not tested |
+| SMB-SHORT|T1|transition|<60 | 241 | -0.284 [-0.424, -0.142] | 0.0002 | 104 | -0.282 [-0.519, -0.048] | discovery, not confirmed |
+| SMB-SHORT|T1|trending|60-69 | 174 | -0.114 [-0.294, +0.058] | 0.2000 | 102 | -0.255 [-0.465, -0.044] | tested, not significant |
+| SMB-SHORT|T1|trending|70-77 | 226 | -0.251 [-0.391, -0.109] | 0.0006 | 131 | -0.217 [-0.435, +0.004] | discovery, not confirmed |
+| SMB-SHORT|T1|trending|<60 | 16 | -0.805 [-1.210, -0.320] | — | 10 | -0.141 [-0.717, +0.466] | below floor, not tested |
+| SMB-SHORT|T1|trending|>=78 | 32 | -0.259 [-0.616, +0.110] | 0.1692 | 20 | +0.149 [-0.288, +0.600] | tested, not significant |
+| SMB-SHORT|T2|ranging|<60 | 11 | +0.312 [-0.567, +0.893] | — | 9 | +0.123 [-1.154, +0.756] | below floor, not tested |
+| SMB-SHORT|T2|transition|60-69 | 101 | -0.113 [-0.380, +0.154] | 0.3970 | 53 | -0.120 [-0.430, +0.184] | tested, not significant |
+| SMB-SHORT|T2|transition|70-77 | 54 | -0.050 [-0.340, +0.216] | 0.6920 | 22 | -0.167 [-0.550, +0.173] | tested, not significant |
+| SMB-SHORT|T2|transition|<60 | 51 | +0.135 [-0.219, +0.476] | 0.4460 | 25 | -0.581 [-0.903, -0.178] | tested, not significant |
+| SMB-SHORT|T2|transition|>=78 | 4 | -0.085 [-1.099, +0.929] | — | 1 | +1.207 — | below floor, not tested |
+| SMB-SHORT|T2|trending|60-69 | 1235 | -0.083 [-0.152, -0.016] | 0.0168 | 751 | -0.184 [-0.264, -0.103] | confirmed (below edge rule) |
+| SMB-SHORT|T2|trending|70-77 | 1742 | -0.111 [-0.164, -0.057] | 0.0000 | 1016 | -0.172 [-0.244, -0.099] | confirmed (below edge rule) |
+| SMB-SHORT|T2|trending|<60 | 420 | -0.091 [-0.200, +0.019] | 0.0998 | 279 | -0.166 [-0.310, -0.021] | tested, not significant |
+| SMB-SHORT|T2|trending|>=78 | 1461 | -0.136 [-0.196, -0.076] | 0.0000 | 944 | -0.092 [-0.177, -0.011] | discovery, not confirmed |
+| SMB-SHORT|T3|ranging|<60 | 1 | -0.242 — | — | 1 | +0.564 — | below floor, not tested |
+| SMB-SHORT|T3|transition|60-69 | 29 | -0.186 [-0.435, +0.066] | — | 9 | -0.460 [-0.684, +0.599] | below floor, not tested |
+| SMB-SHORT|T3|transition|70-77 | 29 | -0.443 [-0.742, -0.069] | — | 7 | -0.176 [-0.872, +0.685] | below floor, not tested |
+| SMB-SHORT|T3|transition|<60 | 16 | +0.121 [-0.443, +0.672] | — | 1 | +0.390 — | below floor, not tested |
+| SMB-SHORT|T3|transition|>=78 | 2 | -1.175 [-1.176, -1.173] | — | 1 | +0.278 — | below floor, not tested |
+| SMB-SHORT|T3|trending|60-69 | 409 | -0.126 [-0.204, -0.051] | 0.0028 | 231 | -0.221 [-0.317, -0.123] | confirmed (below edge rule) |
+| SMB-SHORT|T3|trending|70-77 | 729 | -0.194 [-0.262, -0.126] | 0.0000 | 455 | -0.192 [-0.285, -0.097] | confirmed (below edge rule) |
+| SMB-SHORT|T3|trending|<60 | 40 | -0.217 [-0.514, +0.076] | 0.1484 | 26 | -0.197 [-0.505, +0.128] | tested, not significant |
+| SMB-SHORT|T3|trending|>=78 | 869 | -0.133 [-0.195, -0.072] | 0.0000 | 573 | -0.124 [-0.207, -0.031] | discovery, not confirmed |
+| VCP-LONG|T1|ranging|<60 | 102 | -0.580 [-0.857, -0.288] | 0.0000 | 25 | +0.035 [-0.524, +0.461] | discovery, not confirmed |
+| VCP-LONG|T1|transition|60-69 | 157 | -0.316 [-0.507, -0.129] | 0.0014 | 105 | -0.192 [-0.406, +0.028] | discovery, not confirmed |
+| VCP-LONG|T1|transition|70-77 | 1 | +1.258 — | — | 3 | -0.307 [-0.760, +0.549] | below floor, not tested |
+| VCP-LONG|T1|transition|<60 | 1297 | -0.324 [-0.397, -0.253] | 0.0000 | 733 | -0.368 [-0.467, -0.268] | confirmed (below edge rule) |
+| VCP-LONG|T1|trending|60-69 | 2183 | -0.376 [-0.429, -0.324] | 0.0000 | 1109 | -0.300 [-0.381, -0.217] | confirmed (below edge rule) |
+| VCP-LONG|T1|trending|70-77 | 381 | -0.282 [-0.389, -0.172] | 0.0000 | 241 | -0.315 [-0.461, -0.169] | confirmed (below edge rule) |
+| VCP-LONG|T1|trending|<60 | 677 | -0.366 [-0.458, -0.275] | 0.0000 | 327 | -0.412 [-0.548, -0.270] | confirmed (below edge rule) |
+| VCP-LONG|T1|trending|>=78 | 30 | -0.429 [-0.781, -0.047] | 0.0280 | 16 | -0.736 [-1.158, -0.197] | discovery, not confirmed |
+| VCP-LONG|T2|ranging|<60 | 60 | -0.126 [-0.623, +0.362] | 0.6388 | 31 | -0.149 [-0.414, +0.122] | tested, not significant |
+| VCP-LONG|T2|transition|60-69 | 141 | -0.350 [-0.517, -0.173] | 0.0006 | 101 | -0.171 [-0.453, +0.113] | discovery, not confirmed |
+| VCP-LONG|T2|transition|70-77 | 35 | -0.307 [-0.645, +0.054] | 0.0942 | 22 | +0.069 [-0.449, +0.597] | tested, not significant |
+| VCP-LONG|T2|transition|<60 | 324 | -0.395 [-0.532, -0.255] | 0.0000 | 155 | -0.386 [-0.606, -0.164] | confirmed (below edge rule) |
+| VCP-LONG|T2|transition|>=78 | 6 | -0.642 [-1.139, -0.106] | — | 6 | -0.000 [-0.759, +0.653] | below floor, not tested |
+| VCP-LONG|T2|trending|60-69 | 3265 | -0.300 [-0.341, -0.258] | 0.0000 | 1733 | -0.317 [-0.378, -0.257] | confirmed (below edge rule) |
+| VCP-LONG|T2|trending|70-77 | 1933 | -0.312 [-0.367, -0.257] | 0.0000 | 1090 | -0.346 [-0.410, -0.281] | confirmed (below edge rule) |
+| VCP-LONG|T2|trending|<60 | 2869 | -0.377 [-0.421, -0.333] | 0.0000 | 1471 | -0.383 [-0.442, -0.324] | confirmed (below edge rule) |
+| VCP-LONG|T2|trending|>=78 | 1161 | -0.229 [-0.292, -0.167] | 0.0000 | 764 | -0.245 [-0.322, -0.170] | confirmed (below edge rule) |
+| VCP-LONG|T3|ranging|<60 | 10 | +0.445 [-0.346, +0.699] | — | 3 | -1.304 [-1.358, -1.195] | below floor, not tested |
+| VCP-LONG|T3|transition|60-69 | 34 | -0.302 [-0.614, +0.015] | 0.0628 | 27 | -0.163 [-0.467, +0.065] | discovery, not confirmed |
+| VCP-LONG|T3|transition|70-77 | 9 | -0.481 [-0.893, -0.152] | — | 7 | +0.101 [-0.374, +0.894] | below floor, not tested |
+| VCP-LONG|T3|transition|<60 | 75 | -0.342 [-0.561, -0.139] | 0.0010 | 33 | -0.282 [-0.479, +0.105] | discovery, not confirmed |
+| VCP-LONG|T3|transition|>=78 | 2 | +0.744 [+0.190, +1.298] | — | 4 | +0.173 [-0.133, +0.275] | below floor, not tested |
+| VCP-LONG|T3|trending|60-69 | 1319 | -0.307 [-0.354, -0.259] | 0.0000 | 768 | -0.279 [-0.341, -0.215] | confirmed (below edge rule) |
+| VCP-LONG|T3|trending|70-77 | 1084 | -0.213 [-0.266, -0.161] | 0.0000 | 599 | -0.226 [-0.292, -0.159] | confirmed (below edge rule) |
+| VCP-LONG|T3|trending|<60 | 937 | -0.429 [-0.494, -0.365] | 0.0000 | 549 | -0.383 [-0.468, -0.296] | confirmed (below edge rule) |
+| VCP-LONG|T3|trending|>=78 | 782 | -0.207 [-0.266, -0.148] | 0.0000 | 458 | -0.197 [-0.267, -0.129] | confirmed (below edge rule) |
+| Factor | Level | Train n | Train mean [95% CI] | Test n | Test mean [95% CI] |
+|---|---|---|---|---|---|
+| detector-side | SMB-LONG | 11129 | -0.246 [-0.273, -0.220] | 6554 | -0.241 [-0.279, -0.203] |
+| detector-side | SMB-SHORT | 8013 | -0.133 [-0.168, -0.098] | 4825 | -0.163 [-0.213, -0.115] |
+| detector-side | VCP-LONG | 18874 | -0.322 [-0.344, -0.300] | 10380 | -0.315 [-0.347, -0.283] |
+| time of day | T1 | 7346 | -0.344 [-0.375, -0.313] | 3879 | -0.290 [-0.337, -0.243] |
+| time of day | T2 | 21470 | -0.240 [-0.260, -0.220] | 12592 | -0.264 [-0.293, -0.235] |
+| time of day | T3 | 9200 | -0.239 [-0.262, -0.217] | 5288 | -0.224 [-0.256, -0.189] |
+| regime | ranging | 217 | -0.319 [-0.551, -0.088] | 81 | -0.095 [-0.308, +0.088] |
+| regime | transition | 3833 | -0.307 [-0.353, -0.260] | 2063 | -0.266 [-0.334, -0.200] |
+| regime | trending | 33966 | -0.254 [-0.270, -0.239] | 19615 | -0.259 [-0.283, -0.235] |
+| score tier | 60-69 | 11950 | -0.274 [-0.296, -0.251] | 6729 | -0.276 [-0.310, -0.243] |
+| score tier | 70-77 | 10121 | -0.227 [-0.251, -0.203] | 5908 | -0.239 [-0.271, -0.206] |
+| score tier | <60 | 8546 | -0.351 [-0.378, -0.323] | 4520 | -0.349 [-0.386, -0.312] |
+| score tier | >=78 | 7399 | -0.177 [-0.204, -0.151] | 4602 | -0.171 [-0.206, -0.136] |
+| gated (filter passed) | false | 30617 | -0.280 [-0.296, -0.264] | 17157 | -0.283 [-0.307, -0.258] |
+| gated (filter passed) | true | 7399 | -0.177 [-0.204, -0.150] | 4602 | -0.171 [-0.206, -0.135] |
+
+### K3. §G live paper trades, by cut (all times of day)
+
+| Cut | kept trades | mean recorded R | Detector-side rows: n, days, mean gross R [95% CI], mean net R at 1× [95% CI] |
+|---|---|---|---|
+| All symbols (§G) | 1338 | +0.0053 | SMB-LONG · 300 · 20 · +0.030 [-0.188, +0.193] · -0.225 [-0.452, -0.060] (n=300)<br>SMB-SHORT · 251 · 24 · +0.035 [-0.311, +0.353] · -0.205 [-0.571, +0.103] (n=251)<br>VCP-LONG · 787 · 25 · -0.014 [-0.159, +0.106] · -0.287 [-0.447, -0.161] (n=787) |
+| Liquid ≥ ₹15 cr | 1089 | +0.0453 | SMB-LONG · 292 · 18 · +0.035 [-0.181, +0.194] · -0.222 [-0.436, -0.058] (n=292)<br>SMB-SHORT · 235 · 24 · +0.044 [-0.310, +0.373] · -0.199 [-0.571, +0.121] (n=235)<br>VCP-LONG · 562 · 25 · +0.052 [-0.108, +0.198] · -0.231 [-0.412, -0.078] (n=562) |
+| Sensitivity ≥ ₹50 cr | 754 | +0.1000 | SMB-LONG · 224 · 18 · +0.055 [-0.177, +0.225] · -0.217 [-0.445, -0.042] (n=224)<br>SMB-SHORT · 193 · 22 · +0.063 [-0.318, +0.451] · -0.188 [-0.585, +0.188] (n=193)<br>VCP-LONG · 337 · 23 · +0.152 [+0.014, +0.270] · -0.148 [-0.315, -0.016] (n=337) |
+
+### K4. §G live table, liquid ≥ ₹15 cr only
+
+| Detector-side | Time of day | n | days | mean gross R [95% CI] | mean net R at 1× (valid geometry only) [95% CI] |
+|---|---|---|---|---|---|
+| SMB-LONG | ALL | 292 | 18 | +0.035 [-0.181, +0.194] | -0.222 [-0.436, -0.058] (n=292) |
+| SMB-LONG | T1 | 52 | 15 | -0.109 [-0.345, +0.145] | -0.350 [-0.567, -0.112] (n=52) |
+| SMB-LONG | T2 | 174 | 15 | +0.002 [-0.328, +0.272] | -0.268 [-0.588, +0.002] (n=174) |
+| SMB-LONG | T3 | 66 | 12 | +0.233 [-0.177, +0.588] | -0.000 [-0.443, +0.313] (n=66) |
+| SMB-SHORT | ALL | 235 | 24 | +0.044 [-0.310, +0.373] | -0.199 [-0.571, +0.121] (n=235) |
+| SMB-SHORT | T1 | 31 | 15 | -0.408 [-0.874, +0.035] | -0.722 [-1.230, -0.269] (n=31) |
+| SMB-SHORT | T2 | 156 | 19 | +0.170 [-0.250, +0.566] | -0.073 [-0.500, +0.312] (n=156) |
+| SMB-SHORT | T3 | 48 | 14 | -0.075 [-0.438, +0.346] | -0.272 [-0.641, +0.136] (n=48) |
+| VCP-LONG | ALL | 562 | 25 | +0.052 [-0.108, +0.198] | -0.231 [-0.412, -0.078] (n=562) |
+| VCP-LONG | T1 | 129 | 18 | +0.044 [-0.142, +0.226] | -0.234 [-0.413, -0.069] (n=129) |
+| VCP-LONG | T2 | 285 | 23 | +0.013 [-0.256, +0.290] | -0.300 [-0.587, -0.007] (n=285) |
+| VCP-LONG | T3 | 148 | 21 | +0.133 [-0.160, +0.382] | -0.096 [-0.406, +0.154] (n=148) |
+
+### K5. Live paper P&L by liquidity bucket (gross, as recorded; deviation 7 exclusions)
+
+These are absolute sums, not shares: both totals are close to zero, so a share of the total would mislead.
+**Freeze `live`:** 1338 kept CLOSED rows, ΣR 7.10, Σ realized_pnl ₹-1479.70.
+
+| Bucket | n | symbols | ΣR | mean R | Σ realized_pnl, ₹ |
+|---|---|---|---|---|---|
+| liquid (≥ ₹15 cr) | 1089 | 292 | 49.32 | 0.0453 | 1536.95 |
+| thin (< ₹15 cr) | 249 | 100 | -42.22 | -0.1696 | -3016.65 |
+| unknown (no engine day) | 0 | 0 | — | — | — |
+| Nifty options | 0 | 0 | — | — | — |
+
+**Freeze `live-2026-10-26`:** 1349 kept CLOSED rows, ΣR 5.93, Σ realized_pnl ₹-1398.70.
+
+| Bucket | n | symbols | ΣR | mean R | Σ realized_pnl, ₹ |
+|---|---|---|---|---|---|
+| liquid (≥ ₹15 cr) | 1099 | 292 | 49.24 | 0.0448 | 1672.55 |
+| thin (< ₹15 cr) | 250 | 100 | -43.31 | -0.1732 | -3071.25 |
+| unknown (no engine day) | 0 | 0 | — | — | — |
+| Nifty options | 0 | 0 | — | — | — |
+
+**Reading (23 Oct freeze, §G's):**
+- **Thin names:** 249 of 1,338 kept trades (100 symbols) carry ΣR −42.22 and −₹3,016.65 of recorded P&L.
+- **Liquid names:** they carry ΣR +49.32 and +₹1,536.95.
+- **Overall:** the total of ΣR +7.10 and −₹1,479.70 is liquid names slightly positive and thin names negative.
+- **Net:** after the assumed 1× cost, every detector-side stays negative, in both the all-symbol and the ≥ ₹15 cr cut (K3).
+- **Thin-name costs:** for these names the 10 bps slippage assumption is unverified (§J). Their real costs are, if anything, higher.
+- **No significance claim:** the thin bucket is 249 trades over 26 sessions with no CI. This is descriptive, not evidence that excluding thin names would add edge.
