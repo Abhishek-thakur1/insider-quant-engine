@@ -197,3 +197,24 @@ Append only, with the date, what changed and why. It is empty at registration.
      - The cache is 7 weeks old.
      - (b) covers only the days each name was on a watchlist.
      - Nothing here is a cost measurement.
+
+**2026-10-27, about 06:45 IST. The cutoff and method are written BEFORE any liquid-only number was computed, at the owner's request.** This is descriptive and changes no decision rule.
+
+12. **A liquid-only cut of the key tables** (tables §K), plus the share of live paper P&L that comes from thin names.
+   - **Liquidity measure:** the engine-recorded daily traded value. That is `cumulativePV` of `vwap:{symbol}:{date}`, exactly as in deviation 11(b): full-session days only (a Nifty key with 370-400 candles), with each symbol's ADTV as the mean over **all** such days it has.
+     - **Source:** the read-only Redis export of 26 Oct (4,485 keys, sha256 of the LF file `35d51df7e8c42049…`). The derived per-symbol table is committed as `liquidity_engine_adtv.csv`.
+     - No new data and no Fyers call.
+   - **Cutoff, proposed:**
+     - A symbol is **liquid** if its engine ADTV is ≥ ₹15 crore. That is the threshold the owner approved for the liquid replay on 21 Oct ("30-day average turnover above ₹15 cr"), reused so it isn't tuned here.
+     - A sensitivity at **≥ ₹50 crore** is fixed now too. It is shown, not used for any statement.
+     - A symbol with no qualifying engine day is **unknown**. It is excluded from the liquid cut and counted separately.
+     - Nifty option rows aren't equities and don't enter the split.
+   - **Tables cut:**
+     - **§C (replay edge map)** and **§G (live paper trades)** are recomputed on liquid symbols only, by the same code (`analyze.ts`, which gains an optional symbol filter, `EDGE_SYMBOLS_FILE`, that is a no-op when unset).
+     - The same freezes, seed and bootstrap are used.
+     - The other sections are not recomputed.
+   - **P&L share:** for live CLOSED rows (deviation 7 exclusions applied), the split is liquid / thin (< ₹15 cr) / unknown / Nifty options. Each bucket shows n, the sum and mean of recorded R (gross), and the sum of `realized_pnl` (₹, gross, as recorded). This is done for both freezes, 23 Oct (§G's) and 26 Oct.
+   - **Limits:**
+     - The liquidity is measured on 10 Sep-26 Oct 2026 and applied to replay sessions back to 2021. It is an anachronism, so the replay cut is descriptive only.
+     - Engine ADTV covers only the days a name was watched.
+     - ₹15 cr is a convention, not a measured cost boundary.
