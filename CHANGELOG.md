@@ -2,6 +2,14 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased: `feat/vwap-session-gate` (not merged, not deployed)
+
+- **VWAP starts at 09:15 IST** (AGENTS.md §11.25). The pre-open auction print (equities) and the pre-open index minutes (Nifty) no longer enter the day's VWAP or the Nifty session reference. That matches the seeder and the backtest.
+- **The effect, measured before deciding:** `docs/proposals/vwap-session-gate/EFFECT.md`. Nifty is +32 to +44 pts at 09:20–09:25 on 26 Oct. Equity stops: median 2.4 bps at 09:20, 99th percentile 32 bps (cache, upper bound).
+- **Unchanged:** regime returns, detectors, thresholds and the filter. The kill switch is `VWAP_SESSION_GATE=false`.
+- **Refactor:** the Nifty one-minute tracker moved to `src/core/niftyMinuteState.ts` so the test drives the real code.
+- **Test:** `tests/vwapSessionGate.test.ts`, a parity test against `replaySession` on real cached bars.
+
 ## Unreleased: `fix/orphan-skips-skipped` (PR #29; not merged, not deployed)
 
 - **Boot orphaning now changes only OPEN rows** (AGENTS.md §11.22). Capital-skipped (SKIPPED) rows left in `trades:open` keep their status instead of becoming ORPHANED.
