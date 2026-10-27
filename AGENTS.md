@@ -1163,7 +1163,7 @@ version live in `backtest/core/symbolClass.ts`, with a test pinning the five aff
 | `orb:{15\|30}min:{high\|low}:{sym}` | price | 8 h | **`orbDetector` (dormant)** | nothing in the live path (was NiftyLiquiditySweep, now archived) |
 | `HTF_TREND:{sym}` | `BULLISH\|BEARISH` | — | **nothing** | `BaseDetector.isDailyTrendAligned` |
 | `alert:sent:{IST-date}:{detector}:{symbol}` | timestamp (SET NX) | 36 h | `alertPolicy.reserveAlertSlot` | itself — one Telegram alert per detector+symbol per day. Nifty option symbols dedup on `NIFTY`. **Never cleared at boot.** |
-| `diag:nifty:{IST-date}` | list of JSON "why no alert" records | 36 h | `detectorDiagnostics.noteBlocked` (Nifty ORE, Trend Pulse, VWAP Reclaim) | observation only; LTRIM to 500, ≤ 300 records per detector per day. Kill switch `NIFTY_DIAG_ENABLED=false`. **Never cleared at boot.** |
+| `diag:nifty:{IST-date}` | list of JSON "why no alert" records | 36 h | `detectorDiagnostics.noteBlocked` (Nifty ORE, Trend Pulse, VWAP Reclaim) | observation only; LTRIM to 900 (3 detectors × 300), ≤ 300 records per detector per day. Kill switch `NIFTY_DIAG_ENABLED=false`. **Never cleared at boot.** |
 | `alert:count:{IST-date}` | counter | 36 h | `alertPolicy.reserveAlertSlot` | itself — daily cap. **Never cleared at boot.** |
 | `alert:sym:{IST-date}:{LONG\|SHORT}:{symbol}` | JSON `{ts, positionId}` (SET NX; stale holder replaced by Lua compare-and-set) | 36 h | `alertPolicy.claimSymbolSide` (alert side, just after the per-detector slot is claimed; the slot is handed back if this claim loses) | itself — one alert per symbol + side while the first alerted position is open, else 60 min (§11.18). Given back (compare-and-delete) when no alert went out. Options dedup on `NIFTY`. **Never cleared at boot.** |
 | `paper:sym:{IST-date}:{LONG\|SHORT}:{symbol}` | JSON `{ts, positionId}` | 36 h | `alertPolicy.claimSymbolSide` (before `registerTrade`) | itself — the losing fire's paper and signals rows are flagged `duplicate_signal` (§11.18). **Never cleared at boot.** |
@@ -1760,7 +1760,7 @@ On 26 Oct Nifty moved 22,386 → 22,700 with no Nifty alert, and the reasons had
   (`no_break`, `candle_not_bullish`/`bearish`, `vwap_misaligned`, `no_higher_highs`, `no_lower_lows`,
   `vwap_distance`, `mixed_direction`, `no_cross`).
 - **Bounds:** one record per detector per candle (the first reason wins); each `window_*` reason once per
-  detector per day; 300 records per detector per day; Redis list `diag:nifty:{IST-date}` trimmed to 500,
+  detector per day; 300 records per detector per day; Redis list `diag:nifty:{IST-date}` trimmed to 900 (3 × 300, so nothing is dropped),
   36 h TTL (§7); one `[Diag]` log line per record.
 - **Safety:** `noteBlocked` is synchronous, never awaited by a detector and never throws; the Redis write
   is fire-and-forget with errors swallowed. It changes no alert, gate, threshold, cooldown or position.

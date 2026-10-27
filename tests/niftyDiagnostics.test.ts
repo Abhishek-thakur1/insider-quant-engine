@@ -7,6 +7,7 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 
 process.env.TELEGRAM_BOT_TOKEN ??= 'test-token'
 process.env.TELEGRAM_CHANNEL_ID ??= '-1000000000000'
@@ -60,6 +61,39 @@ test('DIAG PARITY: the Nifty detectors emit exactly the same signals with diagno
 	assert.deepEqual(on.signals, off.signals)
 	assert.equal(off.records.length, 0, 'kill switch: nothing recorded when off')
 	assert.ok(on.records.length > 0)
+})
+
+// 26 Oct only fires VWAP Reclaim, so it can't catch a parity break in ORE or Trend Pulse (PR #32
+// review, 27 Oct). These three real cached sessions fire all three detectors between them.
+const FIRE = JSON.parse(fs.readFileSync('tests/fixtures/niftyDiag_fireDays.json', 'utf8')) as { days: Record<string, [number, number, number, number, number][]> }
+const runDay = async (date: string, enabled: boolean) => {
+	process.env.NIFTY_DIAG_ENABLED = enabled ? 'true' : 'false'
+	const rows = FIRE.days[date]!
+	const uninstallClock = clock.installVirtualClock(rows[0]![0])
+	const { uninstall } = installMemoryRedis()
+	const quiet = { log: console.log, warn: console.warn }
+	console.log = console.warn = () => {}
+	try {
+		const r = await replaySession({ sessionDate: date, barsBySymbol: new Map([[NIFTY_SYMBOL, rows.map(([t, o, h, l, c]) => ({ t, o, h, l, c, v: 0 }))]]), specs: NIFTY })
+		return r.signals.map((s) => ({ det: s.detectorId, side: s.payload.side, price: s.payload.price, ts: s.ts, trigger: s.payload.trigger }))
+	} finally {
+		Object.assign(console, quiet)
+		uninstall()
+		uninstallClock()
+		delete process.env.NIFTY_DIAG_ENABLED
+	}
+}
+
+test('DIAG PARITY on fire days: ORE, Trend Pulse and VWAP Reclaim emit identical signals with diagnostics on and off', async () => {
+	const fired = new Set<string>()
+	for (const date of Object.keys(FIRE.days)) {
+		const off = await runDay(date, false)
+		const on = await runDay(date, true)
+		assert.deepEqual(on, off, `signals differ on ${date}`)
+		for (const s of off) fired.add(s.det)
+	}
+	// the fixture must exercise every detector, or a parity break there would go unseen
+	assert.deepEqual([...fired].sort(), ['nifty_opening_range_explosion', 'nifty_trend_pulse', 'nifty_vwap_reclaim'])
 })
 
 test('DIAG 26 OCT: the reasons that had to be rebuilt by hand are now recorded', async () => {

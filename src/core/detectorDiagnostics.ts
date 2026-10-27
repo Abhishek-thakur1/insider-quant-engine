@@ -17,7 +17,7 @@
 import { redisClient } from '../config/redis.js'
 
 export const DAILY_CAP = 300
-export const LIST_MAX = 500
+export const LIST_MAX = 3 * DAILY_CAP // 3 Nifty detectors × the daily cap: a full day never trims the morning's records
 export const LIST_TTL_SECS = 36 * 3600
 export const diagKey = (istDate: string) => `diag:nifty:${istDate}`
 
