@@ -1,6 +1,6 @@
 # Owner picks: BSE, MCX, PAYTM, ATHERENERG
 
-**Status:** proposal for review, drafted 2026-10-26. Nothing is deployed, and no Fyers REST call was made.
+**Status:** proposal for review, drafted 2026-10-26 and amended on 27 Oct after the independent review. Nothing is deployed, and no Fyers REST call was made.
 
 ## 1. Symbol codes and their sources
 
@@ -29,7 +29,7 @@ The picks are tagged as their own group in **`owner_picks.json`**, which records
 
 The analysis assigns groups by symbol and `live_from`.
 
-**No engine change.** The engine labels every non-CORE watchlist name `promotion_source = SCREENER`. The `signals` CHECK constraint (migration 0006) allows no other value. A distinct `OWNER_PICK` value would need two things, and neither is in this PR:
+**No engine change.** While there is no `watchlist_meta.json` (there is none in the volume today), the engine labels every non-CORE watchlist name `promotion_source = SCREENER`. The `signals` CHECK constraint (migration 0006) allows seven values, and `OWNER_PICK` isn't one of them. A distinct `OWNER_PICK` value would need two things, and neither is in this PR:
 - a migration;
 - a `watchlist_meta.json` entry.
 
@@ -48,7 +48,7 @@ Writing `OWNER_PICK` through `watchlist_meta.json` without the migration would m
 
 **Fyers calls the engine makes.** At the usual 09:00 boot the VWAP seeder makes **no** calls: it skips before 09:15 and builds VWAP from live ticks. Only a restart after 09:15 seeds, with one history call per watchlist name plus Nifty, going from 26 to 30.
 
-**Liquidity** (edge-map tables §J, deviation 11, method committed before computing; ₹ crore):
+**Liquidity** (edge-map tables §J, deviation 11, method committed before computing; ₹ crore). The engine-observed ADTV and the day counts come from the read-only EC2 Redis export of 26 Oct, committed with §J. The paper-trade counts come from a read-only `paper_trades` query on EC2 on 26 Oct:
 
 | Code | Cache ADTV, 20 days to 2026-09-07 | Engine-observed ADTV (days) | Spread proxy AR 1-min, bps | 10 bps flag |
 |---|---|---|---|---|
@@ -68,6 +68,22 @@ Writing `OWNER_PICK` through `watchlist_meta.json` without the migration would m
 - **ATHERENERG:** no cached bars, no paper trades and no signals. There is one engine-observed day (2026-10-12). Replay or calibration work on it would need a fetch, which needs the owner's OK.
 
 ## 4. Deploy plan (proposed; not run)
+
+**⚠ The screener can overwrite this file** (independent review of 27 Oct).
+- The 16:30 cron (`scheduler/crontab`, `lifecycle.sh run_screener`) runs `docker start -a quant_screener` on every trading day. On exit 0 the job rewrites `watchlist.json`, `watchlist_meta.json` and `anomaly_universe.json` in this volume, which would drop the owner picks.
+- **Today that can't happen:** the `quant_screener` container doesn't exist (removed on 20 Oct after the quota incident), so the job fails at `docker start` and writes nothing.
+- **Checked on EC2, 27 Oct ~06:24 IST:**
+  - there is no `quant_screener` container;
+  - `watchlist.json` was last modified on 2026-10-20 at 16:31;
+  - the volume has no `watchlist_meta.json` and no `anomaly_universe.json`.
+- **This plan, and its 30/100 count, hold only while that is true.** If the screener is ever recreated, which needs the owner's Fyers OK, the picks need a way to survive first. Three options, for the owner to choose:
+  - (a) pause `run_screener`;
+  - (b) re-apply this edit after each run;
+  - (c) teach the screener to keep an owner list.
+- A successful screener run would also create the bench (up to 60 + 30 + 1 = 91 symbols).
+- **Expected boot warning:** with no `watchlist_meta.json`, every boot warns about the screener output and sends it to the admin chat. The current text wrongly says "baked-in"; PR #37 fixes the wording. This plan adds no meta file, so the warning stays, as it is today.
+- **Step 3 runs after 16:30**, after checking that the job's 16:30 run failed as expected (no `quant_screener`) and that `watchlist.json` is unchanged.
+
 
 **Proposed slot (owner's choice): Thursday 29 Oct after 15:30**, alongside #32. That is after #29 on Tuesday and #22 with the API on Wednesday. Each step below runs only if every earlier evening was clean.
 
@@ -92,6 +108,6 @@ There are two options. **The owner decides.**
    - `Equity stack: 2 detectors … × 29 stocks`;
    - Firehose `active symbols seen 29/29` after 09:15.
 6. Set `live_from` in `owner_picks.json` to the first session date, in a follow-up commit.
-7. **Rollback:** copy the `.bak` file back and restart outside market hours. It needs no database change.
+7. **Rollback:** first check that `watchlist.json` is still the proposed 29-name file. Copy the `.bak` back only if it is; if the screener has written a newer list since, report instead of copying. Then restart outside market hours. It needs no database change.
 
 **No Fyers REST call** is involved at any step. The only Fyers traffic is the existing WebSocket subscription.
