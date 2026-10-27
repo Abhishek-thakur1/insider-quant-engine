@@ -1712,6 +1712,29 @@ Tests: `tests/publicData.test.ts`, and `tests/sseHeartbeat.test.ts`. The latter 
 - **Real Postgres 15:** the old statement turns a SKIPPED row into `ORPHANED {capital_skipped,orphaned}` (`UPDATE 1`); the new one leaves it SKIPPED (`UPDATE 0`) and still orphans an OPEN row.
 - **Repairing the 6 rows** is a separate, owner-approved `UPDATE` by id, not part of this code change.
 
+## 11.27 Watchlist population change, effective 2026-10-28 (config only; no code, no image)
+
+**This is a series break in the stock universe.** Every per-day count from 28 Oct onward covers a different set of stocks: fires, alerts, paper trades and stocks seen. Don't compare it with earlier days without splitting by group.
+
+**What changed:** `/app/data/watchlist.json` (volume `screener_data`) went from **25 to 51 stocks** on 27 Oct at about 20:42 IST. The engine reads it once at boot (`websocket.ts`, `resolveScreenerFile`), so it takes effect at the 28 Oct 09:00 boot. Expected boot line: `52/100 symbols — watchlist 51 + bench 0 + index 1 + options 0`.
+
+**The 51:**
+- the 25 names live since 20 Oct;
+- the 4 owner picks (PR #36): BSE, MCX, PAYTM, ATHERENERG;
+- the 22 names from #34's `RULE.md`, the rule committed before ranking, with BSE, MCX and PAYTM counted once.
+
+No hand-picked names, and none of RULE-85's extra 33.
+
+**Checks before the write:**
+- every code is in `fyersUniverse.json` and the screener's 19-Oct universe, and the engine had received ticks for each;
+- no per-stock config is needed;
+- seeder pacing: a restart during the session makes at most 53 Data-API calls through the engine limiter (4/s, 40/min; simulated on the real limiter: at most 40 in any 60 s). A 09:00 boot makes none.
+- The monitor's stocks-seen total is now read from the heartbeat (it was hard-coded at 25).
+
+**Rollback:** the backup is `watchlist.json.bak-20261027-25` (sha `da466dc769c0…`; the new file is `7bb595743f1b…`).
+- Before 09:00: copy it back.
+- After 09:00: no restart in market hours; report only.
+
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
 The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 

@@ -2,6 +2,15 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Watchlist 25 → 51, live from 2026-10-28 (config only, owner decision 27 Oct)
+
+- **Population change** (AGENTS.md §11.27): `watchlist.json` on the data volume now holds the 25 previous names, the 4 owner picks (#36) and the 22 names from #34's rule.
+  - The subscription goes to **52/100**.
+  - There was no image rebuild and no restart; the 28 Oct 09:00 boot picks it up.
+- **Backup:** `watchlist.json.bak-20261027-25`.
+- **Monitor:** the stocks-seen total is read from the heartbeat, with the threshold at 80% of it.
+- **Note:** day-level counts from 28 Oct onward aren't comparable with earlier days.
+
 ## `fix/orphan-skips-skipped` (PR #29): merged 26 Oct (`11dda4d`), engine deployed 26 Oct evening (image `b23c6f864696`, first boot 27 Oct)
 
 - **Boot orphaning now changes only OPEN rows** (AGENTS.md §11.22). Capital-skipped (SKIPPED) rows left in `trades:open` keep their status instead of becoming ORPHANED.
