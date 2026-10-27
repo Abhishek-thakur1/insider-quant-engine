@@ -218,3 +218,10 @@ Append only, with the date, what changed and why. It is empty at registration.
      - The liquidity is measured on 10 Sep-26 Oct 2026 and applied to replay sessions back to 2021. It is an anachronism, so the replay cut is descriptive only.
      - Engine ADTV covers only the days a name was watched.
      - ₹15 cr is a convention, not a measured cost boundary.
+
+**2026-10-27, about 20:45 IST. A population change in the live data, recorded before it takes effect.** This changes no decision rule.
+
+13. **The live stock universe changes on 2026-10-28.** The engine's watchlist goes from 25 to 51 stocks: the 4 owner picks (PR #36) and the 22 rule-based names from PR #34 are added; nothing is removed. See AGENTS.md §11.27.
+   - **Day-level live series** (fires, signals, paper trades, R sums, stocks seen) are not comparable across 27/28 Oct. Any later live table splits at 2026-10-28, or groups by the watchlist group: 20-Oct live / owner pick / #34 rule.
+   - **The replay sections (A-F, H-K) are unaffected:** they use the cache.
+   - **§G and §I live freezes** (23 and 26 Oct) predate the change, so they are unaffected too.
