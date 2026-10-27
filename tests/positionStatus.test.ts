@@ -8,7 +8,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { insertStatusFor, isOrphanedAtBoot, istDate } from '../src/core/positionStatus.js'
+import fs from 'node:fs'
+
+import { insertStatusFor, isOrphanedAtBoot, istDate, orphanUpdate, rowMatch } from '../src/core/positionStatus.js'
 
 // 2026-10-16 10:00 IST and 2026-10-17 10:00 IST
 const DAY1 = Date.parse('2026-10-16T04:30:00Z')
@@ -42,4 +44,21 @@ test('prior-day INTRADAY positions are orphaned at boot; same-day and SWING are 
 		isOrphanedAtBoot({ timestamp: DAY2 - 3600_000, durationClass: 'INTRADAY' }, DAY2),
 		false,
 	)
+})
+
+test('boot orphan update touches only OPEN rows, never SKIPPED (26 Oct finding: rows 1599, 1603)', () => {
+	const q = orphanUpdate(rowMatch({ dbId: 1599, symbol: 'NIFTY 22450 PE', timestamp: DAY1 }, 1))
+	assert.match(q.text, /SET status = 'ORPHANED'/)
+	assert.match(q.text, /WHERE id = \$1 AND status = 'OPEN'$/)
+	assert.doesNotMatch(q.text, /SKIPPED/, 'a capital-skipped row must keep its SKIPPED status')
+	assert.deepEqual(q.params, [1599])
+	// legacy rows (no dbId) keep the symbol + entry_time match, still OPEN-only
+	const legacy = orphanUpdate(rowMatch({ symbol: 'NSE:X-EQ', timestamp: DAY1 }, 1))
+	assert.match(legacy.text, /symbol = \$1 AND entry_time = to_timestamp\(\$2 \/ 1000\.0\) AND status = 'OPEN'$/)
+})
+
+test('positionTracker uses orphanUpdate (no inline orphan SQL that could re-add SKIPPED)', () => {
+	const src = fs.readFileSync('src/core/positionTracker.ts', 'utf8').replace(/^\s*\/\/.*$/gm, '')
+	assert.match(src, /orphanUpdate\(rowMatch\(pos, 1\)\)/)
+	assert.doesNotMatch(src, /SET status = 'ORPHANED'/, 'the orphan SQL lives only in positionStatus.orphanUpdate')
 })

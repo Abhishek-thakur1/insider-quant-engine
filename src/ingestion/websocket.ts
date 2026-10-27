@@ -280,7 +280,7 @@ export const startLiveEngine = async () => {
 	// Nifty cooldown keys (cooldown:v2:nifty_pulse, cooldown:v2:vwap_reclaim,
 	// cooldown:v2:nifty_ore, cooldown:oi_sweep, cooldown:delta_squeeze) are TTL'd
 	// and intentionally survive restarts — see the per-symbol note above.
-	// alert:sent:{day}:* / alert:count:{day} (alertPolicy) are date-keyed and
+	// alert:sent:{day}:* / alert:count:{day} / alert:sym:{day}:* / paper:sym:{day}:* (alertPolicy) are date-keyed and
 	// must never be cleared here either.
 	// trades:open is NOT cleared: positionTracker.init() (above) already loaded
 	// it, and deleting it orphaned every position still open at the next boot.
