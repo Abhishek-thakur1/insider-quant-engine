@@ -198,7 +198,7 @@ Append only, with the date, what changed and why. It is empty at registration.
      - (b) covers only the days each name was on a watchlist.
      - Nothing here is a cost measurement.
 
-**2026-10-27, about 06:45 IST. The cutoff and method are written BEFORE any liquid-only number was computed, at the owner's request.** This is descriptive and changes no decision rule.
+**2026-10-27, about 06:15 IST. The cutoff and method are written BEFORE any liquid-only number was computed, at the owner's request.** This is descriptive and changes no decision rule.
 
 12. **A liquid-only cut of the key tables** (tables §K), plus the share of live paper P&L that comes from thin names.
    - **Liquidity measure:** the engine-recorded daily traded value. That is `cumulativePV` of `vwap:{symbol}:{date}`, exactly as in deviation 11(b): full-session days only (a Nifty key with 370-400 candles), with each symbol's ADTV as the mean over **all** such days it has.
