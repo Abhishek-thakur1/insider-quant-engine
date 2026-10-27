@@ -1733,6 +1733,20 @@ Tests: `tests/publicData.test.ts`, and `tests/sseHeartbeat.test.ts`. The latter 
 
 **When behaviour changes, update the guide too:** the filter, the alert policy, the cron times, the deploy steps or the quota rules. A stale guide teaches wrong answers. Paper trading only, with no proven edge: keep the evidence badges honest.
 
+## 11.22 Boot orphaning never relabels SKIPPED rows (2026-10-26, branch `fix/orphan-skips-skipped`; PR, not deployed)
+
+**Finding (26 Oct boot):** rows 1599 and 1603 were capital-skipped Nifty options, SKIPPED with size 0. The boot changed them to ORPHANED.
+- **Why options:** they never close in-session, so they stay in `trades:open` overnight, and `positionTracker.init()` then orphans them.
+- **Cause:** the orphan UPDATE matched `status IN ('OPEN', 'SKIPPED')`. That clause dates from `bb7fb46` (18 Oct), not PR #23; #23 only swapped the row selector for the row id.
+- **Affected rows:** 6, all inserted as SKIPPED after migration 0003 and relabelled at a later boot: 1583, 1585, 1590, 1596, 1599 and 1603. The 15 earlier capital-skipped ORPHANED rows were orphaned by migration 0003's `status = 'OPEN'` rule before SKIPPED existed, and are left alone.
+- **Counts:** ORPHANED and SKIPPED are excluded from every count (the API counts CLOSED for history and OPEN for open positions; the edge-map study used CLOSED only), so no P&L figure was affected.
+
+**Fix:**
+- `positionStatus.orphanUpdate()` builds the boot UPDATE with `status = 'OPEN'` only. A SKIPPED leftover is dropped from `trades:open` and its row keeps SKIPPED; the log line says so.
+- **Tests:** `tests/positionStatus.test.ts` checks the SQL and that `positionTracker` uses the builder.
+- **Real Postgres 15:** the old statement turns a SKIPPED row into `ORPHANED {capital_skipped,orphaned}` (`UPDATE 1`); the new one leaves it SKIPPED (`UPDATE 0`) and still orphans an OPEN row.
+- **Repairing the 6 rows** is a separate, owner-approved `UPDATE` by id, not part of this code change.
+
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
 The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 

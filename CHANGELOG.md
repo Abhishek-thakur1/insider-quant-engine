@@ -34,6 +34,15 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 - **Only an alerted fire keeps the paper claim** (owner decision): on a capital skip, failed send, cap reached, duplicate or error, the claim is released.
 - **Concurrent inversion fixed** (4th review): an alerted fire that was flagged at insert because a concurrent holder was later not alerted re-takes the paper claim and drops its flag (paper row and signals row).
 - **Tests:** 19, 340 overall.
+
+## Unreleased: `fix/orphan-skips-skipped` (PR #29; not merged, not deployed)
+
+- **Boot orphaning now changes only OPEN rows** (AGENTS.md §11.22). Capital-skipped (SKIPPED) rows left in `trades:open` keep their status instead of becoming ORPHANED.
+- **Cause:** `status IN ('OPEN', 'SKIPPED')` in the orphan UPDATE, from `bb7fb46` on 18 Oct.
+- **Affected rows:** 6 (1583, 1585, 1590, 1596, 1599 and 1603).
+- **Tests:** 2 in `tests/positionStatus.test.ts`, plus a real-Postgres check of both statements.
+- The engine needs a rebuild to pick it up; this branch is review only.
+
 ## `docs/study-guide` (PR #25): docs only, merged 26 Oct; no code, config or deploy change
 
 - **Interview-ready study guide** in `docs/study-guide/`:
