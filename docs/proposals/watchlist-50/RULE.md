@@ -76,3 +76,6 @@ Fyers calls, no hand-picked 'trending' names".
   - The registered list stays exactly as ranked in `LIST.md`. BSE, MCX and PAYTM are counted once, under the owner picks (PR #36), and their #34 places are **not** refilled. BAJAJ-AUTO, KEI and INDIGO stay out.
   - This PR therefore adds **22** names, not 25.
   - With the owner picks live, the watchlist is 25 live + 4 owner picks + 22 = **51 names**, and the subscription is 51 + bench 0 + index 1 + options 0 = **52/100**.
+
+- **2026-10-27, about 20:45 IST: applied (owner decision).** The 22 names this rule added went live in the engine's watchlist, together with the 4 owner picks, as a config-only file change effective at the 28 Oct boot: 51 stocks, 52/100 (AGENTS.md §11.27).
+  - **RULE-85's extra 33 names are NOT live.** They wait for their own evening, after #41.
