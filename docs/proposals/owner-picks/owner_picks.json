@@ -2,7 +2,7 @@
   "group": "owner_pick",
   "note": "Owner picks, analysed as their own group: separate from CORE (core_watchlist.json), the screener's picks (watchlist.json of 2026-10-20) and the rule-based PR #34 list. Signals for these names will log promotion_source SCREENER (the engine labels every non-CORE watchlist name that way; a distinct value needs a migration). Group membership is this file, by symbol and live_from.",
   "proposed": "2026-10-26",
-  "live_from": null,
+  "live_from": "2026-10-28",
   "symbols": [
     { "symbol": "NSE:BSE-EQ", "name": "BSE Ltd", "added": "2026-10-26" },
     { "symbol": "NSE:MCX-EQ", "name": "Multi Commodity Exchange of India", "added": "2026-10-26" },
