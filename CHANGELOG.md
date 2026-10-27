@@ -2,6 +2,14 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased: `feat/ev-shadow` (not merged, not deployed; off by default)
+
+- **EV-reject shadow outcomes** (AGENTS.md §11.26, `docs/proposals/ev-shadow/DESIGN.md`). A fire rejected by the EV gate gets a simulated outcome under the paper-trade rules, in a new table, `ev_shadow_outcomes` (migration 0007).
+- **Isolation:** that table is separate from `paper_trades`, so it is out of every stat, API endpoint and dashboard total. No alert and no gate change.
+- **Switch and bounds:** `EV_SHADOW_ENABLED=true` turns it on. 50 rows a day, 20 open at once.
+- **Refactor:** the level computation moved, unchanged, to `src/core/tradeLevels.ts`, so the pipeline and the shadow share it.
+- **Tests:** `tests/evShadow.test.ts`. `tests/migrate.test.ts` now lists 0007.
+
 ## Unreleased: `fix/orphan-skips-skipped` (PR #29; not merged, not deployed)
 
 - **Boot orphaning now changes only OPEN rows** (AGENTS.md §11.22). Capital-skipped (SKIPPED) rows left in `trades:open` keep their status instead of becoming ORPHANED.

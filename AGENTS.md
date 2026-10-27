@@ -1712,6 +1712,24 @@ Tests: `tests/publicData.test.ts`, and `tests/sseHeartbeat.test.ts`. The latter 
 - **Real Postgres 15:** the old statement turns a SKIPPED row into `ORPHANED {capital_skipped,orphaned}` (`UPDATE 1`); the new one leaves it SKIPPED (`UPDATE 0`) and still orphans an OPEN row.
 - **Repairing the 6 rows** is a separate, owner-approved `UPDATE` by id, not part of this code change.
 
+## 11.26 EV-reject shadow outcomes (2026-10-27, branch `feat/ev-shadow`; PR, not deployed, off by default)
+
+**Purpose:** measure whether fires rejected by the EV hard gate would have won. Design: `docs/proposals/ev-shadow/DESIGN.md`.
+
+**How it works:**
+- On `rejectedAt === 'EV'`, `alertPipeline` calls the optional `deps.onEvRejected`. That is synchronous fire-and-forget in a `try`, after the existing logging and before the existing `return`.
+- `core/evShadow.ts` then records a simulated outcome in its own table, `ev_shadow_outcomes` (migration 0007).
+- **Rules:** the same levels (`core/tradeLevels.ts`, now shared with the pipeline), the same exits as `positionTracker.processTick` (TIME at 15:15, then stop, then target), and the same R.
+- **Nifty option fires** are evaluated on Nifty index ticks and flagged `index_proxy`.
+
+**Isolation and bounds:**
+- It never touches `paper_trades`, Redis trade keys, `pnl:daily`, alerts or stats. There are no Redis keys; state is in memory and reloaded from the table on a same-day restart.
+- **Bounds:** 50 rows a day, 20 open at once, one open per symbol + detector + side.
+- `EV_SHADOW_ENABLED=true` turns it on.
+- **After 0007, `pg_dump` has 4 TABLE DATA entries.**
+
+**Tests:** `tests/evShadow.test.ts` checks identical effects on and off, the same exits as the real tracker, and bounds.
+
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
 The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 
