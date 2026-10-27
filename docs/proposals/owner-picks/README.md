@@ -1,6 +1,6 @@
 # Owner picks: BSE, MCX, PAYTM, ATHERENERG
 
-**Status:** proposal for review, drafted 2026-10-26 and amended on 27 Oct after the independent review. Nothing is deployed, and no Fyers REST call was made.
+**Status: applied on 2026-10-27 at about 20:45 IST, live from the 28 Oct boot** (owner decision). This was a config-only file change: the 4 picks went in together with #34's 22 rule names, so the watchlist is 51 stocks and the subscription 52/100 (AGENTS.md §11.27). The Thursday plan in §4 is superseded; its checks and backup were applied that evening. Drafted 2026-10-26; amended on 27 Oct after the independent review. Nothing is deployed, and no Fyers REST call was made.
 
 ## 1. Symbol codes and their sources
 
