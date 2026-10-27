@@ -2,7 +2,7 @@
 
 The state of the deploy queue and what waits on the owner. **`AGENTS.md` is the source of truth for how the system works.** This file only tracks order and status. Update it in the same PR as any change to the queue.
 
-Last updated: **2026-10-27, 06:15 IST**.
+Last updated: **2026-10-27, 06:35 IST**.
 
 ## Running on EC2
 
@@ -35,13 +35,13 @@ If any gate fails, or an earlier evening shows a problem: **stop, hold the rest,
 | Mon 26 Oct | PR #29: boot orphaning touches OPEN rows only | engine | **deployed** |
 | Tue 27 Oct | PR #22: duplicate-alert policy, plus the API | engine + API, one procedure | waiting for the evening |
 | Wed 28 Oct | PR #32: Nifty block diagnostics, logging only | engine | queued |
-| Thu 29 Oct | PR #36: owner picks (watchlist 29, 30/100), on its own evening | watchlist file + engine restart | queued; **needs an independent review of #36 first** |
+| Thu 29 Oct | PR #36: owner picks (watchlist 29, 30/100), on its own evening | watchlist file only: edited after the 16:30 check, then the 09:00 cron starts the engine; no rebuild | queued; independent review **APPROVE WITH NITS** (27 Oct, nits fixed). Precondition: `quant_screener` stays absent |
 
 **Not yet in the queue, each needing the owner's word:**
 - PR #34: watchlist rule list, 22 names added, no backfill. Goes after #22.
 - PR #37: staleness message.
 - PR #38: VWAP key TTL.
-- The VWAP session-gate PR.
+- PR #40: VWAP session gate. The owner decides after the measured effect (`docs/proposals/vwap-session-gate/EFFECT.md`).
 - PR #33: near-miss digest, a host script.
 
 **Leave alone:**
