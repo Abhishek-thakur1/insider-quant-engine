@@ -299,7 +299,7 @@ Live scored trades (signals log from 2026-10-21): n=18, below the n ≥ 30 floor
 The method was fixed in deviation 11 and committed before this table was computed. No Fyers call was made. The **flag** compares the primary spread estimate with the 10 bps round-trip slippage assumption (5 bps per leg). ADTV is in ₹ crore.
 
 - **Cache ADTV:** the mean close × volume over the last 20 daily bars to 2026-09-07 (`res-D`).
-- **Engine ADTV:** the mean daily Σ price × volume the engine itself observed (Redis `vwap:{symbol}:{date}`, read-only export on 26 Oct, `liquidity_vwap_export_2026-10-26.tsv`, sha256 `1377782454ac…`), over up to 20 full-session days. n is the number of days; 28 days qualify, from 2026-09-10 to 2026-10-26. It is not an exchange figure.
+- **Engine ADTV:** the mean daily Σ price × volume the engine itself observed (Redis `vwap:{symbol}:{date}`, read-only export on 26 Oct, `liquidity_vwap_export_2026-10-26.tsv`, sha256 `1377782454ac…` with LF line endings), over up to 20 full-session days. n is the number of days; 28 days qualify, from 2026-09-10 to 2026-10-26. It is not an exchange figure.
 - **AR 1-min:** the Abdi-Ranaldo round-trip spread estimate in bps, from the last 5 cached sessions (2026-09-01..2026-09-07; for PAYTM 2026-08-31..2026-09-04, because its 1-minute file ends on 4 Sep; 09:20-15:15 only). 0.0 means the covariance came out negative and was floored.
 - **CS daily:** the Corwin-Schultz estimate in bps from 20 daily bars. It is volatility-dominated on daily bars and expected to read high, so it is shown but not used for the flag.
 
