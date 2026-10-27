@@ -71,7 +71,7 @@ Writing `OWNER_PICK` through `watchlist_meta.json` without the migration would m
 
 **⚠ The screener can overwrite this file** (independent review of 27 Oct).
 - The 16:30 cron (`scheduler/crontab`, `lifecycle.sh run_screener`) runs `docker start -a quant_screener` on every trading day. On exit 0 the job rewrites `watchlist.json`, `watchlist_meta.json` and `anomaly_universe.json` in this volume, which would drop the owner picks.
-- **Today that can't happen:** the `quant_screener` container doesn't exist (removed on 20 Oct after the quota incident), so the job fails at `docker start` and writes nothing.
+- **Today that can't happen:** the `quant_screener` container doesn't exist (absent as of 27 Oct; the deploy record of 20 Oct notes it was removed after that day's quota failure), so the job fails at `docker start` and writes nothing.
 - **Checked on EC2, 27 Oct ~06:24 IST:**
   - there is no `quant_screener` container;
   - `watchlist.json` was last modified on 2026-10-20 at 16:31;
@@ -85,24 +85,21 @@ Writing `OWNER_PICK` through `watchlist_meta.json` without the migration would m
 - **Step 3 runs after 16:30**, after checking that the job's 16:30 run failed as expected (no `quant_screener`) and that `watchlist.json` is unchanged.
 
 
-**Proposed slot (owner's choice): Thursday 29 Oct after 15:30**, alongside #32. That is after #29 on Tuesday and #22 with the API on Wednesday. Each step below runs only if every earlier evening was clean.
-
-**⚠ This conflicts with the standing rule "one engine change per evening".**
-- The watchlist edit changes no code, but it changes what the engine watches.
-- If anything looks off on Friday, #32 (logging) and the extra 4 names would be confounded.
-
-There are two options. **The owner decides.**
-- Option A: a separate evening, Friday 30 Oct after 15:30 or the next working evening.
-- Option B: keep Thursday as asked, applying #32 first and the watchlist edit second, with a separate rollback for each.
+**Slot (owner, 26 Oct): Thursday 29 Oct after 15:30, on its own evening.**
+- That is after #29 (Mon 26), #22 with the API (Tue 27) and #32 (Wed 28).
+- It runs only after an independent review of this PR, and only if every earlier evening was clean.
+- It is the only change that evening.
 
 **Steps:**
 1. Send the pre-deploy message on Telegram, with this list and the count.
-2. Run the full procedure for #32:
-   - copy the logs;
+2. Run the procedure:
+   - copy the engine logs;
    - take a fresh `pg_dump` and check it has 3 TABLE DATA entries;
-   - record a rollback tag.
-3. Back up the live watchlist: `cp watchlist.json watchlist.json.bak-2026-10-29` in the `screener_data` volume. Then write `watchlist_proposed.json` as `watchlist.json` and check it is valid JSON with 29 entries.
-4. Rebuild and recreate `quant_engine` only (the #32 rebuild), and leave it Created. Nothing starts before Friday's 09:00 boot.
+   - record the current `quant_engine` image id. Nothing is rebuilt, so the rollback is the watchlist backup in step 3.
+3. After the 16:30 check above (the job failed as expected, and `watchlist.json` is unchanged), back up the live watchlist: `cp watchlist.json watchlist.json.bak-2026-10-29` in the `screener_data` volume. Then write `watchlist_proposed.json` as `watchlist.json` and check it is valid JSON with 29 entries.
+4. **No rebuild and no recreate.** The engine reads `watchlist.json` from the volume at boot, and the stopped `quant_engine` container is started by the 09:00 cron.
+   - Do not run any `docker compose` command for this step.
+   - Never bring up `--profile jobs`: that would recreate `quant_screener` and re-arm the 16:30 overwrite.
 5. At Friday's boot, check:
    - the line `Subscription plan: 30/100 symbols — watchlist 29 + bench 0 + index 1 + options 0`;
    - `Equity stack: 2 detectors … × 29 stocks`;
