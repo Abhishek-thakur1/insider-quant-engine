@@ -1738,6 +1738,8 @@ Tests: `tests/publicData.test.ts`, and `tests/sseHeartbeat.test.ts`. The latter 
 
 **Side effect:** on a 09:00 boot the Nifty bias is unset until about 09:16.
 
+**Deploy (owner, 27 Oct): approved in principle; its own evening, Friday 30 Oct at the earliest.** The deploy date is a **series break**: before it, live VWAP, VWAP stops, the Nifty reference and the bias included pre-open data; after it they don't. Values from the first hour (about 09:15–10:15) are not comparable across the break. At deploy, record the date here, in the CHANGELOG, and as a deviation-log entry in `docs/studies/edge-map/PREREGISTRATION.md`. Deploy date: _not yet deployed_.
+
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
 The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 
