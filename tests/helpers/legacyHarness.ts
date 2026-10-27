@@ -18,13 +18,14 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { PipelineDeps, PipelineTracker } from '../../src/workers/alertPipeline.js'
-import type { AlertStore } from '../../src/workers/alertPolicy.js'
+import type { AlertStore, ClaimStore } from '../../src/workers/alertPolicy.js'
 import type { SignalRow } from '../../src/db/signalRecord.js'
 
 interface HarnessState {
 	deps: PipelineDeps | null
 	tracker: PipelineTracker | null
 	store: AlertStore | null
+	claims: ClaimStore | null
 	signalRows: SignalRow[]
 }
 const g = globalThis as unknown as { __iqeHarness?: HarnessState }
@@ -32,6 +33,7 @@ export const state: HarnessState = (g.__iqeHarness ??= {
 	deps: null,
 	tracker: null,
 	store: null,
+	claims: null,
 	signalRows: [],
 })
 
@@ -45,6 +47,7 @@ export const useDeps = async (deps: PipelineDeps): Promise<void> => {
 	state.deps = deps
 	state.tracker = await deps.getTracker()
 	state.store = await deps.getAlertStore()
+	state.claims = await deps.getClaimStore()
 	state.signalRows = []
 }
 
@@ -85,16 +88,30 @@ export const runJaneStreetFilter = (data: Parameters<PipelineDeps['runFilter']>[
 export const positionTracker: PipelineTracker = {
 	getCurrentNotional: () => need(state.tracker, 'tracker').getCurrentNotional(),
 	registerTrade: (pos) => need(state.tracker, 'tracker').registerTrade(pos),
+	getOpenPositions: () => need(state.tracker, 'tracker').getOpenPositions(),
+	removeFlag: (id, tradeId, flag) => need(state.tracker, 'tracker').removeFlag(id, tradeId, flag),
 }
 
 // config/redis.js
-export const redisClient: AlertStore = {
-	set: (k, v, o) => need(state.store, 'store').set(k, v, o),
-	incr: (k) => need(state.store, 'store').incr(k),
-	decr: (k) => need(state.store, 'store').decr(k),
-	expire: (k, s) => need(state.store, 'store').expire(k, s),
-	del: (k) => need(state.store, 'store').del(k),
-}
+// The symbol+side duplicate claims (paper:sym:* / alert:sym:*, 2026-10-22) are NEW keys the
+// pre-hook worker never touched: they go to the scenario's non-recording claim store, so the
+// parity comparison stays about the old behaviour. Their own behaviour is tested in
+// tests/duplicatePolicy.test.ts.
+const isClaimKey = (k: string) => /^(paper|alert):sym:/.test(k)
+export const redisClient = {
+	get: (k: string) => need(state.claims, 'claims').get(k),
+	eval: async (script: string, o: { keys: string[]; arguments: string[] }) => {
+		const c = need(state.claims, 'claims')
+		const [k] = o.keys as [string]
+		if (/'SET'/.test(script)) return (await c.compareAndSet(k, o.arguments[0]!, o.arguments[1]!, Number(o.arguments[2]))) ? 1 : 0
+		return (await c.compareAndDelete(k, o.arguments[0]!)) ? 1 : 0
+	},
+	set: (k: string, v: string, o: { NX: true; EX: number }) => (isClaimKey(k) ? need(state.claims, 'claims').set(k, v, o) : need(state.store, 'store').set(k, v, o)),
+	incr: (k: string) => need(state.store, 'store').incr(k),
+	decr: (k: string) => need(state.store, 'store').decr(k),
+	expire: (k: string, s: number) => need(state.store, 'store').expire(k, s),
+	del: (k: string) => need(state.store, 'store').del(k),
+} satisfies AlertStore & Record<string, unknown>
 
 // db/signalLog.js
 export const signalLog = {

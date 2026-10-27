@@ -60,24 +60,26 @@ async function streamThroughIdleProxy(heartbeatMs: number, runMs: number) {
 	return { survived, endedAt, pings: (body.match(/^: ping \d+$/gm) ?? []).length }
 }
 
-test('SSE HEARTBEAT: writes an SSE comment each interval and stops when told', async () => {
+test('SSE HEARTBEAT: writes an SSE comment each interval and stops when told', (t) => {
+	// mock timers: deterministic under a loaded full-suite run (the real-sleep version flaked)
+	t.mock.timers.enable({ apis: ['setInterval'] })
 	const chunks: string[] = []
 	const stop = startSseHeartbeat((c) => { chunks.push(c) }, 20, () => 42)
-	await sleep(110)
+	t.mock.timers.tick(110)
 	stop()
-	const n = chunks.length
-	assert.ok(n >= 3, `expected >=3 pings, got ${n}`)
+	assert.equal(chunks.length, 5, 'one ping per 20 ms interval')
 	for (const c of chunks) assert.equal(c, ': ping 42\n\n', 'a comment line: EventSource ignores it, no client change')
-	await sleep(60)
-	assert.equal(chunks.length, n, 'no writes after stop')
+	t.mock.timers.tick(100)
+	assert.equal(chunks.length, 5, 'no writes after stop')
 })
 
-test('SSE HEARTBEAT: a write that throws (dead socket) does not escape the timer', async () => {
+test('SSE HEARTBEAT: a write that throws (dead socket) does not escape the timer', (t) => {
+	t.mock.timers.enable({ apis: ['setInterval'] })
 	let calls = 0
 	const stop = startSseHeartbeat(() => { calls++; throw new Error('write after end') }, 15)
-	await sleep(60)
+	t.mock.timers.tick(60) // would throw out of tick() if the error escaped the interval callback
 	stop()
-	assert.ok(calls >= 2)
+	assert.equal(calls, 4)
 })
 
 test('SSE HEARTBEAT: production interval is well inside the 151 s cut', () => {

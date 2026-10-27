@@ -49,6 +49,11 @@ const bootSubscriber = async () => {
 	console.log('🟢 [API Server] Subscribed to sse:events channel')
 }
 
+// A second fire on the same symbol + side (owner, 2026-10-22) is recorded but flagged
+// duplicate_signal: the same trade counted twice. Excluded from every stat unless
+// ?includeDuplicates=true.
+const NOT_DUPLICATE = ` AND NOT ('duplicate_signal' = ANY(COALESCE(data_quality, '{}')))`
+
 // REST: Get Today's Status (Fetch-on-mount for Dashboard)
 fastify.get('/api/today', async (request, reply) => {
 	const query = request.query as any
@@ -58,6 +63,7 @@ fastify.get('/api/today', async (request, reply) => {
 	if (!includeUngated) {
 		sql += ` AND gated = true`
 	}
+	if (query.includeDuplicates !== 'true') sql += NOT_DUPLICATE
 	sql += ` ORDER BY entry_time DESC`
 
 	const openRes = await pool.query(sql)
@@ -101,6 +107,7 @@ fastify.get('/api/trades/history', async (request, reply) => {
 	if (!includeUngated) {
 		sql += ` AND gated = true`
 	}
+	if (query.includeDuplicates !== 'true') sql += NOT_DUPLICATE
 	
 	const params: any[] = []
 	
@@ -160,7 +167,7 @@ fastify.get('/api/trades/heatmap', async (request, reply) => {
 			exit_time::date as date, 
 			COUNT(*) as count
 		FROM paper_trades 
-		WHERE status = 'CLOSED'
+		WHERE status = 'CLOSED'${NOT_DUPLICATE}
 		GROUP BY exit_time::date
 		ORDER BY exit_time::date DESC
 		LIMIT 100
