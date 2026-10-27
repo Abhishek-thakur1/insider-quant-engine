@@ -2,13 +2,13 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## Unreleased: `fix/orphan-skips-skipped` (PR #29; not merged, not deployed)
+## `fix/orphan-skips-skipped` (PR #29): merged 26 Oct (`11dda4d`), engine deployed 26 Oct evening (image `b23c6f864696`, first boot 27 Oct)
 
 - **Boot orphaning now changes only OPEN rows** (AGENTS.md §11.22). Capital-skipped (SKIPPED) rows left in `trades:open` keep their status instead of becoming ORPHANED.
 - **Cause:** `status IN ('OPEN', 'SKIPPED')` in the orphan UPDATE, from `bb7fb46` on 18 Oct.
 - **Affected rows:** 6 (1583, 1585, 1590, 1596, 1599 and 1603).
 - **Tests:** 2 in `tests/positionStatus.test.ts`, plus a real-Postgres check of both statements.
-- The engine needs a rebuild to pick it up; this branch is review only.
+- The restore of the 6 rows is a separate step, run only on the owner's OK.
 
 ## `docs/study-guide` (PR #25): docs only, merged 26 Oct; no code, config or deploy change
 
