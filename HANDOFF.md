@@ -33,8 +33,8 @@ If any gate fails, or an earlier evening shows a problem: **stop, hold the rest,
 | Evening | Change | Containers | Status |
 |---|---|---|---|
 | Mon 26 Oct | PR #29: boot orphaning touches OPEN rows only | engine | **deployed** |
-| Tue 27 Oct | Restore of the 6 originally-SKIPPED rows (owner OK, 27 Oct) | database only | 15:33, fresh `pg_dump` first; one guarded UPDATE, exactly 6 rows |
-| Tue 27 Oct | PR #22: duplicate-alert policy, plus the API | engine + API, one procedure | **not before 16:05.** Only after confirming the 15:35 log export, the 15:45 Telegram summary and the 16:00 backup all finished. Merge review of `e46fe1f`: APPROVE |
+| Tue 27 Oct | Restore of the 6 originally-SKIPPED rows (owner OK, 27 Oct) | database only | **on the owner's go-ahead** (not scheduled), after 15:30. Fresh `pg_dump` first; one guarded UPDATE, exactly 6 rows |
+| Tue 27 Oct | PR #22: duplicate-alert policy, plus the API | engine + API, one procedure | **on the owner's go-ahead** (not scheduled), not before 16:05, and only after confirming the 15:35 log export, the 15:45 Telegram summary and the 16:00 backup all finished. Merge review of `e46fe1f`: APPROVE |
 | Wed 28 Oct | PR #32: Nifty block diagnostics, logging only | engine | queued |
 | Thu 29 Oct | PR #36: owner picks (watchlist 29, 30/100), on its own evening | watchlist file only: edited after the 16:30 check, then the 09:00 cron starts the engine; no rebuild | queued; independent review APPROVE WITH NITS (27 Oct, nits fixed). Precondition: `quant_screener` stays absent |
 | Fri 30 Oct | PR #41: EV-reject shadow outcomes, with migration 0007 | engine + migration | queued. `pg_dump` first; **after 0007 the backup check expects 4 TABLE DATA entries** (was 3). Off unless `EV_SHADOW_ENABLED=true` |
