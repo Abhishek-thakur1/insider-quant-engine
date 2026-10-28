@@ -290,6 +290,7 @@ export const startLiveEngine = async () => {
 	// cleanup above removes only the legacy un-dated jsfilter:stats hash.
 	// ema_shadow:nifty:bars5 is NOT cleared: it is the EMA shadow's warm-up history
 	// (its own closed 5-min candles, capped at MAX_STORED_BARS).
+	// diag:nifty:{day} (detectorDiagnostics) is date-keyed with a 36 h TTL: never cleared here.
 	// engine:boot_day is the cleanup's own marker (IST date of the last boot, 7-day TTL).
 
 	// EMA trend study in SHADOW (owner spec 2026-10-21): no alerts, no filter,
