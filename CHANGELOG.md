@@ -2,6 +2,16 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased: `fix/s3-backup` (scheduler only; not deployed until the owner applies the IAM policy)
+
+- **The 16:00 S3 upload never worked.** The script bind-mounted a path that only existed inside the scheduler, so Docker created an empty directory on the host instead. There are 23 of them in /tmp by 28 Oct.
+- **Fix:**
+  - the dump is written straight to `/var/backups/iqe`, a host folder mounted at the same path;
+  - the upload names its region (`ap-south-1`);
+  - an upload failure sends a Telegram admin alert and no longer skips cleanup;
+  - the last 14 dumps are kept.
+- **Leftovers:** `scripts/ops/cleanup_backup_leftovers.sh` lists the empty leftover directories by exact path, and with `--apply` runs `rmdir` on exactly those.
+
 ## Watchlist 25 → 51, live from 2026-10-28 (config only, owner decision 27 Oct)
 
 - **Population change** (AGENTS.md §11.27): `watchlist.json` on the data volume now holds the 25 previous names, the 4 owner picks (#36) and the 22 names from #34's rule.
