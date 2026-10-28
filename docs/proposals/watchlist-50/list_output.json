@@ -1,0 +1,223 @@
+{
+ "pool": 90,
+ "commonLastDate": "2026-09-07",
+ "fnoApplied": false,
+ "liveInPool": [
+  "NSE:HDFCBANK-EQ",
+  "NSE:RELIANCE-EQ",
+  "NSE:ICICIBANK-EQ",
+  "NSE:TCS-EQ"
+ ],
+ "add": [
+  {
+   "symbol": "NSE:BSE-EQ",
+   "t20": 1648.8,
+   "rank": 2,
+   "last": 3446.2
+  },
+  {
+   "symbol": "NSE:MCX-EQ",
+   "t20": 855.2,
+   "rank": 6,
+   "last": 3330.2
+  },
+  {
+   "symbol": "NSE:SBIN-EQ",
+   "t20": 841.2,
+   "rank": 7,
+   "last": 1005.9
+  },
+  {
+   "symbol": "NSE:ADANIENSOL-EQ",
+   "t20": 689,
+   "rank": 8,
+   "last": 1390.4
+  },
+  {
+   "symbol": "NSE:PAYTM-EQ",
+   "t20": 649.6,
+   "rank": 9,
+   "last": 1664
+  },
+  {
+   "symbol": "NSE:AXISBANK-EQ",
+   "t20": 584.3,
+   "rank": 11,
+   "last": 1266
+  },
+  {
+   "symbol": "NSE:KALYANKJIL-EQ",
+   "t20": 547.8,
+   "rank": 12,
+   "last": 591
+  },
+  {
+   "symbol": "NSE:DIXON-EQ",
+   "t20": 520.7,
+   "rank": 13,
+   "last": 14180
+  },
+  {
+   "symbol": "NSE:TATASTEEL-EQ",
+   "t20": 507.7,
+   "rank": 14,
+   "last": 185.61
+  },
+  {
+   "symbol": "NSE:BAJFINANCE-EQ",
+   "t20": 499.9,
+   "rank": 16,
+   "last": 1060
+  },
+  {
+   "symbol": "NSE:KOTAKBANK-EQ",
+   "t20": 477.6,
+   "rank": 17,
+   "last": 422.1
+  },
+  {
+   "symbol": "NSE:HAL-EQ",
+   "t20": 449.4,
+   "rank": 18,
+   "last": 4855.2
+  },
+  {
+   "symbol": "NSE:HINDZINC-EQ",
+   "t20": 406.2,
+   "rank": 19,
+   "last": 589.15
+  },
+  {
+   "symbol": "NSE:DIVISLAB-EQ",
+   "t20": 388.7,
+   "rank": 20,
+   "last": 9315
+  },
+  {
+   "symbol": "NSE:SOLARINDS-EQ",
+   "t20": 387.2,
+   "rank": 21,
+   "last": 21950
+  },
+  {
+   "symbol": "NSE:BEL-EQ",
+   "t20": 379,
+   "rank": 22,
+   "last": 404
+  },
+  {
+   "symbol": "NSE:TVSMOTOR-EQ",
+   "t20": 378.7,
+   "rank": 23,
+   "last": 4132
+  },
+  {
+   "symbol": "NSE:COFORGE-EQ",
+   "t20": 378,
+   "rank": 24,
+   "last": 1935
+  },
+  {
+   "symbol": "NSE:HINDALCO-EQ",
+   "t20": 360,
+   "rank": 25,
+   "last": 1006
+  },
+  {
+   "symbol": "NSE:TECHM-EQ",
+   "t20": 347.3,
+   "rank": 26,
+   "last": 1564
+  },
+  {
+   "symbol": "NSE:POLYCAB-EQ",
+   "t20": 339.1,
+   "rank": 27,
+   "last": 8261
+  },
+  {
+   "symbol": "NSE:VEDL-EQ",
+   "t20": 321.3,
+   "rank": 28,
+   "last": 268
+  },
+  {
+   "symbol": "NSE:TEJASNET-EQ",
+   "t20": 297.2,
+   "rank": 30,
+   "last": 593.6
+  },
+  {
+   "symbol": "NSE:NTPC-EQ",
+   "t20": 281.6,
+   "rank": 31,
+   "last": 332
+  },
+  {
+   "symbol": "NSE:ULTRACEMCO-EQ",
+   "t20": 279,
+   "rank": 32,
+   "last": 11175
+  }
+ ],
+ "ineligible": [
+  [
+   "NSE:NETWEB-EQ",
+   "last bar 2026-09-04"
+  ],
+  [
+   "NSE:KAYNES-EQ",
+   "last bar 2026-09-04"
+  ],
+  [
+   "NSE:JIOFIN-EQ",
+   "last bar 2026-09-04"
+  ],
+  [
+   "NSE:ICICIAMC-EQ",
+   "last bar 2026-09-04"
+  ],
+  [
+   "NSE:JSWINFRA-EQ",
+   "last bar 2026-09-04"
+  ],
+  [
+   "NSE:CYIENTDLM-EQ",
+   "last bar 2026-09-04"
+  ],
+  [
+   "NSE:SBFC-EQ",
+   "last bar 2026-09-04"
+  ],
+  [
+   "NSE:ITCHOTELS-EQ",
+   "last bar 2026-09-04"
+  ],
+  [
+   "NSE:WAAREERTL-EQ",
+   "last bar 2026-09-04"
+  ]
+ ],
+ "next5": [
+  [
+   "NSE:BAJAJ-AUTO-EQ",
+   278
+  ],
+  [
+   "NSE:KEI-EQ",
+   270.7
+  ],
+  [
+   "NSE:INDIGO-EQ",
+   265.9
+  ],
+  [
+   "NSE:HCLTECH-EQ",
+   251.3
+  ],
+  [
+   "NSE:HDFCAMC-EQ",
+   228.2
+  ]
+ ]
+}

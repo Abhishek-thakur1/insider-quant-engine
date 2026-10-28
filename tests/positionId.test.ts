@@ -14,7 +14,7 @@ import fs from 'node:fs'
 import { newPositionId, rowMatch } from '../src/core/positionStatus.js'
 import { runAlertPipeline, type PipelineDeps } from '../src/workers/alertPipeline.js'
 import type { OpenPosition } from '../src/core/positionTracker.js'
-import { NOW, MAX, decision, equity } from './helpers/workerScenarios.js'
+import { NOW, MAX, decision, equity, makeClaimStore } from './helpers/workerScenarios.js'
 
 test('ID SHAPE: trade_<ms>_<symbol>_<detector slug>_<6 hex>; detector slug strips punctuation', () => {
 	const id = newPositionId(1792658635160, 'NSE:AEQUS-EQ', 'Volatility_Contraction_V2', () => 'a1b2c3')
@@ -33,6 +33,8 @@ test('SAME MILLISECOND, SAME SYMBOL: two fires through the real pipeline get dis
 				hash.set(pos.id, pos)
 				return hash.size
 			},
+			getOpenPositions: () => [...hash.values()],
+			removeFlag: async () => {},
 		}),
 		getAlertStore: async () => {
 			const kv = new Map<string, string>()
@@ -44,6 +46,7 @@ test('SAME MILLISECOND, SAME SYMBOL: two fires through the real pipeline get dis
 				del: async () => 1,
 			}
 		},
+		getClaimStore: async () => makeClaimStore(),
 		sendChannel: async () => {},
 		sendAdmin: async () => {},
 		now: () => NOW, // the SAME millisecond for both

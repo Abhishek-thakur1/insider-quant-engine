@@ -37,6 +37,7 @@ import type { IDetector, TickData } from '../../core/types.js'
 import { redisClient } from '../../config/redis.js'
 import { getVwap } from '../../utils/vwapUtils.js'
 import { getBestStrike } from '../../utils/optionUtils.js'
+import { noteBlocked } from '../../core/detectorDiagnostics.js'
 
 // ─── TUNABLE CONSTANTS ────────────────────────────────────────
 const CANDLE_MS = 3 * 60 * 1000
@@ -78,7 +79,10 @@ export class NiftyVwapReclaimDetector implements IDetector {
 	private vwapRelationHistory: Array<'above' | 'below'> = []
 
 	public async analyze(liveTick: TickData): Promise<void> {
-		if (!isActiveWindow()) return
+		if (!isActiveWindow()) {
+			noteBlocked(this.name, liveTick.timestamp, null, getISTMinutes() < ACTIVE_START_MINS ? 'window_not_open' : 'window_closed')
+			return
+		}
 
 		const now = liveTick.timestamp
 
@@ -115,7 +119,10 @@ export class NiftyVwapReclaimDetector implements IDetector {
 		}
 
 		const vwap = await getVwap(this.symbol)
-		if (!vwap) return
+		if (!vwap) {
+			noteBlocked(this.name, closed.startTs, null, 'vwap_missing')
+			return
+		}
 
 		// ── Track VWAP relationship for this closed candle ──────────────
 		const relation: 'above' | 'below' = closed.close >= vwap ? 'above' : 'below'
@@ -125,10 +132,16 @@ export class NiftyVwapReclaimDetector implements IDetector {
 		this.closedCandles.push(closed)
 		if (this.closedCandles.length > 10) this.closedCandles.shift()
 
-		if (this.vwapRelationHistory.length < MIN_CANDLES_BELOW_BEFORE_RECLAIM + 1) return
+		if (this.vwapRelationHistory.length < MIN_CANDLES_BELOW_BEFORE_RECLAIM + 1) {
+			noteBlocked(this.name, closed.startTs, null, 'warmup', { candles: this.vwapRelationHistory.length, need: MIN_CANDLES_BELOW_BEFORE_RECLAIM + 1 })
+			return
+		}
 
 		const cooldownKey = `cooldown:v2:vwap_reclaim`
-		if (await redisClient.get(cooldownKey)) return
+		if (await redisClient.get(cooldownKey)) {
+			noteBlocked(this.name, closed.startTs, null, 'cooldown')
+			return
+		}
 
 		const histLen = this.vwapRelationHistory.length
 		const current = this.vwapRelationHistory[histLen - 1]!
@@ -142,13 +155,22 @@ export class NiftyVwapReclaimDetector implements IDetector {
 			const bodyPct = ((closed.close - closed.open) / closed.open) * 100
 			const vwapDist = ((closed.close - vwap) / vwap) * 100 // how far above VWAP
 
-			if (bodyPct < MIN_RECLAIM_BODY_PCT) return // weak reclaim, skip
-			if (vwapDist > MAX_EXTENSION_PCT) return // already too extended at reclaim
+			if (bodyPct < MIN_RECLAIM_BODY_PCT) {
+				noteBlocked(this.name, closed.startTs, 'LONG', 'body_too_small', { bodyPct, min: MIN_RECLAIM_BODY_PCT })
+				return // weak reclaim, skip
+			}
+			if (vwapDist > MAX_EXTENSION_PCT) {
+				noteBlocked(this.name, closed.startTs, 'LONG', 'overextended', { vwapDistPct: vwapDist, max: MAX_EXTENSION_PCT })
+				return // already too extended at reclaim
+			}
 
 			const best = getBestStrike('CE', closed.close)
 			const sl = Number((vwap - 8).toFixed(2)) // SL just below VWAP (tight)
 			const risk = closed.close - sl
-			if (risk <= 0 || risk > 50) return
+			if (risk <= 0 || risk > 50) {
+				noteBlocked(this.name, closed.startTs, 'LONG', 'risk_cap', { risk, cap: 50, close: closed.close, stop: sl })
+				return
+			}
 
 			const t1 = Number((closed.close + risk * 1.5).toFixed(2))
 			const t2 = Number((closed.close + risk * 2.5).toFixed(2))
@@ -182,13 +204,22 @@ export class NiftyVwapReclaimDetector implements IDetector {
 			const bodyPct = ((closed.open - closed.close) / closed.open) * 100 // bearish body
 			const vwapDist = ((vwap - closed.close) / vwap) * 100 // how far below VWAP
 
-			if (bodyPct < MIN_RECLAIM_BODY_PCT) return
-			if (vwapDist > MAX_EXTENSION_PCT) return
+			if (bodyPct < MIN_RECLAIM_BODY_PCT) {
+				noteBlocked(this.name, closed.startTs, 'SHORT', 'body_too_small', { bodyPct, min: MIN_RECLAIM_BODY_PCT })
+				return
+			}
+			if (vwapDist > MAX_EXTENSION_PCT) {
+				noteBlocked(this.name, closed.startTs, 'SHORT', 'overextended', { vwapDistPct: vwapDist, max: MAX_EXTENSION_PCT })
+				return
+			}
 
 			const best = getBestStrike('PE', closed.close)
 			const sl = Number((vwap + 8).toFixed(2)) // SL just above VWAP
 			const risk = sl - closed.close
-			if (risk <= 0 || risk > 50) return
+			if (risk <= 0 || risk > 50) {
+				noteBlocked(this.name, closed.startTs, 'SHORT', 'risk_cap', { risk, cap: 50, close: closed.close, stop: sl })
+				return
+			}
 
 			const t1 = Number((closed.close - risk * 1.5).toFixed(2))
 			const t2 = Number((closed.close - risk * 2.5).toFixed(2))
@@ -211,6 +242,8 @@ export class NiftyVwapReclaimDetector implements IDetector {
 			})
 
 			await redisClient.setEx(cooldownKey, COOLDOWN_SECONDS, 'true')
+			return
 		}
+		noteBlocked(this.name, closed.startTs, null, 'no_cross', { close: closed.close, vwap })
 	}
 }
