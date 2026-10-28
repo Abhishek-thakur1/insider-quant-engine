@@ -184,8 +184,17 @@ function main(): void {
 
 	// ── load replay signals ──
 	const sigs: Sig[] = []
+	// Deviation 12: optional symbol filter (JSON array of symbols). Unset = every symbol, as registered.
+	const keepFile = process.env.EDGE_SYMBOLS_FILE
+	const keep = keepFile ? new Set(JSON.parse(fs.readFileSync(keepFile, 'utf8')) as string[]) : null
+	const kept = (sym: string | undefined) => !keep || (sym !== undefined && keep.has(sym))
+	if (keep) log(`> Symbol filter (deviation 12): ${keep.size} symbols from \`${path.basename(keepFile!)}\`. Replay and live rows for other symbols are dropped.\n`)
 	for (const f of fs.readdirSync(replayDir).filter((x) => /^sig_.*\.jsonl$/.test(x)).sort())
-		for (const line of fs.readFileSync(path.join(replayDir, f), 'utf8').split('\n')) if (line.trim()) sigs.push(JSON.parse(line) as Sig)
+		for (const line of fs.readFileSync(path.join(replayDir, f), 'utf8').split('\n'))
+			if (line.trim()) {
+				const sg = JSON.parse(line) as Sig
+				if (kept(sg.symbol)) sigs.push(sg)
+			}
 	const noGate = sigs.filter((s) => !s.gate).length
 	const symbols = [...new Set(sigs.map((s) => s.symbol))]
 	const refs = new Map<string, Map<string, { atr: number | null; adr: number | null }>>()
@@ -515,7 +524,7 @@ function main(): void {
 	log()
 
 	// ── live (descriptive) ──
-	const pt = parseCsv(fs.readFileSync(path.join(liveDir, 'paper_trades.csv'), 'utf8'))
+	const pt = parseCsv(fs.readFileSync(path.join(liveDir, 'paper_trades.csv'), 'utf8')).filter((r) => kept(r.symbol))
 	const closedAll = pt.filter((r) => r.status === 'CLOSED')
 	// AGENTS.md data-quality table: synthetic_close = ₹0/0R close invented by the removed boot sweep
 	// ("signal occurrence only"); index_option_proxy = Nifty option rows at index-level prices.
