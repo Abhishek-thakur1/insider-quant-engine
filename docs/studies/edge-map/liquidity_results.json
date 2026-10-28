@@ -1,0 +1,944 @@
+{
+ "qualifyingEngineDays": [
+  "2026-09-10",
+  "2026-09-15",
+  "2026-09-16",
+  "2026-09-17",
+  "2026-09-18",
+  "2026-09-21",
+  "2026-09-22",
+  "2026-09-23",
+  "2026-09-24",
+  "2026-09-25",
+  "2026-09-29",
+  "2026-09-30",
+  "2026-10-01",
+  "2026-10-05",
+  "2026-10-06",
+  "2026-10-07",
+  "2026-10-08",
+  "2026-10-09",
+  "2026-10-12",
+  "2026-10-13",
+  "2026-10-14",
+  "2026-10-15",
+  "2026-10-16",
+  "2026-10-19",
+  "2026-10-21",
+  "2026-10-22",
+  "2026-10-23",
+  "2026-10-26"
+ ],
+ "rows": [
+  {
+   "symbol": "RELIANCE",
+   "groups": "core",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 1383.8,
+    "csDailyBps": 54.6
+   },
+   "ar1mBps": 1.1,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 20,
+    "from": "2026-09-24",
+    "to": "2026-10-26",
+    "adtvCr": 1709.5
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "TCS",
+   "groups": "core",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 596.8,
+    "csDailyBps": 54.2
+   },
+   "ar1mBps": 0.9,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 20,
+    "from": "2026-09-24",
+    "to": "2026-10-26",
+    "adtvCr": 1328.2
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "HDFCBANK",
+   "groups": "core",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 1877.6,
+    "csDailyBps": 29.2
+   },
+   "ar1mBps": 1.1,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 20,
+    "from": "2026-09-24",
+    "to": "2026-10-26",
+    "adtvCr": 2138.2
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "INFY",
+   "groups": "core",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 19,
+    "from": "2026-09-25",
+    "to": "2026-10-26",
+    "adtvCr": 1706.2
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "ICICIBANK",
+   "groups": "core",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 1217.2,
+    "csDailyBps": 41.1
+   },
+   "ar1mBps": 1.9,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 20,
+    "from": "2026-09-24",
+    "to": "2026-10-26",
+    "adtvCr": 1585.9
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "AARTIPHARM",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 17,
+    "from": "2026-09-25",
+    "to": "2026-10-26",
+    "adtvCr": 43.7
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "AEQUS",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 15,
+    "from": "2026-09-30",
+    "to": "2026-10-26",
+    "adtvCr": 103.2
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "CAPILLARY",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 16,
+    "from": "2026-09-25",
+    "to": "2026-10-26",
+    "adtvCr": 19.9
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "GALLANTT",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 8,
+    "from": "2026-10-12",
+    "to": "2026-10-26",
+    "adtvCr": 471.7
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "GENESYS",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 17,
+    "from": "2026-09-25",
+    "to": "2026-10-26",
+    "adtvCr": 13.6
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "JAMNAAUTO",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 13,
+    "from": "2026-09-30",
+    "to": "2026-10-26",
+    "adtvCr": 42.1
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "JAYKAY",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 18,
+    "from": "2026-09-25",
+    "to": "2026-10-26",
+    "adtvCr": 34.2
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "JGCHEM",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 18,
+    "from": "2026-09-25",
+    "to": "2026-10-26",
+    "adtvCr": 25.8
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "JINDWORLD",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 18,
+    "from": "2026-09-25",
+    "to": "2026-10-26",
+    "adtvCr": 6.7
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "JSLL",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 13,
+    "from": "2026-10-05",
+    "to": "2026-10-26",
+    "adtvCr": 53.9
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "JTLIND",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 18,
+    "from": "2026-09-25",
+    "to": "2026-10-26",
+    "adtvCr": 27.7
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "MOTISONS",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 17,
+    "from": "2026-09-25",
+    "to": "2026-10-26",
+    "adtvCr": 38
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "MRPL",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 15,
+    "from": "2026-09-30",
+    "to": "2026-10-26",
+    "adtvCr": 340
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "RISHABH",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 18,
+    "from": "2026-09-25",
+    "to": "2026-10-26",
+    "adtvCr": 14.3
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "ROLEXRINGS",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 10,
+    "from": "2026-09-25",
+    "to": "2026-10-26",
+    "adtvCr": 37.1
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "RPEL",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 18,
+    "from": "2026-09-25",
+    "to": "2026-10-26",
+    "adtvCr": 16.3
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "RPTECH",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 18,
+    "from": "2026-09-25",
+    "to": "2026-10-26",
+    "adtvCr": 31.3
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "RSYSTEMS",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 15,
+    "from": "2026-09-29",
+    "to": "2026-10-26",
+    "adtvCr": 239.8
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "SUNTV",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 14,
+    "from": "2026-10-01",
+    "to": "2026-10-26",
+    "adtvCr": 88.3
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "SYNCOMF",
+   "groups": "screener",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 16,
+    "from": "2026-09-29",
+    "to": "2026-10-26",
+    "adtvCr": 44.3
+   },
+   "flag": "unknown"
+  },
+  {
+   "symbol": "BSE",
+   "groups": "#34, owner",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 1648.8,
+    "csDailyBps": 73.1
+   },
+   "ar1mBps": 1.8,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 12,
+    "from": "2026-09-10",
+    "to": "2026-10-15",
+    "adtvCr": 2152.5
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "MCX",
+   "groups": "#34, owner",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 855.2,
+    "csDailyBps": 97.3
+   },
+   "ar1mBps": 0,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 9,
+    "from": "2026-09-10",
+    "to": "2026-09-24",
+    "adtvCr": 633.5
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "SBIN",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 841.2,
+    "csDailyBps": 46.1
+   },
+   "ar1mBps": 2,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 9,
+    "from": "2026-09-10",
+    "to": "2026-09-24",
+    "adtvCr": 721.7
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "ADANIENSOL",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 689,
+    "csDailyBps": 108.3
+   },
+   "ar1mBps": 2.4,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 10,
+    "from": "2026-09-10",
+    "to": "2026-10-01",
+    "adtvCr": 277.9
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "PAYTM",
+   "groups": "#34, owner",
+   "cache": {
+    "firstBar": "2021-11-18",
+    "lastBar": "2026-09-07",
+    "adtvCr": 649.6,
+    "csDailyBps": 93.6
+   },
+   "ar1mBps": 3.7,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-08-31..2026-09-04",
+   "engine": {
+    "n": 9,
+    "from": "2026-09-10",
+    "to": "2026-09-24",
+    "adtvCr": 787.6
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "AXISBANK",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 584.3,
+    "csDailyBps": 35.4
+   },
+   "ar1mBps": 1.6,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 9,
+    "from": "2026-09-10",
+    "to": "2026-09-24",
+    "adtvCr": 612.9
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "KALYANKJIL",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 547.8,
+    "csDailyBps": 87.4
+   },
+   "ar1mBps": 4.7,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 10,
+    "from": "2026-09-10",
+    "to": "2026-10-07",
+    "adtvCr": 381.5
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "DIXON",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 520.7,
+    "csDailyBps": 101.3
+   },
+   "ar1mBps": 3.4,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 9,
+    "from": "2026-09-10",
+    "to": "2026-09-24",
+    "adtvCr": 448.4
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "TATASTEEL",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 507.7,
+    "csDailyBps": 50.2
+   },
+   "ar1mBps": 1.4,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 9,
+    "from": "2026-09-10",
+    "to": "2026-09-24",
+    "adtvCr": 463.6
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "BAJFINANCE",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 499.9,
+    "csDailyBps": 44
+   },
+   "ar1mBps": 1.9,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 9,
+    "from": "2026-09-10",
+    "to": "2026-09-24",
+    "adtvCr": 644
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "KOTAKBANK",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 477.6,
+    "csDailyBps": 55.9
+   },
+   "ar1mBps": 3.4,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 9,
+    "from": "2026-09-10",
+    "to": "2026-09-24",
+    "adtvCr": 428.2
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "HAL",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 449.4,
+    "csDailyBps": 55.5
+   },
+   "ar1mBps": 2.9,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 10,
+    "from": "2026-09-10",
+    "to": "2026-09-29",
+    "adtvCr": 326.9
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "HINDZINC",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 406.2,
+    "csDailyBps": 73.1
+   },
+   "ar1mBps": 3.1,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 9,
+    "from": "2026-09-10",
+    "to": "2026-09-24",
+    "adtvCr": 231.2
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "DIVISLAB",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 388.7,
+    "csDailyBps": 54.1
+   },
+   "ar1mBps": 1.7,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 9,
+    "from": "2026-09-10",
+    "to": "2026-09-24",
+    "adtvCr": 475.7
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "SOLARINDS",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 387.2,
+    "csDailyBps": 59.6
+   },
+   "ar1mBps": 4.9,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 9,
+    "from": "2026-09-10",
+    "to": "2026-09-24",
+    "adtvCr": 728.4
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "BEL",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 379,
+    "csDailyBps": 54.7
+   },
+   "ar1mBps": 2.8,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 9,
+    "from": "2026-09-10",
+    "to": "2026-09-24",
+    "adtvCr": 374.5
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "TVSMOTOR",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 378.7,
+    "csDailyBps": 33.5
+   },
+   "ar1mBps": 2.5,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 12,
+    "from": "2026-09-10",
+    "to": "2026-10-13",
+    "adtvCr": 293.8
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "COFORGE",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 378,
+    "csDailyBps": 46.7
+   },
+   "ar1mBps": 2.1,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 12,
+    "from": "2026-09-10",
+    "to": "2026-10-09",
+    "adtvCr": 421.3
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "HINDALCO",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 360,
+    "csDailyBps": 60.9
+   },
+   "ar1mBps": 2.7,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 10,
+    "from": "2026-09-10",
+    "to": "2026-10-15",
+    "adtvCr": 364.9
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "TECHM",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 347.3,
+    "csDailyBps": 82.7
+   },
+   "ar1mBps": 2.1,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 13,
+    "from": "2026-09-10",
+    "to": "2026-10-15",
+    "adtvCr": 359
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "POLYCAB",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 339.1,
+    "csDailyBps": 56.9
+   },
+   "ar1mBps": 2.4,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 9,
+    "from": "2026-09-10",
+    "to": "2026-09-24",
+    "adtvCr": 219.9
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "VEDL",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 321.3,
+    "csDailyBps": 59
+   },
+   "ar1mBps": 3,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 10,
+    "from": "2026-09-10",
+    "to": "2026-10-13",
+    "adtvCr": 207.9
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "TEJASNET",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 297.2,
+    "csDailyBps": 81
+   },
+   "ar1mBps": 4.2,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 10,
+    "from": "2026-09-10",
+    "to": "2026-09-25",
+    "adtvCr": 91.9
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "NTPC",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 281.6,
+    "csDailyBps": 58.2
+   },
+   "ar1mBps": 2,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 9,
+    "from": "2026-09-10",
+    "to": "2026-09-24",
+    "adtvCr": 241.4
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "ULTRACEMCO",
+   "groups": "#34",
+   "cache": {
+    "firstBar": "2021-07-05",
+    "lastBar": "2026-09-07",
+    "adtvCr": 279,
+    "csDailyBps": 41.6
+   },
+   "ar1mBps": 2.9,
+   "ar1mPairs": 1775,
+   "ar1mDays": "2026-09-01..2026-09-07",
+   "engine": {
+    "n": 9,
+    "from": "2026-09-10",
+    "to": "2026-09-24",
+    "adtvCr": 300.8
+   },
+   "flag": ""
+  },
+  {
+   "symbol": "ATHERENERG",
+   "groups": "owner",
+   "cache": null,
+   "ar1mBps": null,
+   "ar1mPairs": 0,
+   "ar1mDays": null,
+   "engine": {
+    "n": 1,
+    "from": "2026-10-12",
+    "to": "2026-10-12",
+    "adtvCr": 516.8
+   },
+   "flag": "unknown"
+  }
+ ]
+}

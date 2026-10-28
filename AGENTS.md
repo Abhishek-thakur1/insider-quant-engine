@@ -1163,7 +1163,10 @@ version live in `backtest/core/symbolClass.ts`, with a test pinning the five aff
 | `orb:{15\|30}min:{high\|low}:{sym}` | price | 8 h | **`orbDetector` (dormant)** | nothing in the live path (was NiftyLiquiditySweep, now archived) |
 | `HTF_TREND:{sym}` | `BULLISH\|BEARISH` | — | **nothing** | `BaseDetector.isDailyTrendAligned` |
 | `alert:sent:{IST-date}:{detector}:{symbol}` | timestamp (SET NX) | 36 h | `alertPolicy.reserveAlertSlot` | itself — one Telegram alert per detector+symbol per day. Nifty option symbols dedup on `NIFTY`. **Never cleared at boot.** |
+| `diag:nifty:{IST-date}` | list of JSON "why no alert" records | 36 h | `detectorDiagnostics.noteBlocked` (Nifty ORE, Trend Pulse, VWAP Reclaim) | observation only; LTRIM to 900 (3 detectors × 300), ≤ 300 records per detector per day. Kill switch `NIFTY_DIAG_ENABLED=false`. **Never cleared at boot.** |
 | `alert:count:{IST-date}` | counter | 36 h | `alertPolicy.reserveAlertSlot` | itself — daily cap. **Never cleared at boot.** |
+| `alert:sym:{IST-date}:{LONG\|SHORT}:{symbol}` | JSON `{ts, positionId}` (SET NX; stale holder replaced by Lua compare-and-set) | 36 h | `alertPolicy.claimSymbolSide` (alert side, just after the per-detector slot is claimed; the slot is handed back if this claim loses) | itself — one alert per symbol + side while the first alerted position is open, else 60 min (§11.18). Given back (compare-and-delete) when no alert went out. Options dedup on `NIFTY`. **Never cleared at boot.** |
+| `paper:sym:{IST-date}:{LONG\|SHORT}:{symbol}` | JSON `{ts, positionId}` | 36 h | `alertPolicy.claimSymbolSide` (before `registerTrade`) | itself — the losing fire's paper and signals rows are flagged `duplicate_signal` (§11.18). **Never cleared at boot.** |
 | `trades:open` | hash `<position id>` → JSON `OpenPosition` | none | `positionTracker.registerTrade` (and again with `dbId` after the INSERT) | `positionTracker.init` at boot. Id = `trade_<ms>_<symbol>_<detector slug>_<6 hex>` since 2026-10-22 (§11.19); legacy `trade_<ms>_<symbol>` entries still load. The id is opaque: nothing parses it. **Never cleared at boot.** |
 | `ema_shadow:nifty:bars5` | list of closed 5-min Nifty candles (JSON `{t,o,h,l,c}`), capped at 1,500 | none | `NiftyEmaShadow` (`redisBarStore`) | itself at boot — EMA warm-up history. **Never cleared at boot** (listed in the boot-cleanup comment). |
 
@@ -1392,6 +1395,7 @@ happens before any alert decision.**
 | Gated only | Only `decision.passed === true` is sent. A filter **error** records the trade as ungated and sends nothing (this replaces the old "fail open = send unfiltered"). |
 | Capital | Full skip (`actualSize = 0`) → never sent. REDUCE → normal alert with the reduced qty; no capital wording anywhere in the channel. |
 | Dedup | One alert per detector + symbol per IST day (`alert:sent:*`, survives restarts). |
+| One per symbol + side (2026-10-22, §11.18) | A second fire on the same symbol + side, from any detector, is a duplicate if the first alerted position is still open, or if it was alerted less than 60 min ago (`alert:sym:*`). Nothing is sent for it and it uses no cap slot. Its signals row is `DUPLICATE`. |
 | Daily cap | `TELEGRAM_MAX_ALERTS_PER_DAY` (default **20** — a noise-control choice, not validated). First overflow sends one notice to `TELEGRAM_ADMIN_ID`; then silence. |
 | Levels | SL/T1/T2/qty in the message are the same values written to Postgres (equity SL is still VWAP ± 0.2 %, not the detector's candle SL — open item). |
 | Watchdog | Exits on a silent socket only during 09:15–15:30 IST (`utils/marketHours.ts`). |
@@ -1642,6 +1646,38 @@ The regime then restarted from zero. Worse, the regime engine reads only its **i
 
 Tests: `tests/bootCleanup.test.ts`.
 
+## 11.18 Duplicate policy: one alert per symbol + side (2026-10-22, branch `feat/duplicate-alert-policy`)
+
+**Why:** on Oct 22 at 11:06 Stock Momentum Breakout (score 85) and VCP (88) fired on AEQUS LONG in the same minute. They ran concurrently, because `websocket.ts` dispatches detectors with `Promise.all`. Both were alerted and both paper rows were counted: double exposure for one trade.
+
+**Rule (owner decisions):** a fire is a **duplicate** if an earlier fire on the same symbol + side holds the claim, and either:
+- the earlier fire's position is still open, or
+- the earlier fire was less than 60 minutes ago (`SYMBOL_SIDE_COOLDOWN_MS`). This covers a position that has closed or never opened.
+
+Opposite sides never collide. Nifty options dedup on `NIFTY` per side, and for options **only the 60-minute window applies**. Option paper positions never close in-session: they're registered as `NIFTY 22650 CE`, but ticks arrive as `NSE:NIFTY…CE`, a separate defect from before this change. "Still open" would therefore hold all day.
+
+There are two independent atomic claims (`alertPolicy.claimSymbolSide`; Redis SET NX, and a stale holder is replaced with Lua compare-and-set, so concurrent fires can't both win):
+
+| Claim | Taken | The loser |
+|---|---|---|
+| `paper:sym:*` | before `registerTrade`, by gated fires only; never by an invalid-geometry row. **Kept only by a fire that is actually alerted** (owner, 2026-10-22); otherwise released (compare-and-delete). Ungated rows are never flagged. | Still recorded (recording fails open). Paper row and signals row flagged `duplicate_signal`. Excluded from `pnl:daily` (`positionTracker`) and from the API's `/api/today` and `/api/trades/history` unless `?includeDuplicates=true`; `/api/trades/heatmap` always excludes them. |
+| `alert:sym:*` | after the gated / capital checks and after the per-detector slot is claimed (the slot is handed back if the symbol claim loses) | Nothing sent. No message editing. Uses no cap slot. Signals row `alert_suppressed_reason = 'DUPLICATE'`, an existing reason, so no migration. |
+
+- **Order:** the per-detector dedup (`alert:sent:*`) is checked **before** the symbol claim. A fire its own detector already alerted today never takes the claim, so it can't make a concurrent legitimate fire lose and then hand the claim back.
+- **Claim given back:** the alert claim is returned (compare-and-delete) whenever no alert went out:
+  - the per-detector slot said duplicate or cap reached;
+  - the send failed;
+  - **any** error after the claim.
+
+  The position id and both claims come from one clock read, so the give-back always matches. Only a process crash between claim and send leaves a claim held (until its position closes, or 60 min).
+- **Errors:** a paper-claim error records the row unflagged (fail open). An alert-claim error propagates to `WORKER_ERROR` (fail closed).
+- **Alerted only** (owner decisions, 2026-10-22): only a gated fire takes the paper claim, and it keeps it only if its alert is delivered. It's released in a `finally` on every other path: capital skip or zero size, per-detector or symbol duplicate, cap reached, send failed, any error. A later alerted trade is therefore never flagged because of a fire that wasn't alerted.
+- **Concurrent inversion, fixed:** two concurrent fires where the paper-claim holder ends up not alerted, while the other fire, already flagged at insert, is alerted. After delivery, the alerted fire re-takes the paper claim and drops its own flag (`positionTracker.removeFlag`: memory, `trades:open`, and `array_remove` on the paper row). The signals row also loses the flag. If a live holder still has the claim (an earlier alerted position), the flag stays. One timing still leaves the flag: the holder hasn't released yet when the alerted fire re-checks after sending. That's rare, because the holder has no network wait.
+- **Cost:** two ungated fires on the same symbol + side both count in the ungated stats.
+- **Resurrect race, fixed (2026-10-26, from the independent review):** `processTick` deletes a closing position from `trades:open`, awaits the Postgres close, and only then drops it from memory. A `removeFlag` in that gap wrote it back to `trades:open` (a ghost the next boot marks ORPHANED). `processTick` now marks the id in `closingIds` before its first await, and `removeFlag` skips the `trades:open` write for it. Memory and the paper row still lose the flag. Known gap (re-review, LOW): if the position closed while still flagged, its P&L stayed out of `pnl:daily` and is not added back when the flag is later removed, so `pnl:daily` can be lower than the paper rows for that trade. If the Redis close pipeline throws, the id is dropped from `closingIds` so the next tick retries normally. `tests/removeFlagRace.test.ts` reproduces the race: it fails without the fix.
+
+Tests: `tests/duplicatePolicy.test.ts`. `legacyWorkerParity` stays green, because the claim keys go to a non-recording store in `tests/helpers/legacyHarness.ts`.
+
 ## 11.19 Unique position ids, row-addressed closes (2026-10-22, branch `fix/position-id`)
 
 **Why:** on Oct 22 at 11:06 two detectors fired AEQUS LONG in the same millisecond. Both positions got the id `trade_<ms>_NSE:AEQUS-EQ`.
@@ -1711,6 +1747,28 @@ Tests: `tests/publicData.test.ts`, and `tests/sseHeartbeat.test.ts`. The latter 
 - **Tests:** `tests/positionStatus.test.ts` checks the SQL and that `positionTracker` uses the builder.
 - **Real Postgres 15:** the old statement turns a SKIPPED row into `ORPHANED {capital_skipped,orphaned}` (`UPDATE 1`); the new one leaves it SKIPPED (`UPDATE 0`) and still orphans an OPEN row.
 - **Repairing the 6 rows** is a separate, owner-approved `UPDATE` by id, not part of this code change.
+
+## 11.23 Nifty "why no alert" diagnostics, logging only (2026-10-26, branch `feat/nifty-block-diagnostics`, not deployed)
+
+On 26 Oct Nifty moved 22,386 → 22,700 with no Nifty alert, and the reasons had to be rebuilt from bars.
+`src/core/detectorDiagnostics.ts` now records them as they happen.
+
+- **What:** when ORE, Trend Pulse or VWAP Reclaim evaluates a closed candle and doesn't fire, it calls
+  `noteBlocked(detector, candleStartMs, side, reason, nums)`. Reasons: `window_*`, `range_building`,
+  `lock_candle_not_evaluated` (ORE, §6.12), `warmup`, `cooldown`, `vwap_missing`, `range_too_wide`,
+  `body_too_small`, `overextended`, `risk_cap` (with risk, cap, close, stop), and a final miss reason
+  (`no_break`, `candle_not_bullish`/`bearish`, `vwap_misaligned`, `no_higher_highs`, `no_lower_lows`,
+  `vwap_distance`, `mixed_direction`, `no_cross`).
+- **Bounds:** one record per detector per candle (the first reason wins); each `window_*` reason once per
+  detector per day; 300 records per detector per day; Redis list `diag:nifty:{IST-date}` trimmed to 900 (3 × 300, so nothing is dropped),
+  36 h TTL (§7); one `[Diag]` log line per record.
+- **Safety:** `noteBlocked` is synchronous, never awaited by a detector and never throws; the Redis write
+  is fire-and-forget with errors swallowed. It changes no alert, gate, threshold, cooldown or position.
+  `tests/niftyDiagnostics.test.ts` replays 26 Oct's bars with diagnostics on and off and asserts
+  identical signals, and checks the bounds and the kill switch (`NIFTY_DIAG_ENABLED=false`).
+- **Replay:** `backtest/replay/engine.ts` calls `resetDiagnostics()` per session.
+- **ORE note:** the call sites follow the current lock behaviour; if PR #31 (lock candle) merges, the
+  `lock_candle_not_evaluated` record goes away with the early return.
 
 ## 11.26 EV-reject shadow outcomes (2026-10-27, branch `feat/ev-shadow`; PR, not deployed, off by default)
 

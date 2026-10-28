@@ -7,7 +7,7 @@
 // ============================================================
 
 import { runAlertPipeline, type PipelineDeps } from '../../src/workers/alertPipeline.js'
-import { alertKeys, type AlertStore } from '../../src/workers/alertPolicy.js'
+import { alertKeys, type AlertStore, type ClaimStore } from '../../src/workers/alertPolicy.js'
 import { getISTDateString } from '../../src/utils/marketHours.js'
 import type { SignalDraft } from '../../src/db/signalRecord.js'
 import type { FilterDecision } from '../../src/detectors/janeStreetFilter.js'
@@ -268,7 +268,29 @@ export const makeStore = (effects: Effect[], sc: Scenario): AlertStore => {
 	}
 }
 
-export const makeDeps = (sc: Scenario, effects: Effect[]): PipelineDeps => ({
+/** In-memory ClaimStore with the production Lua semantics; records NO effects (new keys, see legacyHarness). */
+export const makeClaimStore = (data = new Map<string, string>()): ClaimStore & { data: Map<string, string> } => ({
+	data,
+	async get(key) {
+		return data.get(key) ?? null
+	},
+	async set(key, value, opts) {
+		if (opts.NX && data.has(key)) return null
+		data.set(key, value)
+		return 'OK'
+	},
+	async compareAndSet(key, expected, next) {
+		if (data.get(key) !== expected) return false
+		data.set(key, next)
+		return true
+	},
+	async compareAndDelete(key, expected) {
+		if (data.get(key) !== expected) return false
+		return data.delete(key)
+	},
+})
+
+export const makeDeps = (sc: Scenario, effects: Effect[], claims: ClaimStore = makeClaimStore()): PipelineDeps => ({
 	runFilter: async (d) => {
 		effects.push(['filter', d.symbol])
 		if (sc.filterThrows) throw new Error('filter bug')
@@ -281,8 +303,11 @@ export const makeDeps = (sc: Scenario, effects: Effect[]): PipelineDeps => ({
 			if (sc.registerThrows) throw new Error('tracker bug')
 			return 42
 		},
+		getOpenPositions: () => [],
+		removeFlag: async (id, tradeId, flag) => void effects.push(['removeFlag', id, tradeId, flag]),
 	}),
 	getAlertStore: async () => makeStore(effects, sc),
+	getClaimStore: async () => claims,
 	randomIdSuffix: () => '000000',
 	sendChannel: async (text, markdown) => {
 		effects.push(['send', markdown, text])
