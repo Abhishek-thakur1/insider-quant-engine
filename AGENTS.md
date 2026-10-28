@@ -1704,7 +1704,7 @@ Tests: `tests/publicData.test.ts`, and `tests/sseHeartbeat.test.ts`. The latter 
 symbol, side, detector, score/threshold, rejecting gate (REGIME / EV / SCORE / FILTER ERROR) with the EV or
 regime reason, and the paper outcome so far (CLOSED R and exit reason, OPEN, SKIPPED, ORPHANED, or "no paper
 row" for EV/REGIME rejects, which create none). Headed **"NOT ALERTS, review only"**; paper R is as stored,
-before costs. One SELECT, read-only, sends nothing itself; at most `MAX_ROWS` (25) rows, the rest counted.
+before costs. One SELECT, read-only, sends nothing itself; lists the top `MAX_ROWS` (10, owner cap 28 Oct) rejected fires **by score**; the rest are counted by gate on one line.
 
 - **Hook (host, outside the repo):** `~/evidence/monitor/check.sh` MODE=summary sends it as a *second*
   admin message after the existing summary, so the summary itself is unchanged. No engine, API or
