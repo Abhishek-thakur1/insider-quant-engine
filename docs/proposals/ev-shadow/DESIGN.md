@@ -63,7 +63,7 @@ For each EV rejection (`decision.rejectedAt === 'EV'`) the engine records one ro
 6. **Separate:** only `evShadow.ts` and the migration name the table.
 7. **Off by default.**
 
-## Deploy (Thu 29 Oct, its own evening): code + migration, flag still OFF
+## Deploy (Thu 29 Oct): code + migration, shadow ON (owner, 28 Oct)
 
 Corrected after the independent review of 28 Oct. It follows the repo's migration order (AGENTS.md "Deploy order": `pg_dump` → rebuild → migrate dry-run → migrate → restart).
 
@@ -75,13 +75,14 @@ Corrected after the independent review of 28 Oct. It follows the repo's migratio
 6. **Build `quant_engine` and `quant_api`.** The migration file only exists in the new image, and the migration runs through `quant_api`.
 7. **Dry run:** `docker compose run --rm quant_api npm run migrate -- --dry-run`. It should list exactly `0007_ev_shadow_outcomes`.
 8. **Migrate:** `docker compose run --rm quant_api npm run migrate`. Then check that `schema_migrations` has 0007, and that a new `pg_dump` now has **4** TABLE DATA entries (`ev_shadow_outcomes` is the 4th). From here on, the deploy gate expects 4.
-9. **Engine:** `docker compose up --no-start --no-deps --force-recreate quant_engine`, left Created; the 09:00 cron starts it.
-10. **API:** `docker compose up -d --no-deps quant_api`, then the health check on all 7 routes.
-11. **`EV_SHADOW_ENABLED` stays unset (off).** The next boot logs no `[EvShadow]` line. There is no pending-migration warning, because 0007 is applied.
+9. **Turn the shadow on** (owner, 28 Oct): back up `.env` by name (`.env.bak-<date>`), add `EV_SHADOW_ENABLED=true`, and check that the line appears exactly once. Mask the value of every other line when showing it.
+10. **Engine:** `docker compose up --no-start --no-deps --force-recreate quant_engine`, left Created. A recreate is what re-reads `.env`; the 09:00 cron starts it.
+11. **API:** `docker compose up -d --no-deps quant_api`, then the health check on all 7 routes.
+12. **Next boot (Fri 09:00):** it should log `[EvShadow] 🧪 ACTIVE — observation only · 0 open today reloaded · 0 recorded today · 0 earlier OPEN marked UNRESOLVED`, with no pending-migration warning. The 09:21 check-in confirms it.
 
-**Rollback:** the image tags above. The new table is inert while the flag is off. To remove it, restore the backup, or follow the reverse statement in the migration header.
+**Rollback:** remove the `.env` line (or restore `.env.bak-<date>`) and recreate the engine; that turns the shadow off without touching the table. For the code itself, use the image tags above. The new table is inert while the flag is off. To remove it, restore the backup, or follow the reverse statement in the migration header.
 
-## To turn it on later (owner's decision, its own evening)
+## Turning it off or on again later
 
 1. Set `EV_SHADOW_ENABLED=true` in `.env`.
 2. **Recreate** `quant_engine`, after copying its logs. A plain restart doesn't re-read `.env`.
