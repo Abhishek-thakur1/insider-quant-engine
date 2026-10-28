@@ -2,14 +2,14 @@
 
 The state of the deploy queue and what waits on the owner. **`AGENTS.md` is the source of truth for how the system works.** This file only tracks order and status. Update it in the same PR as any change to the queue.
 
-Last updated: **2026-10-27, 20:50 IST**.
+Last updated: **2026-10-28, 19:20 IST**.
 
 ## Running on EC2
 
 | Container | Code | Image | State |
 |---|---|---|---|
-| `quant_engine` | `v2` `5e95059` (PR #22 on top of #29) | `0231f64ab9ef` | Created; the 09:00 cron starts it. **Watchlist 51 stocks from 28 Oct** (52/100); backup `watchlist.json.bak-20261027-25` |
-| `quant_api` | `v2` `5e95059` | `147035ad51c6` | running |
+| `quant_engine` | `v2` `609755e` (PR #32 on top of #22, #29) | `413505a5bffb` | Created; the 09:00 cron starts it. Watchlist 51 stocks from 28 Oct (52/100); backup `watchlist.json.bak-20261027-25` |
+| `quant_api` | `v2` `5e95059` (PR #22) | `147035ad51c6` | running |
 
 - **#29 deploy (26 Oct, evening):**
   - backup `~/backups/pre-orphanfix-20261026T1651Z.dump` (3 TABLE DATA entries);
@@ -33,26 +33,35 @@ If any gate fails, or an earlier evening shows a problem: **stop, hold the rest,
 | Evening | Change | Containers | Status |
 |---|---|---|---|
 | Mon 26 Oct | PR #29: boot orphaning touches OPEN rows only | engine | **deployed** |
-| Tue 27 Oct | Restore of the 6 originally-SKIPPED rows (owner OK, 27 Oct) | database only | **done, 19:58.** Backup `pre-restore-20261027T1427Z.dump`; exactly 6 rows ORPHANED → SKIPPED (ORPHANED 33 → 27, SKIPPED 1 → 7) |
-| Tue 27 Oct | PR #22: duplicate-alert policy, plus the API | engine + API, one procedure | **deployed, 19:58–20:00:36** (actions log). All three checks passed. Merged as `5e95059` (= the reviewed `e46fe1f`). Backup `pre-dup22-20261027T1428Z.dump`; rollback tags `rollback-11dda4d` (engine) and `rollback-255adfd` (API); all 7 API routes 200 |
-| Wed 28 Oct | PR #32: Nifty block diagnostics, logging only | engine | queued, **on the owner's go-ahead**, after 16:05 and the three checks. Independent review APPROVE (27 Oct, `51eda71`, after the fire-day parity fix) |
-| **Tue 27 Oct, done** | PR #36 owner picks **plus #34's 22 rule names**, as one config-only change (owner, 27 Oct); live from 28 Oct, 52/100. PRs #34 and #36 merged as docs only (`fc192c4`, `30e7f52`) | watchlist file only | done | watchlist file only: edited after the 16:30 check, then the 09:00 cron starts the engine; no rebuild | queued; independent review APPROVE WITH NITS (27 Oct, nits fixed). Precondition: `quant_screener` stays absent |
-| **Thu 29 Oct** | PR #41: EV-reject shadow outcomes, with migration 0007 | engine + migration | queued. `pg_dump` first; **after 0007 the backup check expects 4 TABLE DATA entries** (was 3). Off unless `EV_SHADOW_ENABLED=true` |
-| After #41 | Wide coverage: RULE-85's extra 33 names (`docs/proposals/watchlist-50/RULE-85.md`, `LIST-85.md`) → 85/100 | watchlist file only | queued, on the owner's word; precondition: `quant_screener` stays absent |
-| Later | PR #40: VWAP 09:15 cut-off (approved in principle) | engine | queued; the deploy date is a **series break** (record it in AGENTS §11.25, the CHANGELOG and the study's deviation log) |
+| Tue 27 Oct | Restore of the 6 originally-SKIPPED rows | database only | **done** (19:58) |
+| Tue 27 Oct | PR #22: duplicate-alert policy + API | engine + API | **deployed** (19:58–20:00:36) |
+| Tue 27 Oct | Watchlist 25 → 51: owner picks (#36) + #34's 22 rule names | watchlist file only | **done**, live 28 Oct (52/100) |
+| Wed 28 Oct | PR #32: Nifty "why no alert" diagnostics (logging only) | engine | **deployed** 18:42 (`609755e`, image `413505a5bffb`; rollback tag `rollback-5e95059`) |
+| **Thu 29 Oct** | PR #41: EV-reject shadow outcomes + migration 0007 | engine + migration | after 16:05, the three checks + own `pg_dump`; **expect 4 TABLE DATA after the migration**; needs its independent review (running 28 Oct) |
+| Fri 30 Oct at the earliest | PR #40: VWAP 09:15 cut-off (approved in principle) | engine | the deploy date is a **series break** (AGENTS §11.25, CHANGELOG, study deviation log) |
+| After #40, on the owner's word | Wide coverage: RULE-85's extra 33 names → 85/100 | watchlist file only | precondition: `quant_screener` stays absent |
 
-**Evening timing:** from 27 Oct, deploys start no earlier than 16:05, after three things have finished: the 15:35 log export, the 15:45 summary and the 16:00 backup.
+**Evening timing:** deploys start no earlier than 16:05, after the 15:35 log export, the 15:45 summary and the 16:00 backup have all finished. One change per evening. No merge of a code PR before its evening, and none in market hours.
 
-**Not yet in the queue, each needing the owner's word:**
-- PR #42: screener narrowed to liquid F&O. Design only; **no Fyers call and no container recreate without the owner's explicit OK that evening** (50-request pilot first).
-- PR #37: staleness message.
-- PR #38: VWAP key TTL.
-- PR #33: near-miss digest, a host script.
+## Open PRs (28 Oct, after the docs merges)
 
-**Leave alone:**
-- #31: do not merge or deploy.
-- #28: leave open.
-- #9: wait for the owner's word.
+Merged today as docs/study only: #34 (`fc192c4`), #36 (`30e7f52`), #35 (`e669c57`), #42 (`4585edb`), and #39 (this file). Code, merged on its evening: #32 (`609755e`).
+
+| PR | Title (short) | Type | Runtime effect if deployed | Evening / condition | Independent review | Status |
+|---|---|---|---|---|---|---|
+| #41 | EV-reject shadow outcomes | code + migration | new table `ev_shadow_outcomes`, hook on EV rejects; off unless `EV_SHADOW_ENABLED=true` | **Thu 29 Oct** | running (28 Oct, on `cf660b8` after merging v2) | open |
+| #40 | VWAP 09:15 session gate | code | equity VWAP and the Nifty reference start at 09:15; kill switch | **Fri 30 Oct at the earliest** (series break) | none yet | open |
+| #43 | 15:15 square-off by timer + per-symbol serialisation | code | TIME exits at the last known price from 15:15; no double close | **none assigned**; proposed after #40 (series break for TIME-exit prices) | none yet | open |
+| #38 | 36 h TTL on `vwap:*` keys + cleanup proposal | code | daily VWAP keys expire | **none assigned**; proposed after #43 | none yet | open |
+| #37 | Staleness message names the file in use | code (log text) | boot warning text only | **none assigned**; proposed with no other change, after #38 | none yet | open |
+| #31 | Nifty ORE evaluates the lock candle | code (detector) | changes when ORE can fire | **hold** (owner: do not merge or deploy) | — | open |
+| #33 | Near-miss digest in the 15:45 summary | host script | adds rejected fires to the 15:45 admin message (read-only SQL) | **none assigned**; owner's word (host script copy, no engine change) | none yet | open |
+| #28 | Shadow candidates: pre-registration | docs/study only | none | owner said "leave open" (26 Oct); **propose merging as docs** on the owner's word | n/a | open |
+| dashboard #9 | Today: alerted vs recorded-only | frontend | the dashboard's Today view splits alerted from rejected paper trades | **owner's word**; never merge `main` 09:00–15:30 | preview verified 23 Oct; no independent review | open |
+
+**Superseded or unassigned:** nothing is superseded by a merged change. #43, #38, #37 and #33 have no evening yet; the proposed order is above. #28 and dashboard #9 wait for the owner's word. **No PR is proposed for closing.**
+
+**Leave alone:** #31 (do not merge or deploy), #28 (until the owner's word), #9 (the owner's word).
 
 ## Scheduled check-ins (owner, 27 Oct)
 
