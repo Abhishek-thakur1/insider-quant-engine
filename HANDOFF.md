@@ -2,7 +2,7 @@
 
 The state of the deploy queue and what waits on the owner. **`AGENTS.md` is the source of truth for how the system works.** This file only tracks order and status. Update it in the same PR as any change to the queue.
 
-Last updated: **2026-10-28, 19:55 IST**.
+Last updated: **2026-10-28, 20:25 IST**.
 
 ## Running on EC2
 
@@ -55,7 +55,7 @@ Last updated: **2026-10-28, 19:55 IST**.
 
 **Evening timing:** deploys start no earlier than 16:05 on trading days, after the 15:35 log export, the 15:45 summary and the 16:00 backup have all finished. No merge of a code PR before its evening, and none in market hours.
 
-**Reviews due before their evenings** (each in its own clone, started 28 Oct): #44 and #45, #40, #38 and #37, #46 and #33.
+**Independent reviews (each in its own clone, 28 Oct): all passed, with no blocker.** #44 APPROVE. #40, #45, #38, #37, #33 and #46 APPROVE WITH NITS, all nits fixed and pushed. #41 was approved earlier.
 
 **Pre-check (28 Oct):** all eight PRs (#41, #46, #44, #33, #38, #37, #40, #45) merged together in deploy order give 394/394 tests, typecheck 0, lint 20. There is one code conflict, the #41/#45 `websocket.ts` line above.
 
@@ -66,13 +66,13 @@ Merged as docs/study only: #34, #36 (27 Oct); #35, #42, #39, #28 (28 Oct). Code 
 | PR | Title (short) | Type | Runtime effect if deployed | Evening / condition | Independent review | Status |
 |---|---|---|---|---|---|---|
 | #41 | EV-reject shadow outcomes | code + migration | new table `ev_shadow_outcomes`; off unless `EV_SHADOW_ENABLED=true` | **Thu 29 Oct** (shadow ON) | APPROVE WITH NITS, nits fixed | open |
-| #44 | `processTick` serialised per symbol | code (bug fix) | removes the double close of one position by overlapping ticks | **Fri 30 Oct** | running (28 Oct) | open |
-| #40 | VWAP 09:15 session gate | code | equity VWAP and the Nifty reference start at 09:15; kill switch | **Sat 31 Oct**, with #45 (one series break) | running (28 Oct) | open |
-| #45 | 15:15 square-off by timer | code | TIME exits at the last known price from 15:15; kill switch | **Sat 31 Oct**, with #40 (one series break) | running (28 Oct) | open |
-| #38 | 36 h TTL on `vwap:*` keys | code | daily VWAP keys expire | **Fri 30 Oct** | running (28 Oct) | open |
-| #37 | Staleness message names the file in use | code (log text) | boot warning text only | **Fri 30 Oct** | running (28 Oct) | open |
-| #33 | Near-miss digest (top 10 by score) | host script | 15:45 admin message lists rejected fires | **Fri 30 Oct** (host script only) | running (28 Oct) | open |
-| #46 | S3 backup fix + leftover cleanup | scheduler | dump to `/var/backups/iqe`, S3 upload with region, alert on failure | **Thu 29 Oct**, only if the owner confirms the IAM policy | running (28 Oct) | open |
+| #44 | `processTick` serialised per symbol | code (bug fix) | removes the double close of one position by overlapping ticks | **Fri 30 Oct** | APPROVE (28 Oct) | open |
+| #40 | VWAP 09:15 session gate | code | equity VWAP and the Nifty reference start at 09:15; kill switch | **Sat 31 Oct**, with #45 (one series break) | APPROVE WITH NITS (28 Oct), nits fixed `7fda9d0` | open |
+| #45 | 15:15 square-off by timer | code | TIME exits at the last known price from 15:15; kill switch | **Sat 31 Oct**, with #40 (one series break) | APPROVE WITH NITS (28 Oct), fixed `c315780` (15:15–15:30 window, 120 s max price age, stopped on shutdown) | open |
+| #38 | 36 h TTL on `vwap:*` keys | code | daily VWAP keys expire | **Fri 30 Oct** | APPROVE WITH NITS (28 Oct), fixed `ac60834` | open |
+| #37 | Staleness message names the file in use | code (log text) | boot warning text only | **Fri 30 Oct** | APPROVE WITH NITS (28 Oct), fixed `124c9a2` | open |
+| #33 | Near-miss digest (top 10 by score) | host script | 15:45 admin message lists rejected fires | **Fri 30 Oct** (host script only) | APPROVE WITH NITS (28 Oct), fixed `5b12ab0` | open |
+| #46 | S3 backup fix + leftover cleanup | scheduler | dump to `/var/backups/iqe`, S3 upload with region, alert on failure | **Thu 29 Oct**, only if the owner confirms the IAM policy | APPROVE WITH NITS (28 Oct), fixed `dac1ed7` (deploy steps updated) | open |
 | #31 | Nifty ORE evaluates the lock candle | code (detector) | changes when ORE can fire | **hold** | — | open |
 | dashboard #9 | Today: alerted vs recorded-only | frontend | Today view split | owner's word; never merge `main` 09:00–15:30 | preview verified 23 Oct | open |
 
