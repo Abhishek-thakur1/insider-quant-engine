@@ -42,6 +42,7 @@ const fakeStore = () => {
 		close: async (id, e) => void closes.push({ id, ...e }),
 		loadOpen: async () => [],
 		markUnresolved: async () => 0,
+		countToday: async () => 0,
 	}
 	return { store, inserts, closes }
 }
@@ -100,6 +101,11 @@ const paths: { name: string; side: 'LONG' | 'SHORT'; entry: number; stop: number
 	{ name: 'SHORT target', side: 'SHORT', entry: 200, stop: 201, target: 198.5, ticks: [[700, 199.9], [703, 198.4]] },
 	{ name: 'SHORT stop', side: 'SHORT', entry: 200, stop: 201, target: 198.5, ticks: [[700, 200.5], [701, 201.2]] },
 	{ name: 'TIME at 15:15', side: 'LONG', entry: 100, stop: 99, target: 101.5, ticks: [[900, 100.3], [914, 100.6], [915, 100.7]] },
+	// exactly on the level: the <= / >= edges (review of 28 Oct)
+	{ name: 'LONG exactly on stop', side: 'LONG', entry: 100, stop: 99, target: 101.5, ticks: [[610, 100.1], [611, 99]] },
+	{ name: 'LONG exactly on target', side: 'LONG', entry: 100, stop: 99, target: 101.5, ticks: [[610, 100.1], [611, 101.5]] },
+	{ name: 'SHORT exactly on stop', side: 'SHORT', entry: 200, stop: 201, target: 198.5, ticks: [[710, 200.2], [711, 201]] },
+	{ name: 'SHORT exactly on target', side: 'SHORT', entry: 200, stop: 201, target: 198.5, ticks: [[710, 199.8], [711, 198.5]] },
 ]
 
 test('SAME RULES: shadow exits match positionTracker.processTick on the same ticks (price, reason, R)', async () => {
@@ -241,4 +247,65 @@ test('OFF by default: no engine instance unless EV_SHADOW_ENABLED=true', () => {
 	assert.equal(ev.evShadowEnabled(), true)
 	if (prev === undefined) delete process.env.EV_SHADOW_ENABLED
 	else process.env.EV_SHADOW_ENABLED = prev
+})
+
+// ── Review of 28 Oct: isolation by construction, and the boot / restart edges ──────
+
+test('ISOLATION: evShadow.ts imports only types and tradeLevels (no Redis, no positionTracker, no db pool)', () => {
+	const src = fs.readFileSync('src/core/evShadow.ts', 'utf8')
+	const imports = [...src.matchAll(/^import\s+(type\s+)?.*?from\s+'([^']+)'/gm)].map((m) => ({ typeOnly: !!m[1], from: m[2] }))
+	const runtime = imports.filter((i) => !i.typeOnly).map((i) => i.from)
+	assert.deepEqual(runtime, ['./tradeLevels.js'])
+	const lv = fs.readFileSync('src/core/tradeLevels.ts', 'utf8')
+	assert.deepEqual([...lv.matchAll(/^import\s+(type\s+)?.*?from/gm)].filter((m) => !m[1]).length, 0, 'tradeLevels has no runtime imports')
+})
+
+test('ISOLATION: recording and closing a shadow never calls Redis or positionTracker', async () => {
+	const calls: string[] = []
+	const trap = (name: string) => (async () => { calls.push(name); throw new Error(`shadow touched ${name}`) }) as Fn
+	const restoreRedis = patch(redisClient, { get: trap('redis.get'), set: trap('redis.set'), hSet: trap('redis.hSet'), hDel: trap('redis.hDel'), lPush: trap('redis.lPush'), incrByFloat: trap('redis.incrByFloat'), publish: trap('redis.publish'), multi: trap('redis.multi') })
+	const restoreTracker = patch(positionTracker, { registerTrade: trap('tracker.registerTrade'), processTick: trap('tracker.processTick'), removeFlag: trap('tracker.removeFlag') })
+	try {
+		const { store, inserts, closes } = fakeStore()
+		const t0 = clock.istEpoch('2026-10-27', 10 * 60)
+		const tr = new ev.EvShadowTracker(store, () => t0, { log() {}, warn() {} })
+		tr.record(equity, decision({ passed: false, rejectedAt: 'EV', score: 40, ev: -3 }), null)
+		await flush()
+		await tr.onTick(equity.symbol, 0.01, t0 + 60_000)
+		assert.equal(inserts.length, 1)
+		assert.equal(closes.length, 1)
+		assert.deepEqual(calls, [])
+	} finally {
+		restoreTracker()
+		restoreRedis()
+	}
+})
+
+test('RESTART: the daily cap counts every row recorded today, closed ones included', async () => {
+	const { store, inserts } = fakeStore()
+	store.countToday = async () => ev.EV_SHADOW_DAILY_CAP - 2 // 48 already recorded (most closed) before a restart
+	const t0 = clock.istEpoch('2026-10-27', 13 * 60)
+	const tr = new ev.EvShadowTracker(store, () => t0, { log() {}, warn() {} })
+	await tr.init()
+	const rej = decision({ passed: false, rejectedAt: 'EV', score: 40, ev: -3 })
+	for (let i = 0; i < 5; i++) tr.record({ ...equity, symbol: `NSE:RST${i}-EQ` }, rej, null)
+	await flush()
+	assert.equal(inserts.length, 2)
+	assert.equal(tr.counts.skippedCap, 3)
+})
+
+test('BOOT: a hung or failing database at init never stalls boot; the tracker stays inactive for the day', async () => {
+	const { store, inserts } = fakeStore()
+	store.markUnresolved = () => new Promise<number>(() => {}) // hangs forever
+	const tr = new ev.EvShadowTracker(store, () => clock.istEpoch('2026-10-27', 9 * 60), { log() {}, warn() {} })
+	const t = Date.now()
+	await tr.init(50)
+	assert.ok(Date.now() - t < 1000, 'init returned promptly')
+	tr.record(equity, decision({ passed: false, rejectedAt: 'EV', score: 40, ev: -3 }), null)
+	await flush()
+	assert.equal(inserts.length, 0, 'inactive after a failed init')
+	const { store: s2 } = fakeStore()
+	s2.markUnresolved = async () => { throw new Error('db down') }
+	const tr2 = new ev.EvShadowTracker(s2, () => clock.istEpoch('2026-10-27', 9 * 60), { log() {}, warn() {} })
+	await assert.doesNotReject(tr2.init())
 })

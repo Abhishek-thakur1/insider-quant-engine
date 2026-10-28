@@ -63,13 +63,32 @@ For each EV rejection (`decision.rejectedAt === 'EV'`) the engine records one ro
 6. **Separate:** only `evShadow.ts` and the migration name the table.
 7. **Off by default.**
 
-## To turn it on (owner's decision, its own evening)
+## Deploy (Thu 29 Oct, its own evening): code + migration, flag still OFF
 
-1. Apply migration 0007.
-2. Rebuild the engine.
-3. Set `EV_SHADOW_ENABLED=true` in `.env`.
+Corrected after the independent review of 28 Oct. It follows the repo's migration order (AGENTS.md "Deploy order": `pg_dump` → rebuild → migrate dry-run → migrate → restart).
 
-The boot log then shows `[EvShadow] 🧪 ACTIVE — observation only …`. To read the results:
+1. **Checks:** after 16:05, confirm the 15:35 log export, the 15:45 summary and the 16:00 backup finished. Then Telegram the owner.
+2. **Logs:** copy the engine and API logs and their `docker inspect` output (a recreate deletes them).
+3. **Backup:** fresh `pg_dump`; check it has **3** TABLE DATA entries (before the migration).
+4. **Rollback tags:** engine `rollback-609755e` → `413505a5bffb`, API `rollback-5e95059` → `147035ad51c6`.
+5. **Merge #41,** then `git pull` v2 on the server.
+6. **Build `quant_engine` and `quant_api`.** The migration file only exists in the new image, and the migration runs through `quant_api`.
+7. **Dry run:** `docker compose run --rm quant_api npm run migrate -- --dry-run`. It should list exactly `0007_ev_shadow_outcomes`.
+8. **Migrate:** `docker compose run --rm quant_api npm run migrate`. Then check that `schema_migrations` has 0007, and that a new `pg_dump` now has **4** TABLE DATA entries (`ev_shadow_outcomes` is the 4th). From here on, the deploy gate expects 4.
+9. **Engine:** `docker compose up --no-start --no-deps --force-recreate quant_engine`, left Created; the 09:00 cron starts it.
+10. **API:** `docker compose up -d --no-deps quant_api`, then the health check on all 7 routes.
+11. **`EV_SHADOW_ENABLED` stays unset (off).** The next boot logs no `[EvShadow]` line. There is no pending-migration warning, because 0007 is applied.
+
+**Rollback:** the image tags above. The new table is inert while the flag is off. To remove it, restore the backup, or follow the reverse statement in the migration header.
+
+## To turn it on later (owner's decision, its own evening)
+
+1. Set `EV_SHADOW_ENABLED=true` in `.env`.
+2. **Recreate** `quant_engine`, after copying its logs. A plain restart doesn't re-read `.env`.
+
+The boot log then shows `[EvShadow] 🧪 ACTIVE — observation only · … open today reloaded · … recorded today …`. If the database query at init fails or takes more than 5 s, the tracker logs a warning and stays inactive for the day; boot is never held up.
+
+To read the results:
 
 ```sql
 SELECT status, count(*), avg(r_multiple) FROM ev_shadow_outcomes GROUP BY 1;

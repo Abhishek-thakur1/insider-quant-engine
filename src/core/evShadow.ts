@@ -27,6 +27,7 @@ import { computeTradeLevels } from './tradeLevels.js'
 export const NIFTY_INDEX = 'NSE:NIFTY50-INDEX'
 export const EV_SHADOW_DAILY_CAP = 50
 export const EV_SHADOW_MAX_OPEN = 20
+export const EV_SHADOW_INIT_TIMEOUT_MS = 5000
 
 export const evShadowEnabled = (): boolean => process.env.EV_SHADOW_ENABLED === 'true'
 
@@ -69,6 +70,8 @@ export interface EvShadowStore {
 	loadOpen(tradeDate: string): Promise<(ShadowOpen & { detector: string | null })[]>
 	/** Rows of earlier days still OPEN can never be closed: mark them UNRESOLVED. Returns the count. */
 	markUnresolved(beforeDate: string): Promise<number>
+	/** Rows already recorded today, any status: the daily cap counts these after a same-day restart. */
+	countToday(tradeDate: string): Promise<number>
 }
 
 const IST_MS = 5.5 * 3600 * 1000
@@ -107,6 +110,7 @@ export class EvShadowTracker {
 	private open = new Map<string, ShadowOpen[]>() // trackedSymbol → open shadows
 	private keys = new Set<string>() // symbol|detector|side of every open or in-flight shadow
 	private day = ''
+	private disabled = false
 	private today = 0
 	readonly counts = { recorded: 0, closed: 0, skippedCap: 0, skippedOpenLimit: 0, skippedDuplicate: 0, skippedGeometry: 0, errors: 0 }
 
@@ -128,24 +132,39 @@ export class EvShadowTracker {
 		this.keys.add(p.key)
 	}
 
-	/** Boot: mark earlier days' OPEN rows UNRESOLVED; reload today's OPEN rows. Never throws. */
-	async init(): Promise<void> {
+	/**
+	 * Boot: mark earlier days' OPEN rows UNRESOLVED; reload today's OPEN rows; count today's rows for the
+	 * daily cap. Never throws, and never holds up boot for longer than INIT_TIMEOUT_MS (a hung query
+	 * leaves the tracker inactive for the day instead).
+	 */
+	async init(timeoutMs = EV_SHADOW_INIT_TIMEOUT_MS): Promise<void> {
 		const today = istDate(this.now())
+		let timer: ReturnType<typeof setTimeout> | undefined
 		try {
-			const n = await this.store.markUnresolved(today)
-			const rows = await this.store.loadOpen(today)
+			const work = (async () => {
+				const n = await this.store.markUnresolved(today)
+				const rows = await this.store.loadOpen(today)
+				const recorded = await this.store.countToday(today)
+				return { n, rows, recorded }
+			})()
+			const timeout = new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error(`init timed out after ${timeoutMs} ms`)), timeoutMs) })
+			const { n, rows, recorded } = await Promise.race([work, timeout])
 			for (const r of rows) this.add(r)
 			this.day = today
-			this.today = rows.length
-			this.log.log(`[EvShadow] 🧪 ACTIVE — observation only · ${rows.length} open today reloaded · ${n} earlier OPEN marked UNRESOLVED`)
+			this.today = recorded // every row recorded today counts toward the cap, not only the reloaded OPEN ones
+			this.log.log(`[EvShadow] 🧪 ACTIVE — observation only · ${rows.length} open today reloaded · ${recorded} recorded today · ${n} earlier OPEN marked UNRESOLVED`)
 		} catch (err) {
 			this.counts.errors++
-			this.log.warn('[EvShadow] ⚠️ init failed (alerts and paper unaffected):', (err as Error)?.message ?? err)
+			this.disabled = true // no state loaded: stay inactive today rather than exceed the cap or reopen rows
+			this.log.warn('[EvShadow] ⚠️ init failed — inactive today (alerts and paper unaffected):', (err as Error)?.message ?? err)
+		} finally {
+			clearTimeout(timer)
 		}
 	}
 
 	/** Called from the alert pipeline on an EV rejection. Synchronous; the write runs in the background. */
 	record(data: AlertPayload, decision: FilterDecision, signalId: string | null): void {
+		if (this.disabled) return
 		try {
 			const now = this.now()
 			const today = istDate(now)
@@ -248,7 +267,7 @@ export class EvShadowTracker {
 	}
 }
 
-/** The Postgres store. Imported lazily by the engine only when EV_SHADOW_ENABLED=true. */
+/** The Postgres store. The engine constructs it only when EV_SHADOW_ENABLED=true (the import itself is static). */
 type Row = Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any -- pg rows are untyped
 export const pgEvShadowStore = (pool: { query(text: string, params?: unknown[]): Promise<{ rows: Row[]; rowCount: number | null }> }): EvShadowStore => ({
 	async insert(r) {
@@ -291,6 +310,10 @@ export const pgEvShadowStore = (pool: { query(text: string, params?: unknown[]):
 	async markUnresolved(beforeDate) {
 		const res = await pool.query(`UPDATE ev_shadow_outcomes SET status = 'UNRESOLVED' WHERE status = 'OPEN' AND trade_date < $1`, [beforeDate])
 		return res.rowCount ?? 0
+	},
+	async countToday(tradeDate) {
+		const res = await pool.query(`SELECT count(*)::int AS n FROM ev_shadow_outcomes WHERE trade_date = $1`, [tradeDate])
+		return Number(res.rows[0]?.n ?? 0)
 	},
 })
 

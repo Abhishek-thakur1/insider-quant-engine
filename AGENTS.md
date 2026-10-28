@@ -1786,7 +1786,9 @@ On 26 Oct Nifty moved 22,386 → 22,700 with no Nifty alert, and the reasons had
 - `EV_SHADOW_ENABLED=true` turns it on.
 - **After 0007, `pg_dump` has 4 TABLE DATA entries.**
 
-**Tests:** `tests/evShadow.test.ts` checks identical effects on and off, the same exits as the real tracker, and bounds.
+**Tests:** `tests/evShadow.test.ts` checks identical effects on and off, the same exits as the real tracker (including ticks exactly on the stop and the target), bounds, import-level isolation (only types and `tradeLevels`), no Redis or `positionTracker` calls, the daily cap across a same-day restart, and a non-blocking `init` (5 s timeout, then inactive for the day).
+
+**Deploy:** migration 0007 runs through `quant_api` after rebuilding both images; the flag stays off. Steps are in `DESIGN.md`. After 0007, the backup gate expects **4** TABLE DATA entries.
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
