@@ -2,7 +2,7 @@
 
 The state of the deploy queue and what waits on the owner. **`AGENTS.md` is the source of truth for how the system works.** This file only tracks order and status. Update it in the same PR as any change to the queue.
 
-Last updated: **2026-10-28, 20:30 IST**.
+Last updated: **2026-10-28, 19:20 IST**.
 
 ## Running on EC2
 
