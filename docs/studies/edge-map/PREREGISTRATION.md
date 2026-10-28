@@ -225,3 +225,9 @@ Append only, with the date, what changed and why. It is empty at registration.
    - **Day-level live series** (fires, signals, paper trades, R sums, stocks seen) are not comparable across 27/28 Oct. Any later live table splits at 2026-10-28, or groups by the watchlist group: 20-Oct live / owner pick / #34 rule.
    - **The replay sections (A-F, H-K) are unaffected:** they use the cache.
    - **§G and §I live freezes** (23 and 26 Oct) predate the change, so they are unaffected too.
+
+**2026-10-28, about 22:00 IST. A second population change, recorded before it takes effect.** This changes no decision rule.
+
+14. **A new listing joins the live universe on 2026-10-29:** `NSE:JPL-EQ` (Jio Platforms, listed 28 Oct), group `new_listing`, 51 → 52 stocks. See AGENTS.md §11.27.1.
+   - Any later live table either reports this group on its own or excludes it. It is **never pooled** with the other groups: it has 1-2 days of history (ATR, ADR and trend gate not meaningful), first-days volatility and listing price bands.
+   - The replay sections and the §G/§I freezes are unaffected.

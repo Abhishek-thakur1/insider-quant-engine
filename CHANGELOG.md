@@ -2,6 +2,14 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## New listing `NSE:JPL-EQ` (Jio Platforms), live from 2026-10-29 (config only, owner decision 28 Oct)
+
+- **Population change, its own group `new_listing`** (AGENTS.md §11.27.1): appended as the last entry of `watchlist.json` on the data volume, 51 → 52 stocks, for a subscription of **53/100**.
+  - There was no image rebuild and no restart; the 29 Oct 09:00 boot picks it up.
+- **Code verified** against the public Fyers master (one row; ISIN `INE0BJO01010`).
+- **Backup:** `watchlist.json.bak-20261028-prejpl`.
+- **Note:** listed 28 Oct with 1-2 days of history. Its fires and paper trades are reported separately from the other groups.
+
 ## Watchlist 25 → 51, live from 2026-10-28 (config only, owner decision 27 Oct)
 
 - **Population change** (AGENTS.md §11.27): `watchlist.json` on the data volume now holds the 25 previous names, the 4 owner picks (#36) and the 22 names from #34's rule.
