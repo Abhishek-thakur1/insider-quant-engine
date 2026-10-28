@@ -79,7 +79,7 @@ Every entry checks `scheduler/trading_day.sh` first and does nothing on weekends
 | 09:10 | Token freshness check → admin alert if missing/stale | `liveness.sh` |
 | 15:17 | Random "market close" message | `market_message.sh close` |
 | 15:30 | `docker stop quant_engine`, stop `quant_auth` | `lifecycle.sh stop_engine` |
-| 16:00 | `pg_dump` (S3 upload currently broken — see RUNBOOK) | `db_backup.sh` |
+| 16:00 | `pg_dump` to `/var/backups/iqe` on the host (14 kept) + S3 upload, with a Telegram alert on failure (fixed by `fix/s3-backup`; before it, the upload never worked) | `db_backup.sh` |
 | 16:30 | **EOD screener** → tomorrow's watchlist (§11.11) | `lifecycle.sh run_screener` |
 | 17:15 | **Purge the token** (`rm` on the scheduler's own `token_store` mount) | `lifecycle.sh purge_token` |
 
