@@ -223,7 +223,7 @@ export const startLiveEngine = async () => {
 	// Nifty cooldown keys (cooldown:v2:nifty_pulse, cooldown:v2:vwap_reclaim,
 	// cooldown:v2:nifty_ore, cooldown:oi_sweep, cooldown:delta_squeeze) are TTL'd
 	// and intentionally survive restarts — see the per-symbol note above.
-	// alert:sent:{day}:* / alert:count:{day} (alertPolicy) are date-keyed and
+	// alert:sent:{day}:* / alert:count:{day} / alert:sym:{day}:* / paper:sym:{day}:* (alertPolicy) are date-keyed and
 	// must never be cleared here either.
 	// trades:open is NOT cleared: positionTracker.init() (above) already loaded
 	// it, and deleting it orphaned every position still open at the next boot.
@@ -233,6 +233,7 @@ export const startLiveEngine = async () => {
 	// cleanup above removes only the legacy un-dated jsfilter:stats hash.
 	// ema_shadow:nifty:bars5 is NOT cleared: it is the EMA shadow's warm-up history
 	// (its own closed 5-min candles, capped at MAX_STORED_BARS).
+	// diag:nifty:{day} (detectorDiagnostics) is date-keyed with a 36 h TTL: never cleared here.
 	// engine:boot_day is the cleanup's own marker (IST date of the last boot, 7-day TTL).
 
 	// EMA trend study in SHADOW (owner spec 2026-10-21): no alerts, no filter,
