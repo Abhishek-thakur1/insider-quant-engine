@@ -583,6 +583,7 @@ export const startLiveEngine = async () => {
 		if (isShuttingDown) return
 		isShuttingDown = true
 		clearInterval(watchdog)
+		positionTracker.stopSquareOffTimer()
 		anomalyScanner.stop()
 		console.log(`\n[Engine] 🛑 ${signal} received. Shutting down gracefully...`)
 		try {

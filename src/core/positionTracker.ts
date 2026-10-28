@@ -32,6 +32,9 @@ export interface ClosedPosition extends OpenPosition {
 	exitReason: 'STOP_LOSS' | 'TARGET' | 'TIME'
 }
 
+/** The 15:15 timer closes at the last known price only if it is at most this old; otherwise it waits for a traded tick. */
+export const SQUARE_OFF_MAX_PRICE_AGE_S = 120
+
 class PositionTracker {
 	private openPositions = new Map<string, OpenPosition[]>()
 	private lastPnlPublishTime = new Map<string, number>()
@@ -203,7 +206,10 @@ class PositionTracker {
 	/** From 15:15 IST: close every open INTRADAY position at its symbol's last known price. Returns how many symbols it swept. */
 	public async squareOffSweep(now: number = Date.now()): Promise<number> {
 		const ist = new Date(now + 5.5 * 3600 * 1000)
-		if (ist.getUTCHours() * 60 + ist.getUTCMinutes() < 15 * 60 + 15) return 0
+		const minute = ist.getUTCHours() * 60 + ist.getUTCMinutes()
+		// Only inside the session's last 15 minutes: a restart in the evening never closes at a stale
+		// price with an evening exit time (review of 28 Oct). Outside it, the next traded tick still closes.
+		if (minute < 15 * 60 + 15 || minute >= 15 * 60 + 30) return 0
 		let swept = 0
 		for (const [symbol, positions] of [...this.openPositions]) {
 			if (!positions.some((p) => !p.durationClass || p.durationClass === 'INTRADAY')) continue
@@ -212,7 +218,13 @@ class PositionTracker {
 				console.warn(`[PositionTracker] ⏱️ 15:15 timer: ${symbol} has no known price yet — left for the next traded tick`)
 				continue
 			}
-			console.log(`[PositionTracker] ⏱️ 15:15 timer square-off: ${symbol} at last price ₹${last.price} (${Math.round((now - last.ts) / 1000)} s old)`)
+			const ageS = Math.round((now - last.ts) / 1000)
+			if (ageS > SQUARE_OFF_MAX_PRICE_AGE_S) {
+				// A feed outage: don't close at a minutes-old price; wait for the next traded tick as before.
+				console.warn(`[PositionTracker] ⏱️ 15:15 timer: ${symbol} last price is ${ageS} s old (> ${SQUARE_OFF_MAX_PRICE_AGE_S} s) — left for the next traded tick`)
+				continue
+			}
+			console.log(`[PositionTracker] ⏱️ 15:15 timer square-off: ${symbol} at last price ₹${last.price} (${ageS} s old)`)
 			await this.processTick(symbol, { price: last.price, volume: 0, timestamp: now })
 			swept++
 		}
@@ -225,6 +237,12 @@ class PositionTracker {
 			this.squareOffSweep().catch((e) => console.error('[PositionTracker] ⏱️ square-off timer error:', e))
 		}, intervalMs)
 		this.squareOffTimer.unref?.()
+	}
+
+	/** Engine shutdown: no new sweep may start a close during the grace period (review of 28 Oct). */
+	public stopSquareOffTimer(): void {
+		if (this.squareOffTimer) clearInterval(this.squareOffTimer)
+		this.squareOffTimer = null
 	}
 
 	private async processTickNow(symbol: string, tick: TickData) {

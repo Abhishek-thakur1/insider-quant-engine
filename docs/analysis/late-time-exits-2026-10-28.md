@@ -41,7 +41,7 @@ Measuring it would need a Fyers history call, which isn't allowed. So the table 
 
 The owner split the fix in two:
 - **(a) The serialisation** is its own bug fix: branch `fix/tick-serialization`, Fri 30 Oct.
-- **(b) The timer exit:** branch `feat/timer-square-off-exit`, **Tue 3 Nov**, recorded as a **series break for time-exit prices**.
+- **(b) The timer exit:** branch `feat/timer-square-off-exit`, **Sat 31 Oct** (one series break with the VWAP 09:15 gate, #40), recorded as a **series break for time-exit prices**.
 
 What (b) does:
 

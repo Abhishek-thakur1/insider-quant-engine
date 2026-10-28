@@ -88,7 +88,7 @@ test('TIMER: with no traded tick after 15:15, the sweep closes an INTRADAY posit
 	const un = clock.installVirtualClock(at(10, 0))
 	try {
 		await open('NSE:SQ1-EQ')
-		positionTracker.notePrice('NSE:SQ1-EQ', 100.5, at(15, 10)) // a zero-volume quote the router dropped
+		positionTracker.notePrice('NSE:SQ1-EQ', 100.5, at(15, 14, 30)) // a zero-volume quote the router dropped
 		clock.setVirtualNow(at(15, 14, 59))
 		assert.equal(await positionTracker.squareOffSweep(at(15, 14, 59)), 0, 'nothing before 15:15')
 		assert.equal(h.closes.length, 0)
@@ -161,4 +161,39 @@ test('WIRING: the engine notes prices before the zero-volume filter and starts t
 	assert.equal((positionTracker as unknown as { squareOffTimer: unknown }).squareOffTimer, null, 'kill switch: no timer')
 	if (prev === undefined) delete process.env.SQUARE_OFF_TIMER
 	else process.env.SQUARE_OFF_TIMER = prev
+})
+
+test('EDGES (review of 28 Oct): no close at a price older than the limit, nothing after 15:30, and the timer stops on shutdown', async () => {
+	const { SQUARE_OFF_MAX_PRICE_AGE_S } = await import('../src/core/positionTracker.js')
+	const h = harness()
+	const un = clock.installVirtualClock(at(10, 0))
+	try {
+		await open('NSE:SQ5-EQ')
+		positionTracker.notePrice('NSE:SQ5-EQ', 100.2, at(15, 10)) // feed went quiet after 15:10
+		clock.setVirtualNow(at(15, 15, 30))
+		assert.ok((at(15, 15, 30) - at(15, 10)) / 1000 > SQUARE_OFF_MAX_PRICE_AGE_S)
+		assert.equal(await positionTracker.squareOffSweep(at(15, 15, 30)), 0, 'stale price: left for the next traded tick')
+		assert.equal(h.closes.length, 0)
+		positionTracker.notePrice('NSE:SQ5-EQ', 100.3, at(15, 31))
+		clock.setVirtualNow(at(15, 31, 5))
+		assert.equal(await positionTracker.squareOffSweep(at(15, 31, 5)), 0, 'nothing after 15:30')
+		assert.equal(h.closes.length, 0)
+		// the old path still works: a traded tick closes it as TIME
+		await positionTracker.processTick('NSE:SQ5-EQ', { price: 100.4, volume: 1, timestamp: at(15, 31, 6) })
+		assert.equal(h.closes.length, 1)
+		assert.equal(h.closes[0]![4], 'TIME')
+		// shutdown stops the timer
+		const prev = process.env.SQUARE_OFF_TIMER
+		delete process.env.SQUARE_OFF_TIMER
+		positionTracker.startSquareOffTimer(1_000_000)
+		assert.notEqual((positionTracker as unknown as { squareOffTimer: unknown }).squareOffTimer, null)
+		positionTracker.stopSquareOffTimer()
+		assert.equal((positionTracker as unknown as { squareOffTimer: unknown }).squareOffTimer, null)
+		if (prev !== undefined) process.env.SQUARE_OFF_TIMER = prev
+		const ws = fs.readFileSync('src/ingestion/websocket.ts', 'utf8')
+		assert.ok(/isShuttingDown = true[\s\S]{0,120}positionTracker\.stopSquareOffTimer\(\)/.test(ws), 'shutdown stops the timer first')
+	} finally {
+		un()
+		h.restore()
+	}
 })

@@ -2,9 +2,10 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## Unreleased: `feat/timer-square-off-exit` (not merged, not deployed; owner: Tue 3 Nov; series break)
+## Unreleased: `feat/timer-square-off-exit` (not merged, not deployed; owner: Sat 31 Oct, one series break with #40)
 
 - **The 15:15 TIME exit no longer waits for a traded tick** (AGENTS.md §11.30). A timer closes open INTRADAY positions at the last known price, which is noted from every feed message. On 28 Oct, 6 exits waited until about 15:28.
+- **Limits:** it runs only from 15:15 to 15:30, a price older than 120 s is skipped (the next traded tick closes the position, as before), and shutdown stops the timer.
 - **Kill switch:** `SQUARE_OFF_TIMER=false`. **Tests:** `tests/squareOffTimer.test.ts`.
 - **Series break** for time-exit prices from the deploy date.
 - Builds on `fix/tick-serialization` (#44). Split out of PR #43 (owner, 28 Oct).
