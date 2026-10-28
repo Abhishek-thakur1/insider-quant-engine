@@ -2,6 +2,13 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased: `fix/timer-square-off` (not merged, not deployed)
+
+- **The 15:15 TIME exit no longer waits for a traded tick** (AGENTS.md §11.28). A timer closes open INTRADAY positions at the last known price, which is noted from every feed message. On 28 Oct, 6 exits waited until about 15:28.
+- **No double close:** `processTick` is serialised per symbol, so a timer close and a tick close can't both happen.
+- **Kill switch:** `SQUARE_OFF_TIMER=false`. **Tests:** `tests/squareOffTimer.test.ts`.
+- **Analysis:** `docs/analysis/late-time-exits-2026-10-28.md`.
+
 ## `feat/nifty-block-diagnostics`: logging only, not deployed
 
 - **"Why no alert" records for the Nifty detectors** (AGENTS.md §11.23): ORE, Trend Pulse and VWAP Reclaim note the reason a closed candle didn't fire (risk cap, body too small, warm-up, cooldown, outside window, ...).

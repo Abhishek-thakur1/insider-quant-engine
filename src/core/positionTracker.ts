@@ -167,7 +167,66 @@ class PositionTracker {
 		return tradeId
 	}
 
-	public async processTick(symbol: string, tick: TickData) {
+	// ── Per-symbol serialisation (2026-10-28) ────────────────────────────────────
+	// Ticks call processTick without awaiting it, and the 15:15 timer (squareOffSweep) calls it too.
+	// Two overlapping calls on one symbol could both close the same position: two history rows and
+	// pnl:daily counted twice. Calls for a symbol now run one after another; each reads the open
+	// positions only when its turn comes, so a later call never sees a position an earlier one closed.
+	private tickQueues = new Map<string, Promise<void>>()
+
+	public processTick(symbol: string, tick: TickData): Promise<void> {
+		const run = (this.tickQueues.get(symbol) ?? Promise.resolve()).then(() => this.processTickNow(symbol, tick))
+		const tail = run.catch(() => {})
+		this.tickQueues.set(symbol, tail)
+		void tail.then(() => {
+			if (this.tickQueues.get(symbol) === tail) this.tickQueues.delete(symbol)
+		})
+		return run
+	}
+
+	// ── 15:15 square-off by timer (2026-10-28) ────────────────────────────────────
+	// The 15:15 TIME exit used to need a traded tick: on 28 Oct the feed thinned after 15:15 and six
+	// positions closed at about 15:28, at the 15:28 price. The last price of every symbol is noted
+	// from every feed message (zero-volume quotes included; ingestion/websocket.ts), and from 15:15
+	// a timer closes any INTRADAY position still open at that last known price, through the same
+	// close path (processTick), so the exit reason, R and the Postgres/Redis writes are unchanged.
+	// Kill switch: SQUARE_OFF_TIMER=false.
+	private lastPrice = new Map<string, { price: number; ts: number }>()
+	private squareOffTimer: ReturnType<typeof setInterval> | null = null
+
+	/** Synchronous and allocation-light: called for every feed message. */
+	public notePrice(symbol: string, price: number, ts: number): void {
+		if (price > 0) this.lastPrice.set(symbol, { price, ts })
+	}
+
+	/** From 15:15 IST: close every open INTRADAY position at its symbol's last known price. Returns how many symbols it swept. */
+	public async squareOffSweep(now: number = Date.now()): Promise<number> {
+		const ist = new Date(now + 5.5 * 3600 * 1000)
+		if (ist.getUTCHours() * 60 + ist.getUTCMinutes() < 15 * 60 + 15) return 0
+		let swept = 0
+		for (const [symbol, positions] of [...this.openPositions]) {
+			if (!positions.some((p) => !p.durationClass || p.durationClass === 'INTRADAY')) continue
+			const last = this.lastPrice.get(symbol)
+			if (!last) {
+				console.warn(`[PositionTracker] ⏱️ 15:15 timer: ${symbol} has no known price yet — left for the next traded tick`)
+				continue
+			}
+			console.log(`[PositionTracker] ⏱️ 15:15 timer square-off: ${symbol} at last price ₹${last.price} (${Math.round((now - last.ts) / 1000)} s old)`)
+			await this.processTick(symbol, { price: last.price, volume: 0, timestamp: now })
+			swept++
+		}
+		return swept
+	}
+
+	public startSquareOffTimer(intervalMs = 5000): void {
+		if (this.squareOffTimer || process.env.SQUARE_OFF_TIMER === 'false') return
+		this.squareOffTimer = setInterval(() => {
+			this.squareOffSweep().catch((e) => console.error('[PositionTracker] ⏱️ square-off timer error:', e))
+		}, intervalMs)
+		this.squareOffTimer.unref?.()
+	}
+
+	private async processTickNow(symbol: string, tick: TickData) {
 		const positions = this.openPositions.get(symbol)
 		if (!positions || positions.length === 0) return
 

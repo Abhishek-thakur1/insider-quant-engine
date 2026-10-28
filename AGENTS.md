@@ -1770,6 +1770,18 @@ On 26 Oct Nifty moved 22,386 → 22,700 with no Nifty alert, and the reasons had
 - **ORE note:** the call sites follow the current lock behaviour; if PR #31 (lock candle) merges, the
   `lock_candle_not_evaluated` record goes away with the early return.
 
+## 11.28 15:15 square-off by timer (2026-10-28, branch `fix/timer-square-off`; PR, not deployed)
+
+**Finding (28 Oct):** the TIME exit ran only on a traded tick. The feed thinned after 15:15, so 6 of 17 TIME exits closed at about 15:28, at the 15:28 price (`docs/analysis/late-time-exits-2026-10-28.md`). On 23 Oct none of 3 was late.
+
+**Change:**
+- `positionTracker.notePrice` records the last price from every feed message, before the zero-volume filter.
+- From 15:15 IST, `squareOffSweep`, on a 5-second timer started after `init()`, closes open INTRADAY positions at that price through the unchanged close path.
+- **Serialisation:** `processTick` calls are serialised per symbol, so a timer close and a tick close of one position can't both run. That double-close was possible before this change too, for two overlapping ticks.
+- **Kill switch:** `SQUARE_OFF_TIMER=false`.
+- **Tests:** `tests/squareOffTimer.test.ts`.
+- **When deployed:** record the date as a series break for time-exit prices.
+
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
 The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 
