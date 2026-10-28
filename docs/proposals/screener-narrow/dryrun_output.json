@@ -1,0 +1,159 @@
+{
+ "asOf": "2026-09-07",
+ "benchmark": "NSE:NIFTY50-INDEX (substitute for NIFTY500)",
+ "universe": 90,
+ "todayRule": {
+  "funnel": {
+   "scanned": 90,
+   "fetchedOk": 90,
+   "failed": 0,
+   "noData": 0,
+   "insufficientHistory": 0,
+   "afterLiquidity": 77,
+   "afterTrend": 11,
+   "afterRs": 7,
+   "tier1": 0,
+   "tier2": 0,
+   "held": 0,
+   "core": 5,
+   "final": 5,
+   "capped": 0
+  },
+  "watchlist": []
+ },
+ "narrow": {
+  "funnel": {
+   "scanned": 90,
+   "fetchedOk": 90,
+   "failed": 0,
+   "noData": 0,
+   "insufficientHistory": 0,
+   "afterLiquidity": 74,
+   "afterTrend": 10,
+   "afterRs": 6,
+   "tier1": 6,
+   "tier2": 0,
+   "held": 0,
+   "core": 5,
+   "final": 11,
+   "capped": 0
+  },
+  "eligible": 74,
+  "trendGatedTradable": 10,
+  "ranked": [
+   {
+    "symbol": "NSE:PAYTM-EQ",
+    "score": 97,
+    "rs": 99,
+    "resid": 97.7,
+    "prox": 90.9,
+    "vol": 99,
+    "adr": 3.2,
+    "turnoverCr": 706
+   },
+   {
+    "symbol": "NSE:JINDALSAW-EQ",
+    "score": 96.8,
+    "rs": 97.7,
+    "resid": 96.3,
+    "prox": 95,
+    "vol": 97,
+    "adr": 3.6,
+    "turnoverCr": 72
+   },
+   {
+    "symbol": "NSE:DIVISLAB-EQ",
+    "score": 94.9,
+    "rs": 93.6,
+    "resid": 99,
+    "prox": 97.7,
+    "vol": 90,
+    "adr": 1.9,
+    "turnoverCr": 452
+   },
+   {
+    "symbol": "NSE:SOLARINDS-EQ",
+    "score": 94.1,
+    "rs": 90.9,
+    "resid": 95,
+    "prox": 99,
+    "vol": 95,
+    "adr": 2.9,
+    "turnoverCr": 300
+   },
+   {
+    "symbol": "NSE:MCX-EQ",
+    "score": 84.7,
+    "rs": 88.3,
+    "resid": 73.5,
+    "prox": 88.3,
+    "vol": 85,
+    "adr": 3.3,
+    "turnoverCr": 764
+   },
+   {
+    "symbol": "NSE:HAL-EQ",
+    "score": 82.2,
+    "rs": 80.2,
+    "resid": 84.2,
+    "prox": 82.9,
+    "vol": 84,
+    "adr": 2,
+    "turnoverCr": 473
+   },
+   {
+    "symbol": "NSE:IDFCFIRSTB-EQ",
+    "score": 79.4,
+    "rs": 82.9,
+    "resid": 93.6,
+    "prox": 96.3,
+    "vol": 41,
+    "adr": 1.7,
+    "turnoverCr": 130
+   },
+   {
+    "symbol": "NSE:63MOONS-EQ",
+    "score": 74,
+    "rs": 92.3,
+    "resid": 86.9,
+    "prox": 60.1,
+    "vol": 38,
+    "adr": 4.4,
+    "turnoverCr": 108
+   },
+   {
+    "symbol": "NSE:CDSL-EQ",
+    "score": 70.9,
+    "rs": 78.9,
+    "resid": 74.8,
+    "prox": 53.4,
+    "vol": 68,
+    "adr": 2.2,
+    "turnoverCr": 178
+   },
+   {
+    "symbol": "NSE:KOTAKBANK-EQ",
+    "score": 63.4,
+    "rs": 60.1,
+    "resid": 50.7,
+    "prox": 80.2,
+    "vol": 66,
+    "adr": 1.6,
+    "turnoverCr": 455
+   }
+  ],
+  "picksNotInRule85": [
+   {
+    "symbol": "NSE:63MOONS-EQ",
+    "score": 74,
+    "rs": 92.3,
+    "resid": 86.9,
+    "prox": 60.1,
+    "vol": 38,
+    "adr": 4.4,
+    "turnoverCr": 108
+   }
+  ],
+  "rankedAlreadyInRule85": 9
+ }
+}
