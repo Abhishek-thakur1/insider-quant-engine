@@ -2,6 +2,13 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased: `feat/timer-square-off-exit` (not merged, not deployed; owner: Tue 3 Nov; series break)
+
+- **The 15:15 TIME exit no longer waits for a traded tick** (AGENTS.md §11.30). A timer closes open INTRADAY positions at the last known price, which is noted from every feed message. On 28 Oct, 6 exits waited until about 15:28.
+- **Kill switch:** `SQUARE_OFF_TIMER=false`. **Tests:** `tests/squareOffTimer.test.ts`.
+- **Series break** for time-exit prices from the deploy date.
+- Builds on `fix/tick-serialization` (#44). Split out of PR #43 (owner, 28 Oct).
+
 ## Unreleased: `fix/tick-serialization` (not merged, not deployed; owner: Fri 30 Oct)
 
 - **Bug fix:** two overlapping ticks could close one position twice, giving a double history row and a double `pnl:daily` (AGENTS.md §11.29). `processTick` is now serialised per symbol.

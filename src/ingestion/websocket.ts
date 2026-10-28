@@ -201,6 +201,7 @@ export const startLiveEngine = async () => {
 	const schemaIssue = await schemaProblem(pool)
 	if (schemaIssue) console.error(`[Engine] ❌ Database schema not current: ${schemaIssue}`)
 	await positionTracker.init()
+	positionTracker.startSquareOffTimer() // 15:15 TIME exit without waiting for a traded tick (SQUARE_OFF_TIMER=false to disable)
 
 	const activeUniverse = [...watchlist]
 	const activeUniverseSet = new Set<string>(activeUniverse)
@@ -538,6 +539,8 @@ export const startLiveEngine = async () => {
 				continue
 			}
 
+			// Last price for the 15:15 timer square-off: every message, before the zero-volume filter (sync Map.set).
+			positionTracker.notePrice(tick.symbol, tick.ltp, Date.now())
 			const cumulativeVol = tick.vol_traded_today || 0
 			// Use ?? so we don't accidentally fallback to cumulativeVol if it was recorded as 0
 			const previousVol = previousVolumeTracker.get(tick.symbol) ?? cumulativeVol
