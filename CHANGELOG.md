@@ -2,6 +2,12 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased: `fix/tick-serialization` (not merged, not deployed; owner: Fri 30 Oct)
+
+- **Bug fix:** two overlapping ticks could close one position twice, giving a double history row and a double `pnl:daily` (AGENTS.md §11.29). `processTick` is now serialised per symbol.
+- **Test:** `tests/tickSerialization.test.ts`, which fails without the fix.
+- Split out of PR #43 (owner, 28 Oct).
+
 ## Watchlist 25 → 51, live from 2026-10-28 (config only, owner decision 27 Oct)
 
 - **Population change** (AGENTS.md §11.27): `watchlist.json` on the data volume now holds the 25 previous names, the 4 owner picks (#36) and the 22 names from #34's rule.
