@@ -69,13 +69,13 @@ They are read-only. During market hours there are no restarts, deploys or merges
 
 | When (IST) | Report |
 |---|---|
-| Wed 28 Oct 09:21 | the boot line (expect `52/100 … watchlist 51 + bench 0 + index 1 + options 0`), stocks seen out of 51, ticks per 5 minutes, engine CPU and memory (`docker stats`), errors in the log, the monitor's result, the first fire's position id |
-| Wed 28 Oct 09:31 | the same, plus whether the watchdog restarted anything (container start time, restart counter) |
-| Wed 28 Oct 15:47 | after the close: the 15:45 summary sent, the day's fires and alerts, paper trades, restarts, errors, the 15:35 export |
+| Every trading day 09:21 | the boot line (expect `52/100 … watchlist 51 + bench 0 + index 1 + options 0`), stocks seen out of 51, ticks per 5 minutes, engine CPU and memory (`docker stats`), errors in the log, the monitor's result, the first fire's position id |
+| Every trading day 09:31 | the same, plus whether the watchdog restarted anything (container start time, restart counter) |
+| Every trading day 15:47 | after the close: the 15:45 summary sent, the day's fires and alerts, paper trades, restarts, errors, the 15:35 export |
 
 - **An early "fewer than 40 seen" monitor FAIL before 09:25:** compare it with the 09:25 status before calling it a failure. The first windows after the open can be sparse.
 - **If the engine restarts by itself:** report how many Fyers calls the seeder made (the `[Seeder] ✅ Done …` line and the `fyers:quota` ledger). A restart during the session makes at most 53, paced at 4/s and 40/min.
-- **Then Wed after 16:05:** #32, on the owner's go-ahead, after the three checks and my own backup.
+- **The PC must stay awake.** On 28 Oct the PC slept and all three check-ins fired at about 18:32. Before each session, re-create them for that date (CronCreate one-shot; PC local time is IST).
 
 ## Waiting on the owner
 
