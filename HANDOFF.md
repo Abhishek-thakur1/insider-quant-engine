@@ -2,13 +2,13 @@
 
 The state of the deploy queue and what waits on the owner. **`AGENTS.md` is the source of truth for how the system works.** This file only tracks order and status. Update it in the same PR as any change to the queue.
 
-Last updated: **2026-10-28, 20:25 IST**.
+Last updated: **2026-10-28, 22:10 IST**.
 
 ## Running on EC2
 
 | Container | Code | Image | State |
 |---|---|---|---|
-| `quant_engine` | `v2` `609755e` (PR #32 on top of #22, #29) | `413505a5bffb` | Created; the 09:00 cron starts it. Watchlist 51 stocks from 28 Oct (52/100); backup `watchlist.json.bak-20261027-25` |
+| `quant_engine` | `v2` `609755e` (PR #32 on top of #22, #29) | `413505a5bffb` | Created; the 09:00 cron starts it. Watchlist **52 stocks from 29 Oct (53/100)**: the 51 from 28 Oct + `NSE:JPL-EQ` (group `new_listing`); backups `watchlist.json.bak-20261027-25`, `watchlist.json.bak-20261028-prejpl` |
 | `quant_api` | `v2` `5e95059` (PR #22) | `147035ad51c6` | running |
 
 - **#29 deploy (26 Oct, evening):**
@@ -44,8 +44,9 @@ Last updated: **2026-10-28, 20:25 IST**.
 | Tue 27 Oct | PR #22: duplicate-alert policy + API | engine + API | **deployed** (19:58–20:00:36) |
 | Tue 27 Oct | Watchlist 25 → 51: owner picks (#36) + #34's 22 rule names | watchlist file only | **done**, live 28 Oct (52/100) |
 | Wed 28 Oct | PR #32: Nifty "why no alert" diagnostics (logging only) | engine | **deployed** 18:42 (`609755e`, image `413505a5bffb`; rollback tag `rollback-5e95059`) |
+| Wed 28 Oct | New listing `NSE:JPL-EQ` (Jio Platforms), group `new_listing`, 51 → 52 (AGENTS §11.27.1) | watchlist file only | **done** 22:00, live 29 Oct (53/100) |
 | **Thu 29 Oct** | PR #41: EV-reject shadow outcomes + migration 0007, **shadow ON** (`EV_SHADOW_ENABLED=true`, `.env` backed up first) | engine + API (rebuild both; the migration runs through `quant_api`) | migrate dry-run, migrate, then **4 TABLE DATA**. Review APPROVE WITH NITS, nits fixed. Steps: `docs/proposals/ev-shadow/DESIGN.md` |
-| **Thu 29 Oct** | PR #46: S3 backup fix | `quant_scheduler` only | **only if the owner has confirmed the IAM policy;** otherwise Thursday is #41 alone. Then the leftover cleanup (dry-run list first) |
+| **Thu 29 Oct** | PR #46: S3 backup fix | `quant_scheduler` only | **IAM policy confirmed by the owner 28 Oct** (read-only check passed: bucket location + listing; the write is proven by the manual run). After #41's report. Then the leftover cleanup (dry-run list first, `--apply` on the owner's OK) |
 | **Fri 30 Oct** | PR #44: per-symbol `processTick` serialisation (bug fix) | engine | own backup + tag |
 | **Fri 30 Oct** | PR #33: near-miss digest (top 10 by score + counts) | host script copy only (no engine change) | only if it is still host-script-only at deploy |
 | **Fri 30 Oct** | PR #38: VWAP key TTL | engine | own backup + tag |
@@ -86,12 +87,22 @@ They are read-only. During market hours there are no restarts, deploys or merges
 
 | When (IST) | Report |
 |---|---|
-| Every trading day 09:21 | the boot line (expect `52/100 … watchlist 51 + bench 0 + index 1 + options 0`), stocks seen out of 51, ticks per 5 minutes, engine CPU and memory (`docker stats`), errors in the log, the monitor's result, the first fire's position id |
+| Every trading day 09:21 | the boot line (from 29 Oct expect `53/100 … watchlist 52 + bench 0 + index 1 + options 0`), any subscription error, whether `NSE:JPL-EQ` ticked and how many fires it produced (reported apart from the other groups), stocks seen out of 52, ticks per 5 minutes, engine CPU and memory (`docker stats`), errors in the log, the monitor's result, the first fire's position id |
 | Every trading day 09:31 | the same, plus whether the watchdog restarted anything (container start time, restart counter) |
 | Every trading day 15:47 | after the close: the 15:45 summary sent, the day's fires and alerts, paper trades, restarts, errors, the 15:35 export |
 
 - **An early "fewer than 40 seen" monitor FAIL before 09:25:** compare it with the 09:25 status before calling it a failure. The first windows after the open can be sparse.
-- **If the engine restarts by itself:** report how many Fyers calls the seeder made (the `[Seeder] ✅ Done …` line and the `fyers:quota` ledger). A restart during the session makes at most 53, paced at 4/s and 40/min.
+- **If the engine restarts by itself:** report how many Fyers calls the seeder made (the `[Seeder] ✅ Done …` line and the `fyers:quota` ledger). A restart during the session makes at most 54 (from 29 Oct), paced at 4/s and 40/min.
+
+## New listing `NSE:JPL-EQ`: known limits (owner, 28 Oct)
+
+Group `new_listing`, added 28 Oct (listing day), first session 29 Oct. See AGENTS.md §11.27.1.
+- **About 2 days of history:** ATR, ADR and the trend gate are not meaningful for it.
+- **Unusual first-days volatility and listing price bands.**
+- **The 0.2% VWAP stop** is likely to be hit often.
+- **Its paper trades are analysed separately.** It is never pooled with the other groups.
+- **Depends on `quant_screener` staying absent:** that job would rewrite the file and drop it.
+- **Rollback:** before 09:00 copy back `watchlist.json.bak-20261028-prejpl`. After 09:00, report only.
 - **The PC must stay awake.** On 28 Oct the PC slept and all three check-ins fired at about 18:32. Before each session, re-create them for that date (CronCreate one-shot; PC local time is IST).
 
 ## Waiting on the owner

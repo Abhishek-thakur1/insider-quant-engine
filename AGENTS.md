@@ -1793,6 +1793,30 @@ No hand-picked names, and none of RULE-85's extra 33.
 - Before 09:00: copy it back.
 - After 09:00: no restart in market hours; report only.
 
+### 11.27.1 New listing: Jio Platforms (`NSE:JPL-EQ`), effective 2026-10-29 (config only; owner decision 28 Oct)
+
+**A second population change, kept as its own group `new_listing`.** It's separate from the three groups in §11.27 (20-Oct live, owner pick, #34 rule). Any live table from 29 Oct onward reports this group on its own, or leaves it out. Its paper trades are analysed separately.
+
+**What changed:** `NSE:JPL-EQ` was appended as the **last entry** of `/app/data/watchlist.json` on 28 Oct at 22:00 IST, taking it from 51 to 52 stocks. Expected boot line on 29 Oct: `53/100 symbols — watchlist 52 + bench 0 + index 1 + options 0`.
+- **Date added:** 2026-10-28. The stock listed on NSE that day. **First session in the engine:** 2026-10-29.
+- **Why there's no group field:** the file is a flat `string[]`. Both readers (`websocket.ts` boot and `vwapSeeder.ts`) parse it as one, so a grouped object would break the boot. The group lives in the docs, like the §11.27 groups do.
+
+**Checks before the write:**
+- **The code:** it's in the public Fyers master `NSE_CM.csv` (master date 2026-10-27), as exactly one row: `JIO PLATFORMS LIMITED`, ISIN `INE0BJO01010`, series EQ, token 766830, lot 1, tick 0.10. The only other "JIO" equity is `JIOFIN`, a different company.
+- **An unknown symbol doesn't fail the chunk in the SDK.** In `fyers-api-v3` 1.7.0 (decoded offline), `subscribe` maps symbols to tokens through the `data/symbol-token` endpoint in batches of 500. It subscribes only the symbols returned in `validSymbol` and skips the rest. The residual risk: if that REST call errors as a whole, its whole batch (all 53) gets no tokens. The source can't show whether Fyers' server does that for one bad symbol, so the code was verified from the master instead.
+- **Seeder:** the 09:00 boot makes no Data-API calls (skipped before 09:15). A restart during the session makes at most 54, through the same limiter. A failure for one symbol stays with that symbol.
+
+**Known limits of this group:**
+- only 1-2 days of daily history, so ATR, ADR and the trend gate mean little for it;
+- first-days volatility and the listing price bands;
+- the 0.2% VWAP stop is likely to be hit often.
+
+**Depends on `quant_screener` staying absent.** If that job ever runs, it rewrites `watchlist.json` from its own rule and drops this name (and the §11.27 lists).
+
+**Rollback:** the backup is `watchlist.json.bak-20261028-prejpl` (sha `7bb595743f1b…`, the 51-stock file; the new file is `668c754d3cde…`).
+- Before 09:00: copy it back.
+- After 09:00: no restart in market hours; report only.
+
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
 The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 
