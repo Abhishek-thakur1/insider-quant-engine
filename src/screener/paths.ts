@@ -64,7 +64,7 @@ export const screenerStaleness = (nowMs = Date.now()): string | null => {
 		// volume's watchlist.json when it exists (resolveScreenerFile), else the image's baked-in copy.
 		const fromJob = path.join(screenerDataDir(), 'watchlist.json')
 		return fs.existsSync(fromJob)
-			? `watchlist_meta.json not found in ${screenerDataDir()} — using ${fromJob}; its age can't be checked`
+			? `watchlist_meta.json missing or unreadable in ${screenerDataDir()} — using ${fromJob}; its age can't be checked`
 			: `screener output not found in ${screenerDataDir()} — using the baked-in watchlist.json`
 	}
 	const today = getISTDateString(nowMs)

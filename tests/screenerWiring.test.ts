@@ -64,7 +64,11 @@ test('staleness: > 3 trading days old warns; a weekend or a holiday does not cou
 		// The volume's watchlist.json without meta (EC2 since 20 Oct): name that file, not the baked-in one
 		fs.writeFileSync(path.join(dir, 'watchlist.json'), '[]')
 		const msg = screenerStaleness(istNoon('2026-10-26'))!
-		assert.match(msg, /watchlist_meta\.json not found .* using .*watchlist\.json; its age can't be checked/)
+		assert.match(msg, /watchlist_meta\.json missing or unreadable .* using .*watchlist\.json; its age can't be checked/)
+		// a meta file without asOf (or unparseable) gets the same message: "missing or unreadable" covers both
+		fs.writeFileSync(path.join(dir, 'watchlist_meta.json'), '{}')
+		assert.match(screenerStaleness(istNoon('2026-10-26'))!, /watchlist_meta\.json missing or unreadable/)
+		fs.rmSync(path.join(dir, 'watchlist_meta.json'))
 		assert.doesNotMatch(msg, /baked-in/)
 		fs.writeFileSync(path.join(dir, 'watchlist_meta.json'), meta('2026-10-23'))
 		assert.equal(screenerStaleness(istNoon('2026-10-26')), null)

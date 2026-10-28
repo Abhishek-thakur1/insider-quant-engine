@@ -222,7 +222,7 @@ svg rect.session{fill:color-mix(in srgb,var(--hot) 22%,transparent);stroke:none}
 <tr>
 <td>End-of-day screener job</td>
 <td><em>built, not running</em></td>
-<td>Scheduled at 16:30 (<code>lifecycle.sh run_screener</code>), but the <code>quant_screener</code> container doesn&#39;t exist on the host, so the engine keeps using the last <code>watchlist.json</code> the job wrote to the data volume (20 Oct). The boot log says <code>watchlist_meta.json not found</code> (before 27 Oct it wrongly said <code>screener output not found … baked-in</code>).</td>
+<td>Scheduled at 16:30 (<code>lifecycle.sh run_screener</code>), but the <code>quant_screener</code> container doesn&#39;t exist on the host, so the engine keeps using the last <code>watchlist.json</code> the job wrote to the data volume (20 Oct). The boot log says <code>watchlist_meta.json missing or unreadable</code> (before 27 Oct it wrongly said <code>screener output not found … baked-in</code>).</td>
 </tr>
 <tr>
 <td>Morning &quot;in-play&quot; re-rank</td>

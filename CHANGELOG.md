@@ -4,7 +4,7 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
 ## Unreleased: `fix/staleness-message` (not merged, not deployed)
 
-- **Boot staleness message names the file actually in use.** With `/app/data/watchlist.json` present but no `watchlist_meta.json` (EC2 since 20 Oct), the engine said `screener output not found … using the baked-in watchlist.json` and sent it to the admin chat on every boot, although it reads the volume's file (`resolveScreenerFile`). It now says `watchlist_meta.json not found in /app/data — using /app/data/watchlist.json; its age can't be checked`. The baked-in wording remains for when the volume file is missing too.
+- **Boot staleness message names the file actually in use.** With `/app/data/watchlist.json` present but no `watchlist_meta.json` (EC2 since 20 Oct), the engine said `screener output not found … using the baked-in watchlist.json` and sent it to the admin chat on every boot, although it reads the volume's file (`resolveScreenerFile`). It now says `watchlist_meta.json missing or unreadable in /app/data — using /app/data/watchlist.json; its age can't be checked`. The baked-in wording remains for when the volume file is missing too.
 - Log text only: which file is read, and when the warning fires, are unchanged. Test: `tests/screenerWiring.test.ts`.
 
 ## Watchlist 25 → 51, live from 2026-10-28 (config only, owner decision 27 Oct)

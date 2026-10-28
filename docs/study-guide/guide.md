@@ -159,7 +159,7 @@ Both are real rows in the `paper_trades` and `signals` tables (§1.4).
 | Telegram alerts (gated only) | *running* | **[Proven]** 3 alerts sent on 22 Oct (`signals.alert_sent`) |
 | Paper trades in Postgres | *running* | **[Proven]** `paper_trades` rows with entry, stop, target and exit |
 | EMA trend study in shadow (no alerts) | *running* | **[Proven]** `/app/data/ema_shadow/2026-10-22.jsonl` |
-| End-of-day screener job | *built, not running* | Scheduled at 16:30 (`lifecycle.sh run_screener`), but the `quant_screener` container doesn't exist on the host, so the engine keeps using the last `watchlist.json` the job wrote to the data volume (20 Oct). The boot log says `watchlist_meta.json not found` (before 27 Oct it wrongly said `screener output not found … baked-in`). |
+| End-of-day screener job | *built, not running* | Scheduled at 16:30 (`lifecycle.sh run_screener`), but the `quant_screener` container doesn't exist on the host, so the engine keeps using the last `watchlist.json` the job wrote to the data volume (20 Oct). The boot log says `watchlist_meta.json missing or unreadable` (before 27 Oct it wrongly said `screener output not found … baked-in`). |
 | Morning "in-play" re-rank | *design only* | Not coded |
 | One-alert-per-symbol duplicate policy | *built, not deployed* | **[Tested on paper]** PR #22, plus a real-Redis check (23 of 23, `scripts/ops/realRedisClaims.ts` on the PR #22 branch) on a throwaway container |
 | Liquid-universe replay fetch (Part D) | *built, not run* | PR #20 is merged. Nothing has been fetched (each fetch evening needs the owner's OK). |
