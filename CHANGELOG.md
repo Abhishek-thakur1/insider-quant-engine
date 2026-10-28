@@ -2,13 +2,22 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## `feat/nifty-block-diagnostics`: logging only, not deployed
+## Watchlist 25 → 51, live from 2026-10-28 (config only, owner decision 27 Oct)
+
+- **Population change** (AGENTS.md §11.27): `watchlist.json` on the data volume now holds the 25 previous names, the 4 owner picks (#36) and the 22 names from #34's rule.
+  - The subscription goes to **52/100**.
+  - There was no image rebuild and no restart; the 28 Oct 09:00 boot picks it up.
+- **Backup:** `watchlist.json.bak-20261027-25`.
+- **Monitor:** the stocks-seen total is read from the heartbeat, with the threshold at 80% of it.
+- **Note:** day-level counts from 28 Oct onward aren't comparable with earlier days.
+
+## `feat/nifty-block-diagnostics` (PR #32): logging only; merged and deployed 28 Oct evening (`609755e`, image `413505a5bffb`, first boot 29 Oct)
 
 - **"Why no alert" records for the Nifty detectors** (AGENTS.md §11.23): ORE, Trend Pulse and VWAP Reclaim note the reason a closed candle didn't fire (risk cap, body too small, warm-up, cooldown, outside window, ...).
   - Bounded: one per detector per candle, 300 per detector per day, Redis list `diag:nifty:{date}` (900 = 3 × 300, 36 h TTL), `[Diag]` log lines.
   - Kill switch `NIFTY_DIAG_ENABLED=false`. No change to alerts, gates, thresholds or positions; the parity test proves identical signals on 26 Oct's bars.
 
-## Unreleased — `feat/duplicate-alert-policy` (not merged, not deployed; owner: Monday evening at the earliest)
+## `feat/duplicate-alert-policy` (PR #22): merged and deployed 27 Oct evening (`5e95059`, engine image `0231f64ab9ef`, API `147035ad51c6`, first boot 28 Oct)
 
 - **One alert per symbol + side** (AGENTS.md §11.18).
   - **Resurrect race, fixed (26 Oct):** `removeFlag` no longer writes a position that is mid-close back into `trades:open`. Test: `tests/removeFlagRace.test.ts`, which fails without the fix.
@@ -41,13 +50,13 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 - **Concurrent inversion fixed** (4th review): an alerted fire that was flagged at insert because a concurrent holder was later not alerted re-takes the paper claim and drops its flag (paper row and signals row).
 - **Tests:** 19, 340 overall.
 
-## Unreleased: `fix/orphan-skips-skipped` (PR #29; not merged, not deployed)
+## `fix/orphan-skips-skipped` (PR #29): merged 26 Oct (`11dda4d`), engine deployed 26 Oct evening (image `b23c6f864696`, first boot 27 Oct)
 
 - **Boot orphaning now changes only OPEN rows** (AGENTS.md §11.22). Capital-skipped (SKIPPED) rows left in `trades:open` keep their status instead of becoming ORPHANED.
 - **Cause:** `status IN ('OPEN', 'SKIPPED')` in the orphan UPDATE, from `bb7fb46` on 18 Oct.
 - **Affected rows:** 6 (1583, 1585, 1590, 1596, 1599 and 1603).
 - **Tests:** 2 in `tests/positionStatus.test.ts`, plus a real-Postgres check of both statements.
-- The engine needs a rebuild to pick it up; this branch is review only.
+- The restore of the 6 rows is a separate step, run only on the owner's OK.
 
 ## `docs/study-guide` (PR #25): docs only, merged 26 Oct; no code, config or deploy change
 
