@@ -253,7 +253,9 @@ test('OFF by default: no engine instance unless EV_SHADOW_ENABLED=true', () => {
 
 test('ISOLATION: evShadow.ts imports only types and tradeLevels (no Redis, no positionTracker, no db pool)', () => {
 	const src = fs.readFileSync('src/core/evShadow.ts', 'utf8')
-	const imports = [...src.matchAll(/^import\s+(type\s+)?.*?from\s+'([^']+)'/gm)].map((m) => ({ typeOnly: !!m[1], from: m[2] }))
+	// [\s\S]*? also catches multi-line `import { a, b } from` forms; a dynamic import() is not allowed at all
+	const imports = [...src.matchAll(/^import\s+(type\s+)?[\s\S]*?from\s+'([^']+)'/gm)].map((m) => ({ typeOnly: !!m[1], from: m[2] }))
+	assert.equal(/\bimport\s*\(/.test(src), false, 'no dynamic import() in evShadow.ts')
 	const runtime = imports.filter((i) => !i.typeOnly).map((i) => i.from)
 	assert.deepEqual(runtime, ['./tradeLevels.js'])
 	const lv = fs.readFileSync('src/core/tradeLevels.ts', 'utf8')
@@ -265,6 +267,7 @@ test('ISOLATION: recording and closing a shadow never calls Redis or positionTra
 	const trap = (name: string) => (async () => { calls.push(name); throw new Error(`shadow touched ${name}`) }) as Fn
 	const restoreRedis = patch(redisClient, { get: trap('redis.get'), set: trap('redis.set'), hSet: trap('redis.hSet'), hDel: trap('redis.hDel'), lPush: trap('redis.lPush'), incrByFloat: trap('redis.incrByFloat'), publish: trap('redis.publish'), multi: trap('redis.multi') })
 	const restoreTracker = patch(positionTracker, { registerTrade: trap('tracker.registerTrade'), processTick: trap('tracker.processTick'), removeFlag: trap('tracker.removeFlag') })
+	const restorePool = patch(pool, { query: trap('pool.query'), connect: trap('pool.connect') })
 	try {
 		const { store, inserts, closes } = fakeStore()
 		const t0 = clock.istEpoch('2026-10-27', 10 * 60)
@@ -276,6 +279,7 @@ test('ISOLATION: recording and closing a shadow never calls Redis or positionTra
 		assert.equal(closes.length, 1)
 		assert.deepEqual(calls, [])
 	} finally {
+		restorePool()
 		restoreTracker()
 		restoreRedis()
 	}
