@@ -1819,7 +1819,7 @@ No hand-picked names, and none of RULE-85's extra 33.
 
 **Side effect:** on a 09:00 boot the Nifty bias is unset until about 09:16.
 
-**Deploy (owner, 27 Oct): approved in principle; its own evening, Friday 30 Oct at the earliest.** The deploy date is a **series break**: before it, live VWAP, VWAP stops, the Nifty reference and the bias included pre-open data; after it they don't. Values from the first hour (about 09:15–10:15) are not comparable across the break. At deploy, record the date here, in the CHANGELOG, and as a deviation-log entry in `docs/studies/edge-map/PREREGISTRATION.md`. Deploy date: _not yet deployed_.
+**Deploy (owner, 28 Oct): Sat 31 Oct, together with #45 (timer square-off) as ONE series break; first session Mon 2 Nov.** Note (review of 28 Oct): live Nifty minutes start at their first tick, not on the clock, so the first in-session minute begins at about 09:15:xx rather than exactly 09:15:00. The effect is about one minute in 375. The deploy date is a **series break**: before it, live VWAP, VWAP stops, the Nifty reference and the bias included pre-open data; after it they don't. Values from the first hour (about 09:15–10:15) are not comparable across the break. At deploy, record the date here, in the CHANGELOG, and as a deviation-log entry in `docs/studies/edge-map/PREREGISTRATION.md`. Deploy date: _not yet deployed_.
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
