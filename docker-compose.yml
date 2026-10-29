@@ -42,6 +42,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - scheduler_logs:/var/log
       - token_store:/app/token
+      # 16:00 DB backups (scheduler/db_backup.sh). Same path on the host and in the container, so the
+      # script's `docker run -v /var/backups/iqe:…` (resolved on the host) sees the real files.
+      - /var/backups/iqe:/var/backups/iqe
     depends_on:
       - redis_cache
 
