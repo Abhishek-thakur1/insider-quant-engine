@@ -2,7 +2,7 @@
 
 The state of the deploy queue and what waits on the owner. **`AGENTS.md` is the source of truth for how the system works.** This file only tracks order and status. Update it in the same PR as any change to the queue.
 
-Last updated: **2026-10-29, 22:10 IST**.
+Last updated: **2026-10-29, 22:20 IST**.
 
 ## Running on EC2
 
@@ -47,7 +47,7 @@ Last updated: **2026-10-29, 22:10 IST**.
 | Wed 28 Oct | PR #32: Nifty "why no alert" diagnostics (logging only) | engine | **deployed** 18:42 (`609755e`, image `413505a5bffb`; rollback tag `rollback-5e95059`) |
 | Wed 28 Oct | New listing `NSE:JPL-EQ` (Jio Platforms), group `new_listing`, 51 → 52 (AGENTS §11.27.1) | watchlist file only | **done** 22:00, live 29 Oct (53/100) |
 | Thu 29 Oct | PR #41: EV-reject shadow outcomes + migration 0007, **shadow ON** | engine + API | **deployed** 21:57–22:00 (`825726c`; engine `c751a03b8678` Created, API `fb075db5737c`). 0007 applied, dump **4 TABLE DATA**. `.env.bak-20261029-pre41`. Rollback tags `rollback-609755e` (engine), `rollback-5e95059` (API). Backups `pre-evshadow41-20261029T1627Z.dump` (3), `post-0007-20261029T1628Z.dump` (4) |
-| Thu 29 Oct | PR #46: S3 backup fix | `quant_scheduler` only | **deployed** 22:02 (`45236ee`, image `48819ab8155f`; rollback tag `rollback-pre46` → `48ed31bfd5fb`). Manual run: dump 4 TABLE DATA, **S3 upload verified**. The scheduler `/tmp` held 7 old dumps: copied to `~/backups/scheduler-tmp-pre46/` before the recreate. **Leftover cleanup: dry run lists 24 empty dirs; `--apply` waits for the owner OK** |
+| Thu 29 Oct | PR #46: S3 backup fix | `quant_scheduler` only | **deployed** 22:02 (`45236ee`, image `48819ab8155f`; rollback tag `rollback-pre46` → `48ed31bfd5fb`). Manual run: dump 4 TABLE DATA, **S3 upload verified**. The scheduler `/tmp` held 7 old dumps: copied to `~/backups/scheduler-tmp-pre46/` before the recreate. **Leftover cleanup done** (owner OK, 22:06): `rmdir` of exactly 24 empty `/tmp/paper_trades_*.sql` dirs, 0 failed; list in `~/evidence/2026-10-29/cleanup_removed_24.txt`. The 7 saved old dumps were uploaded once to the S3 prefix (sizes match; prefix holds 8) |
 | **Fri 30 Oct** | PR #44: per-symbol `processTick` serialisation (bug fix) | engine | own backup + tag |
 | **Fri 30 Oct** | PR #33: near-miss digest (top 10 by score + counts) | host script copy only (no engine change) | only if it is still host-script-only at deploy |
 | **Fri 30 Oct** | PR #38: VWAP key TTL | engine | own backup + tag |
@@ -74,6 +74,7 @@ Merged as docs/study only: #34, #36 (27 Oct); #35, #42, #39, #28 (28 Oct). Code 
 | #37 | Staleness message names the file in use | code (log text) | boot warning text only | **Fri 30 Oct** | APPROVE WITH NITS (28 Oct), fixed `124c9a2` | open |
 | #33 | Near-miss digest (top 10 by score) | host script | 15:45 admin message lists rejected fires | **Fri 30 Oct** (host script only) | APPROVE WITH NITS (28 Oct), fixed `5b12ab0` | open |
 | #31 | Nifty ORE evaluates the lock candle | code (detector) | changes when ORE can fire | **hold** | — | open |
+| #52 | `.gitattributes` (LF line endings) | repo config | none at runtime; diff 1 file, +14 lines (renormalize changes nothing) | owner decision | — | open, not merged |
 | dashboard #9 | Today: alerted vs recorded-only | frontend | Today view split | owner's word; never merge `main` 09:00–15:30 | preview verified 23 Oct | open |
 
 **Reviews:** each independent review runs in its **own clone** (`git clone --shared`), not a worktree of this repo. Worktrees share one `.git`, so a reviewer's git commands could collide with mine ("another command ran in this repository at the same time", owner, 28 Oct).
