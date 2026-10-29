@@ -2,14 +2,15 @@
 
 The state of the deploy queue and what waits on the owner. **`AGENTS.md` is the source of truth for how the system works.** This file only tracks order and status. Update it in the same PR as any change to the queue.
 
-Last updated: **2026-10-28, 22:10 IST**.
+Last updated: **2026-10-29, 22:10 IST**.
 
 ## Running on EC2
 
 | Container | Code | Image | State |
 |---|---|---|---|
-| `quant_engine` | `v2` `609755e` (PR #32 on top of #22, #29) | `413505a5bffb` | Created; the 09:00 cron starts it. Watchlist **52 stocks from 29 Oct (53/100)**: the 51 from 28 Oct + `NSE:JPL-EQ` (group `new_listing`); backups `watchlist.json.bak-20261027-25`, `watchlist.json.bak-20261028-prejpl` |
-| `quant_api` | `v2` `5e95059` (PR #22) | `147035ad51c6` | running |
+| `quant_engine` | `v2` `825726c` (PR #41 on top of #32, #22, #29); `EV_SHADOW_ENABLED=true` | `c751a03b8678` | Created; the 09:00 cron starts it. First boot with the EV shadow: Fri 30 Oct. Watchlist **52 stocks from 29 Oct (53/100)**: the 51 from 28 Oct + `NSE:JPL-EQ` (group `new_listing`); backups `watchlist.json.bak-20261027-25`, `watchlist.json.bak-20261028-prejpl` |
+| `quant_api` | `v2` `825726c` (PR #41) | `fb075db5737c` | running; 7/7 routes 200 after the 29 Oct deploy |
+| `quant_scheduler` | `v2` `45236ee` (PR #46) | `48819ab8155f` | running; 16:00 dump to `/var/backups/iqe` + S3 (first upload ever: 29 Oct 22:03, verified) |
 
 - **#29 deploy (26 Oct, evening):**
   - backup `~/backups/pre-orphanfix-20261026T1651Z.dump` (3 TABLE DATA entries);
@@ -45,8 +46,8 @@ Last updated: **2026-10-28, 22:10 IST**.
 | Tue 27 Oct | Watchlist 25 → 51: owner picks (#36) + #34's 22 rule names | watchlist file only | **done**, live 28 Oct (52/100) |
 | Wed 28 Oct | PR #32: Nifty "why no alert" diagnostics (logging only) | engine | **deployed** 18:42 (`609755e`, image `413505a5bffb`; rollback tag `rollback-5e95059`) |
 | Wed 28 Oct | New listing `NSE:JPL-EQ` (Jio Platforms), group `new_listing`, 51 → 52 (AGENTS §11.27.1) | watchlist file only | **done** 22:00, live 29 Oct (53/100) |
-| **Thu 29 Oct** | PR #41: EV-reject shadow outcomes + migration 0007, **shadow ON** (`EV_SHADOW_ENABLED=true`, `.env` backed up first) | engine + API (rebuild both; the migration runs through `quant_api`) | migrate dry-run, migrate, then **4 TABLE DATA**. Review APPROVE WITH NITS, nits fixed. Steps: `docs/proposals/ev-shadow/DESIGN.md` |
-| **Thu 29 Oct** | PR #46: S3 backup fix | `quant_scheduler` only | **IAM policy confirmed by the owner 28 Oct** (read-only check passed: bucket location + listing; the write is proven by the manual run). After #41's report. Then the leftover cleanup (dry-run list first, `--apply` on the owner's OK) |
+| Thu 29 Oct | PR #41: EV-reject shadow outcomes + migration 0007, **shadow ON** | engine + API | **deployed** 21:57–22:00 (`825726c`; engine `c751a03b8678` Created, API `fb075db5737c`). 0007 applied, dump **4 TABLE DATA**. `.env.bak-20261029-pre41`. Rollback tags `rollback-609755e` (engine), `rollback-5e95059` (API). Backups `pre-evshadow41-20261029T1627Z.dump` (3), `post-0007-20261029T1628Z.dump` (4) |
+| Thu 29 Oct | PR #46: S3 backup fix | `quant_scheduler` only | **deployed** 22:02 (`45236ee`, image `48819ab8155f`; rollback tag `rollback-pre46` → `48ed31bfd5fb`). Manual run: dump 4 TABLE DATA, **S3 upload verified**. The scheduler `/tmp` held 7 old dumps: copied to `~/backups/scheduler-tmp-pre46/` before the recreate. **Leftover cleanup: dry run lists 24 empty dirs; `--apply` waits for the owner OK** |
 | **Fri 30 Oct** | PR #44: per-symbol `processTick` serialisation (bug fix) | engine | own backup + tag |
 | **Fri 30 Oct** | PR #33: near-miss digest (top 10 by score + counts) | host script copy only (no engine change) | only if it is still host-script-only at deploy |
 | **Fri 30 Oct** | PR #38: VWAP key TTL | engine | own backup + tag |
@@ -62,18 +63,16 @@ Last updated: **2026-10-28, 22:10 IST**.
 
 ## Open PRs (28 Oct, evening)
 
-Merged as docs/study only: #34, #36 (27 Oct); #35, #42, #39, #28 (28 Oct). Code merged on its evening: #29, #22, #32. Closed: #43, split by the owner into #44 + #45.
+Merged as docs/study only: #34, #36 (27 Oct); #35, #42, #39, #28 (28 Oct). Code merged on its evening: #29, #22, #32, #41, #46 (29 Oct). Docs: #47-#50. Closed: #43, split by the owner into #44 + #45.
 
 | PR | Title (short) | Type | Runtime effect if deployed | Evening / condition | Independent review | Status |
 |---|---|---|---|---|---|---|
-| #41 | EV-reject shadow outcomes | code + migration | new table `ev_shadow_outcomes`; off unless `EV_SHADOW_ENABLED=true` | **Thu 29 Oct** (shadow ON) | APPROVE WITH NITS, nits fixed | open |
 | #44 | `processTick` serialised per symbol | code (bug fix) | removes the double close of one position by overlapping ticks | **Fri 30 Oct** | APPROVE (28 Oct) | open |
 | #40 | VWAP 09:15 session gate | code | equity VWAP and the Nifty reference start at 09:15; kill switch | **Sat 31 Oct**, with #45 (one series break) | APPROVE WITH NITS (28 Oct), nits fixed `7fda9d0` | open |
 | #45 | 15:15 square-off by timer | code | TIME exits at the last known price from 15:15; kill switch | **Sat 31 Oct**, with #40 (one series break) | APPROVE WITH NITS (28 Oct), fixed `c315780` (15:15–15:30 window, 120 s max price age, stopped on shutdown) | open |
 | #38 | 36 h TTL on `vwap:*` keys | code | daily VWAP keys expire | **Fri 30 Oct** | APPROVE WITH NITS (28 Oct), fixed `ac60834` | open |
 | #37 | Staleness message names the file in use | code (log text) | boot warning text only | **Fri 30 Oct** | APPROVE WITH NITS (28 Oct), fixed `124c9a2` | open |
 | #33 | Near-miss digest (top 10 by score) | host script | 15:45 admin message lists rejected fires | **Fri 30 Oct** (host script only) | APPROVE WITH NITS (28 Oct), fixed `5b12ab0` | open |
-| #46 | S3 backup fix + leftover cleanup | scheduler | dump to `/var/backups/iqe`, S3 upload with region, alert on failure | **Thu 29 Oct**, only if the owner confirms the IAM policy | APPROVE WITH NITS (28 Oct), fixed `dac1ed7` (deploy steps updated) | open |
 | #31 | Nifty ORE evaluates the lock candle | code (detector) | changes when ORE can fire | **hold** | — | open |
 | dashboard #9 | Today: alerted vs recorded-only | frontend | Today view split | owner's word; never merge `main` 09:00–15:30 | preview verified 23 Oct | open |
 
@@ -87,7 +86,7 @@ They are read-only. During market hours there are no restarts, deploys or merges
 
 | When (IST) | Report |
 |---|---|
-| Every trading day 09:21 | the boot line (from 29 Oct expect `53/100 … watchlist 52 + bench 0 + index 1 + options 0`), any subscription error, whether `NSE:JPL-EQ` ticked and how many fires it produced (reported apart from the other groups), stocks seen out of 52, ticks per 5 minutes, engine CPU and memory (`docker stats`), errors in the log, the monitor's result, the first fire's position id |
+| Every trading day 09:21 | from 30 Oct: `[EvShadow] 🧪 ACTIVE` at boot and no pending-migration warning; the boot line (from 29 Oct expect `53/100 … watchlist 52 + bench 0 + index 1 + options 0`), any subscription error, whether `NSE:JPL-EQ` ticked and how many fires it produced (reported apart from the other groups), stocks seen out of 52, ticks per 5 minutes, engine CPU and memory (`docker stats`), errors in the log, the monitor's result, the first fire's position id |
 | Every trading day 09:31 | the same, plus whether the watchdog restarted anything (container start time, restart counter) |
 | Every trading day 15:47 | after the close: the 15:45 summary sent, the day's fires and alerts, paper trades, restarts, errors, the 15:35 export |
 
