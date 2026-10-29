@@ -1770,7 +1770,7 @@ On 26 Oct Nifty moved 22,386 → 22,700 with no Nifty alert, and the reasons had
 - **ORE note:** the call sites follow the current lock behaviour; if PR #31 (lock candle) merges, the
   `lock_candle_not_evaluated` record goes away with the early return.
 
-## 11.26 EV-reject shadow outcomes (2026-10-27, branch `feat/ev-shadow`; PR, not deployed, off by default)
+## 11.26 EV-reject shadow outcomes (2026-10-27, PR #41; deployed 29 Oct evening with migration 0007, **shadow ON** from the 30 Oct boot)
 
 **Purpose:** measure whether fires rejected by the EV hard gate would have won. Design: `docs/proposals/ev-shadow/DESIGN.md`.
 
@@ -1788,7 +1788,54 @@ On 26 Oct Nifty moved 22,386 → 22,700 with no Nifty alert, and the reasons had
 
 **Tests:** `tests/evShadow.test.ts` checks identical effects on and off, the same exits as the real tracker (including ticks exactly on the stop and the target), bounds, import-level isolation (only types and `tradeLevels`), no Redis or `positionTracker` calls, the daily cap across a same-day restart, and a non-blocking `init` (5 s timeout, then inactive for the day).
 
-**Deploy:** migration 0007 runs through `quant_api` after rebuilding both images; the flag stays off. Steps are in `DESIGN.md`. After 0007, the backup gate expects **4** TABLE DATA entries.
+**Deploy:** migration 0007 runs through `quant_api` after rebuilding both images. The owner turned the shadow on (`EV_SHADOW_ENABLED=true` in `.env`, 28 Oct decision); a recreate re-reads `.env`. Steps are in `DESIGN.md`. After 0007, the backup gate expects **4** TABLE DATA entries.
+
+## 11.27 Watchlist population change, effective 2026-10-28 (config only; no code, no image)
+
+**This is a series break in the stock universe.** Every per-day count from 28 Oct onward covers a different set of stocks: fires, alerts, paper trades and stocks seen. Don't compare it with earlier days without splitting by group.
+
+**What changed:** `/app/data/watchlist.json` (volume `screener_data`) went from **25 to 51 stocks** on 27 Oct at about 20:42 IST. The engine reads it once at boot (`websocket.ts`, `resolveScreenerFile`), so it takes effect at the 28 Oct 09:00 boot. Expected boot line: `52/100 symbols — watchlist 51 + bench 0 + index 1 + options 0`.
+
+**The 51:**
+- the 25 names live since 20 Oct;
+- the 4 owner picks (PR #36): BSE, MCX, PAYTM, ATHERENERG;
+- the 22 names from #34's `RULE.md`, the rule committed before ranking, with BSE, MCX and PAYTM counted once.
+
+No hand-picked names, and none of RULE-85's extra 33.
+
+**Checks before the write:**
+- every code is in `fyersUniverse.json` and the screener's 19-Oct universe, and the engine had received ticks for each;
+- no per-stock config is needed;
+- seeder pacing: a restart during the session makes at most 53 Data-API calls through the engine limiter (4/s, 40/min; simulated on the real limiter: at most 40 in any 60 s). A 09:00 boot makes none.
+- The monitor's stocks-seen total is now read from the heartbeat (it was hard-coded at 25).
+
+**Rollback:** the backup is `watchlist.json.bak-20261027-25` (sha `da466dc769c0…`; the new file is `7bb595743f1b…`).
+- Before 09:00: copy it back.
+- After 09:00: no restart in market hours; report only.
+
+### 11.27.1 New listing: Jio Platforms (`NSE:JPL-EQ`), effective 2026-10-29 (config only; owner decision 28 Oct)
+
+**A second population change, kept as its own group `new_listing`.** It's separate from the three groups in §11.27 (20-Oct live, owner pick, #34 rule). Any live table from 29 Oct onward reports this group on its own, or leaves it out. Its paper trades are analysed separately.
+
+**What changed:** `NSE:JPL-EQ` was appended as the **last entry** of `/app/data/watchlist.json` on 28 Oct at 22:00 IST, taking it from 51 to 52 stocks. Expected boot line on 29 Oct: `53/100 symbols — watchlist 52 + bench 0 + index 1 + options 0`.
+- **Date added:** 2026-10-28. The stock listed on NSE that day. **First session in the engine:** 2026-10-29.
+- **Why there's no group field:** the file is a flat `string[]`. Both readers (`websocket.ts` boot and `vwapSeeder.ts`) parse it as one, so a grouped object would break the boot. The group lives in the docs, like the §11.27 groups do.
+
+**Checks before the write:**
+- **The code:** it's in the public Fyers master `NSE_CM.csv` (master date 2026-10-27), as exactly one row: `JIO PLATFORMS LIMITED`, ISIN `INE0BJO01010`, series EQ, token 766830, lot 1, tick 0.10. The only other "JIO" equity is `JIOFIN`, a different company.
+- **An unknown symbol doesn't fail the chunk in the SDK.** In `fyers-api-v3` 1.7.0 (decoded offline), `subscribe` maps symbols to tokens through the `data/symbol-token` endpoint in batches of 500. It subscribes only the symbols returned in `validSymbol` and skips the rest. The residual risk: if that REST call errors as a whole, its whole batch (all 53) gets no tokens. The source can't show whether Fyers' server does that for one bad symbol, so the code was verified from the master instead.
+- **Seeder:** the 09:00 boot makes no Data-API calls (skipped before 09:15). A restart during the session makes at most 54, through the same limiter. A failure for one symbol stays with that symbol.
+
+**Known limits of this group:**
+- only 1-2 days of daily history, so ATR, ADR and the trend gate mean little for it;
+- first-days volatility and the listing price bands;
+- the 0.2% VWAP stop is likely to be hit often.
+
+**Depends on `quant_screener` staying absent.** If that job ever runs, it rewrites `watchlist.json` from its own rule and drops this name (and the §11.27 lists).
+
+**Rollback:** the backup is `watchlist.json.bak-20261028-prejpl` (sha `7bb595743f1b…`, the 51-stock file; the new file is `668c754d3cde…`).
+- Before 09:00: copy it back.
+- After 09:00: no restart in market hours; report only.
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
