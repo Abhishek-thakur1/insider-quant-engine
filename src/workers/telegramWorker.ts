@@ -8,6 +8,7 @@ import { runAlertPipeline, type PipelineDeps } from './alertPipeline.js'
 import { newSignalDraft, buildSignalRow, type SignalDraft } from '../db/signalRecord.js'
 import { signalLog } from '../db/signalLog.js'
 import { getSymbolSource } from '../core/symbolSource.js'
+import { getEvShadow } from '../core/evShadow.js'
 
 const bot = new Telegraf(ENV.TELEGRAM_BOT_TOKEN)
 const SHADOW_MODE = process.env.SHADOW_MODE === 'true'
@@ -72,6 +73,8 @@ const liveDeps: PipelineDeps = {
 			? bot.telegram.sendMessage(ENV.TELEGRAM_CHANNEL_ID, text, { parse_mode: 'Markdown' })
 			: bot.telegram.sendMessage(ENV.TELEGRAM_CHANNEL_ID, text),
 	sendAdmin: (text) => bot.telegram.sendMessage(ENV.TELEGRAM_ADMIN_ID, text),
+	// No-op unless the engine created the EV-reject shadow tracker (EV_SHADOW_ENABLED=true).
+	onEvRejected: (data, decision, signalId) => getEvShadow()?.record(data, decision, signalId),
 	now: () => Date.now(),
 	// SHADOW_MODE / MAX_ALERTS_PER_DAY were module-level constants in the old
 	// worker; ENV.* was read on every call. Getters keep exactly that timing
