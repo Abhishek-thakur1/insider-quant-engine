@@ -1770,6 +1770,26 @@ On 26 Oct Nifty moved 22,386 → 22,700 with no Nifty alert, and the reasons had
 - **ORE note:** the call sites follow the current lock behaviour; if PR #31 (lock candle) merges, the
   `lock_candle_not_evaluated` record goes away with the early return.
 
+## 11.26 EV-reject shadow outcomes (2026-10-27, PR #41; deployed 29 Oct evening with migration 0007, **shadow ON** from the 30 Oct boot)
+
+**Purpose:** measure whether fires rejected by the EV hard gate would have won. Design: `docs/proposals/ev-shadow/DESIGN.md`.
+
+**How it works:**
+- On `rejectedAt === 'EV'`, `alertPipeline` calls the optional `deps.onEvRejected`. That is synchronous fire-and-forget in a `try`, after the existing logging and before the existing `return`.
+- `core/evShadow.ts` then records a simulated outcome in its own table, `ev_shadow_outcomes` (migration 0007).
+- **Rules:** the same levels (`core/tradeLevels.ts`, now shared with the pipeline), the same exits as `positionTracker.processTick` (TIME at 15:15, then stop, then target), and the same R.
+- **Nifty option fires** are evaluated on Nifty index ticks and flagged `index_proxy`.
+
+**Isolation and bounds:**
+- It never touches `paper_trades`, Redis trade keys, `pnl:daily`, alerts or stats. There are no Redis keys; state is in memory and reloaded from the table on a same-day restart.
+- **Bounds:** 50 rows a day, 20 open at once, one open per symbol + detector + side.
+- `EV_SHADOW_ENABLED=true` turns it on.
+- **After 0007, `pg_dump` has 4 TABLE DATA entries.**
+
+**Tests:** `tests/evShadow.test.ts` checks identical effects on and off, the same exits as the real tracker (including ticks exactly on the stop and the target), bounds, import-level isolation (only types and `tradeLevels`), no Redis or `positionTracker` calls, the daily cap across a same-day restart, and a non-blocking `init` (5 s timeout, then inactive for the day).
+
+**Deploy:** migration 0007 runs through `quant_api` after rebuilding both images. The owner turned the shadow on (`EV_SHADOW_ENABLED=true` in `.env`, 28 Oct decision); a recreate re-reads `.env`. Steps are in `DESIGN.md`. After 0007, the backup gate expects **4** TABLE DATA entries.
+
 ## 11.27 Watchlist population change, effective 2026-10-28 (config only; no code, no image)
 
 **This is a series break in the stock universe.** Every per-day count from 28 Oct onward covers a different set of stocks: fires, alerts, paper trades and stocks seen. Don't compare it with earlier days without splitting by group.

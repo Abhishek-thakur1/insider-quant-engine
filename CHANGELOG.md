@@ -2,6 +2,14 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## `feat/ev-shadow` (PR #41): merged and deployed 29 Oct evening, migration 0007, **shadow ON** (`EV_SHADOW_ENABLED=true`, owner 28 Oct; first boot 30 Oct)
+
+- **EV-reject shadow outcomes** (AGENTS.md §11.26, `docs/proposals/ev-shadow/DESIGN.md`). A fire rejected by the EV gate gets a simulated outcome under the paper-trade rules, in a new table, `ev_shadow_outcomes` (migration 0007).
+- **Isolation:** that table is separate from `paper_trades`, so it is out of every stat, API endpoint and dashboard total. No alert and no gate change.
+- **Switch and bounds:** `EV_SHADOW_ENABLED=true` turns it on. 50 rows a day, 20 open at once.
+- **Refactor:** the level computation moved, unchanged, to `src/core/tradeLevels.ts`, so the pipeline and the shadow share it.
+- **Tests:** `tests/evShadow.test.ts`. `tests/migrate.test.ts` now lists 0007.
+
 ## New listing `NSE:JPL-EQ` (Jio Platforms), live from 2026-10-29 (config only, owner decision 28 Oct)
 
 - **Population change, its own group `new_listing`** (AGENTS.md §11.27.1): appended as the last entry of `watchlist.json` on the data volume, 51 → 52 stocks, for a subscription of **53/100**.
