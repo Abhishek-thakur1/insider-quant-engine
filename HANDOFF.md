@@ -2,15 +2,15 @@
 
 The state of the deploy queue and what waits on the owner. **`AGENTS.md` is the source of truth for how the system works.** This file only tracks order and status. Update it in the same PR as any change to the queue.
 
-Last updated: **2026-10-29, 22:20 IST**.
+Last updated: **2026-10-31, 19:20 IST**.
 
 ## Running on EC2
 
 | Container | Code | Image | State |
 |---|---|---|---|
-| `quant_engine` | `v2` `825726c` (PR #41 on top of #32, #22, #29); `EV_SHADOW_ENABLED=true` | `c751a03b8678` | Created; the 09:00 cron starts it. First boot with the EV shadow: Fri 30 Oct. Watchlist **52 stocks from 29 Oct (53/100)**: the 51 from 28 Oct + `NSE:JPL-EQ` (group `new_listing`); backups `watchlist.json.bak-20261027-25`, `watchlist.json.bak-20261028-prejpl` |
+| `quant_engine` | `v2` `696ad65` (#41, #44, #38, #37, #40, #45 on top of #32, #22, #29); `EV_SHADOW_ENABLED=true` | `afe0c959e652` | Created; the 09:00 cron starts it. **First session with #44/#38/#37/#40/#45: Mon 2 Nov.** Watchlist 52 stocks (53/100) incl. `NSE:JPL-EQ` (group `new_listing`) |
 | `quant_api` | `v2` `825726c` (PR #41) | `fb075db5737c` | running; 7/7 routes 200 after the 29 Oct deploy |
-| `quant_scheduler` | `v2` `45236ee` (PR #46) | `48819ab8155f` | running; 16:00 dump to `/var/backups/iqe` + S3 (first upload ever: 29 Oct 22:03, verified) |
+| `quant_scheduler` | `v2` `45236ee` (PR #46) | `48819ab8155f` | running; 16:00 dump to `/var/backups/iqe` + S3 (verified on schedule 30 Oct: 142,185 B, sizes match) |
 
 - **#29 deploy (26 Oct, evening):**
   - backup `~/backups/pre-orphanfix-20261026T1651Z.dump` (3 TABLE DATA entries);
@@ -48,31 +48,27 @@ Last updated: **2026-10-29, 22:20 IST**.
 | Wed 28 Oct | New listing `NSE:JPL-EQ` (Jio Platforms), group `new_listing`, 51 → 52 (AGENTS §11.27.1) | watchlist file only | **done** 22:00, live 29 Oct (53/100) |
 | Thu 29 Oct | PR #41: EV-reject shadow outcomes + migration 0007, **shadow ON** | engine + API | **deployed** 21:57–22:00 (`825726c`; engine `c751a03b8678` Created, API `fb075db5737c`). 0007 applied, dump **4 TABLE DATA**. `.env.bak-20261029-pre41`. Rollback tags `rollback-609755e` (engine), `rollback-5e95059` (API). Backups `pre-evshadow41-20261029T1627Z.dump` (3), `post-0007-20261029T1628Z.dump` (4) |
 | Thu 29 Oct | PR #46: S3 backup fix | `quant_scheduler` only | **deployed** 22:02 (`45236ee`, image `48819ab8155f`; rollback tag `rollback-pre46` → `48ed31bfd5fb`). Manual run: dump 4 TABLE DATA, **S3 upload verified**. The scheduler `/tmp` held 7 old dumps: copied to `~/backups/scheduler-tmp-pre46/` before the recreate. **Leftover cleanup done** (owner OK, 22:06): `rmdir` of exactly 24 empty `/tmp/paper_trades_*.sql` dirs, 0 failed; list in `~/evidence/2026-10-29/cleanup_removed_24.txt`. The 7 saved old dumps were uploaded once to the S3 prefix (sizes match; prefix holds 8) |
-| **Fri 30 Oct** | PR #44: per-symbol `processTick` serialisation (bug fix) | engine | own backup + tag |
-| **Fri 30 Oct** | PR #33: near-miss digest (top 10 by score + counts) | host script copy only (no engine change) | only if it is still host-script-only at deploy |
-| **Fri 30 Oct** | PR #38: VWAP key TTL | engine | own backup + tag |
-| **Fri 30 Oct** | PR #37: staleness message (log text) | engine | own backup + tag |
-| **Sat 31 Oct** (market closed) | PR #40 (VWAP 09:15 cut-off) **+** PR #45 (15:15 timer exit) | engine | **ONE series break, dated 31 Oct** (first session Mon 2 Nov) in AGENTS.md, CHANGELOG, HANDOFF and the study's deviation log. Merge v2 into #45 first: keep both lines after `positionTracker.init()` (timer start and evShadow init) |
+| Sat 31 Oct (moved from Fri; owner OK) | PR #44: per-symbol `processTick` serialisation | engine | **deployed** 19:04 (`e66a199`, image `4a447d238047`; rollback tag `rollback-45236ee` → `c751a03b8678`; backup `pre-44-20261031T1332Z.dump`, 4 TABLE DATA) |
+| Sat 31 Oct (moved from Fri) | PR #33: near-miss digest | host script + `check.sh` hook | **deployed** 19:06: script == v2 `a28d57c`; hook after the summary line; backup `check.sh.bak-20261031-pre33`; dump `pre-33-20261031T1335Z.dump`. First digest Mon 2 Nov 15:45 |
+| Sat 31 Oct (moved from Fri) | PR #38: VWAP key TTL | engine | **deployed** 19:08 (`cfcb734`, image `e282ddba76c2`; `rollback-e66a199` → `4a447d238047`; `pre-38-20261031T1337Z.dump`) |
+| Sat 31 Oct (moved from Fri) | PR #37: staleness message | engine | **deployed** 19:10 (`0845761`, image `bbfe21291ad4`; `rollback-cfcb734` → `e282ddba76c2`; `pre-37-20261031T1339Z.dump`) |
+| **Sat 31 Oct** | PR #40 (VWAP 09:15) **+** PR #45 (15:15 timer exit): **ONE series break, dated 2026-10-31**, first session Mon 2 Nov | engine | **deployed** #40 19:13 (`5a4a78a`, image `462afa35612d`; `rollback-0845761` → `bbfe21291ad4`; `pre-40-20261031T1342Z.dump`), then #45 19:17 (`696ad65`, image `afe0c959e652`; `rollback-5a4a78a` → `462afa35612d`; `pre-45-20261031T1346Z.dump`). Recorded in AGENTS §11.25/§11.30, CHANGELOG and the study (deviation 15) |
 | On the owner's word | Wide coverage: RULE-85's extra 33 names → 85/100 | watchlist file only | precondition: `quant_screener` stays absent |
 
 **Evening timing:** deploys start no earlier than 16:05 on trading days, after the 15:35 log export, the 15:45 summary and the 16:00 backup have all finished. No merge of a code PR before its evening, and none in market hours.
+
+**Why Friday moved:** the 15:47 check-in on Fri 30 Oct only fired on Sat 31 Oct 18:58 (the PC was asleep). Friday's gates had all passed; nothing was deployed on Friday. The owner approved running Friday's four and #40 + #45 on Saturday, in order, each with its own backup and tag.
 
 **Independent reviews (each in its own clone, 28 Oct): all passed, with no blocker.** #44 APPROVE. #40, #45, #38, #37, #33 and #46 APPROVE WITH NITS, all nits fixed and pushed. #41 was approved earlier.
 
 **Pre-check (28 Oct):** all eight PRs (#41, #46, #44, #33, #38, #37, #40, #45) merged together in deploy order give 394/394 tests, typecheck 0, lint 20. There is one code conflict, the #41/#45 `websocket.ts` line above.
 
-## Open PRs (28 Oct, evening)
+## Open PRs (31 Oct, evening)
 
-Merged as docs/study only: #34, #36 (27 Oct); #35, #42, #39, #28 (28 Oct). Code merged on its evening: #29, #22, #32, #41, #46 (29 Oct). Docs: #47-#50. Closed: #43, split by the owner into #44 + #45.
+Merged as docs/study only: #34, #36 (27 Oct); #35, #42, #39, #28 (28 Oct). Code merged on its evening: #29, #22, #32, #41, #46 (29 Oct); #44, #33, #38, #37, #40, #45 (31 Oct). Docs: #47-#51, #53. Closed: #43, split by the owner into #44 + #45.
 
 | PR | Title (short) | Type | Runtime effect if deployed | Evening / condition | Independent review | Status |
 |---|---|---|---|---|---|---|
-| #44 | `processTick` serialised per symbol | code (bug fix) | removes the double close of one position by overlapping ticks | **Fri 30 Oct** | APPROVE (28 Oct) | open |
-| #40 | VWAP 09:15 session gate | code | equity VWAP and the Nifty reference start at 09:15; kill switch | **Sat 31 Oct**, with #45 (one series break) | APPROVE WITH NITS (28 Oct), nits fixed `7fda9d0` | open |
-| #45 | 15:15 square-off by timer | code | TIME exits at the last known price from 15:15; kill switch | **Sat 31 Oct**, with #40 (one series break) | APPROVE WITH NITS (28 Oct), fixed `c315780` (15:15–15:30 window, 120 s max price age, stopped on shutdown) | open |
-| #38 | 36 h TTL on `vwap:*` keys | code | daily VWAP keys expire | **Fri 30 Oct** | APPROVE WITH NITS (28 Oct), fixed `ac60834` | open |
-| #37 | Staleness message names the file in use | code (log text) | boot warning text only | **Fri 30 Oct** | APPROVE WITH NITS (28 Oct), fixed `124c9a2` | open |
-| #33 | Near-miss digest (top 10 by score) | host script | 15:45 admin message lists rejected fires | **Fri 30 Oct** (host script only) | APPROVE WITH NITS (28 Oct), fixed `5b12ab0` | open |
 | #31 | Nifty ORE evaluates the lock candle | code (detector) | changes when ORE can fire | **hold** | — | open |
 | #52 | `.gitattributes` (LF line endings) | repo config | none at runtime; diff 1 file, +14 lines (renormalize changes nothing) | owner decision | — | open, not merged |
 | dashboard #9 | Today: alerted vs recorded-only | frontend | Today view split | owner's word; never merge `main` 09:00–15:30 | preview verified 23 Oct | open |
