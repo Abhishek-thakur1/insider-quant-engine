@@ -1709,6 +1709,7 @@ Pure logic lives in `src/api/publicData.ts`, wired in `src/api/server.ts`. There
   - open trades add `gated`, `regimeClass` and `dataQuality`.
 
   Existing fields are unchanged.
+- **Date validation** (audit of 31 Oct, branch `fix/history-date-validation`): `/api/trades/history?date=` and `/api/signals?date=` accept only a real calendar date (`isIsoDate` in `publicData.ts`). Anything else gets **400** `{success:false, error:'date must be YYYY-MM-DD'}` before any query. Before, a bad history date reached Postgres and came back as a 500 carrying the database's error text, and `/api/signals` let impossible dates such as 2026-02-30 through the same way. A missing or empty `date` still means no date filter.
 - **`GET /api/health`**: **coarse** public health, per the owner, because the dashboard has no login.
   - `status`: `live`, `stale`, `closed` or `holiday`.
     - `live` means the newest closed 5-minute Nifty candle in `ema_shadow:nifty:bars5` ended within 10 minutes, during 09:15–15:30 IST on a trading day.
