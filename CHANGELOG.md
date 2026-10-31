@@ -2,6 +2,12 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## `fix/tick-serialization` (PR #44): merged and deployed 31 Oct evening (owner moved it from Fri 30 Oct), first session Mon 2 Nov
+
+- **Bug fix:** two overlapping ticks could close one position twice, giving a double history row and a double `pnl:daily` (AGENTS.md §11.29). `processTick` is now serialised per symbol.
+- **Test:** `tests/tickSerialization.test.ts`, which fails without the fix.
+- Split out of PR #43 (owner, 28 Oct).
+
 ## `fix/s3-backup` (PR #46): merged and deployed 29 Oct evening, scheduler only (IAM policy applied by the owner 28 Oct)
 
 - **The 16:00 S3 upload never worked.** The script bind-mounted a path that only existed inside the scheduler, so Docker created an empty directory on the host instead. There are 23 of them in /tmp by 28 Oct.

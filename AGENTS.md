@@ -1837,6 +1837,16 @@ No hand-picked names, and none of RULE-85's extra 33.
 - Before 09:00: copy it back.
 - After 09:00: no restart in market hours; report only.
 
+## 11.29 processTick serialised per symbol: no double close (2026-10-28, PR #44; deployed 31 Oct evening, first session Mon 2 Nov)
+
+**Bug (pre-existing):** the tick handler calls `positionTracker.processTick` without awaiting it. Two overlapping calls for one symbol could both see a position open and both close it: two `trades:history` rows, `pnl:daily` counted twice, and two Postgres UPDATEs (the second one matched nothing). This was the "LOW 1" overlap noted in the PR #22 review.
+
+**Fix:** `processTick` queues calls per symbol (`tickQueues`); each runs `processTickNow` when the previous one for that symbol has finished. Other symbols are not delayed.
+
+**Tests:** `tests/tickSerialization.test.ts`. The double-close test fails when the queue is removed (checked).
+
+**Behaviour:** close outcomes are unchanged; only the duplicate second close is gone. This is the prerequisite for the 15:15 timer exit (PR "timer square-off").
+
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
 The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 

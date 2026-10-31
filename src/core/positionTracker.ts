@@ -167,7 +167,25 @@ class PositionTracker {
 		return tradeId
 	}
 
-	public async processTick(symbol: string, tick: TickData) {
+	// ── Per-symbol serialisation (2026-10-28) ────────────────────────────────────
+	// Ticks call processTick without awaiting it. Two overlapping calls on one symbol could both close
+	// the same position (each saw it open before the other's close finished): two trades:history rows,
+	// pnl:daily counted twice, and two Postgres UPDATEs. Calls for a symbol now run one after another;
+	// each reads the open positions only when its turn comes, so a later call never sees a position an
+	// earlier one closed. Ticks for other symbols are not delayed.
+	private tickQueues = new Map<string, Promise<void>>()
+
+	public processTick(symbol: string, tick: TickData): Promise<void> {
+		const run = (this.tickQueues.get(symbol) ?? Promise.resolve()).then(() => this.processTickNow(symbol, tick))
+		const tail = run.catch(() => {})
+		this.tickQueues.set(symbol, tail)
+		void tail.then(() => {
+			if (this.tickQueues.get(symbol) === tail) this.tickQueues.delete(symbol)
+		})
+		return run
+	}
+
+	private async processTickNow(symbol: string, tick: TickData) {
 		const positions = this.openPositions.get(symbol)
 		if (!positions || positions.length === 0) return
 
