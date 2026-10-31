@@ -110,9 +110,9 @@ Merged as docs/study only: #34, #36 (27 Oct); #35, #42, #39, #28 (28 Oct). Code 
 |---|---|---|---|---|---|---|
 | #31 | Nifty ORE evaluates the lock candle | code (detector) | changes when ORE can fire | **hold**; suggested: review Mon/Tue evening, deploy Wed 4 Nov after two clean sessions | — | open |
 | #56 | Mobile backend readiness audit | docs | none | owner review; **do not merge** before | — | open |
-| #57 | `/api/trades/history` 400 on a bad date | code (API only) | bad dates get 400, not a 500 with DB text | an evening, `quant_api` only | — | open, not merged |
-| #58 | Redis host port bound to 127.0.0.1 | compose (Redis) | Redis no longer listens on public interfaces | **owner's word**; recreate `quant_redis` only | — | open, not merged |
-| dashboard #10 | Stats exclude flagged rows (toggle) | frontend | stat cards/curve leave out flagged rows by default | owner's word; never merge `main` 09:00–15:30 | — | open, not merged |
+| #57 | `/api/trades/history` 400 on a bad date | code (API only) | bad dates get 400, not a 500 with DB text | **Thu 5 Nov evening** (owner, 31 Oct), `quant_api` only; not before | — | open, not merged |
+| #58 | Redis host port bound to 127.0.0.1 | compose (Redis) | Redis no longer listens on public interfaces | **Tue 3 Nov evening only, if Mon 2 Nov was clean** (owner, 31 Oct): after 16:05 and the three checks; Redis snapshot first; recreate `quant_redis` only; verify API health that evening and the engine's next boot (Wed 09:00); rollback in the PR | — | open, not merged |
+| dashboard #10 | Stats exclude flagged rows (toggle) | frontend | stat cards/curve leave out flagged rows by default | **Mon 2 Nov evening, after 15:30** (owner, 31 Oct), once the preview checks pass; same checks as dashboard #9 (preview, then production on all three projects); not before | — | open, not merged |
 
 **Reviews:** each independent review runs in its **own clone** (`git clone --shared`), not a worktree of this repo. Worktrees share one `.git`, so a reviewer's git commands could collide with mine ("another command ran in this repository at the same time", owner, 28 Oct).
 
@@ -144,7 +144,7 @@ Group `new_listing`, added 28 Oct (listing day), first session 29 Oct. See AGENT
 
 ## Mobile backend decisions (owner, 31 Oct; from the audit, PR #56)
 
-1. **HTTPS entry:** the existing Vercel route + tokens now. Investigate an API-only subdomain behind a reverse proxy that keeps the Fyers redirect and `quant_auth` exactly as they are (report in `docs/mobile-backend-readiness/HTTPS_SUBDOMAIN.md`, PR #56).
+1. **HTTPS entry:** the existing Vercel route + read-only per-device tokens. The API-only subdomain (report in `docs/mobile-backend-readiness/HTTPS_SUBDOMAIN.md`, PR #56: feasible without touching the Fyers redirect) is **parked** (owner, 31 Oct): no domain, DNS or firewall work.
 2. **Auth:** per-device tokens.
 3. **Distribution:** Play **internal testing only**.
 4. **Push:** FCM direct, later.
@@ -153,12 +153,21 @@ Group `new_listing`, added 28 Oct (listing day), first session 29 Oct. See AGENT
 7. **Restore test:** yes, in a **throwaway container** with a memory cap, on an evening after 16:05, never inside the live Postgres; recorded in `docs/RUNBOOK.md` (procedure there). Planned for Mon 2 Nov evening (non-engine).
 8. **Git history:** leave it; no Fyers secret rotation now.
 
-**Evening rules:** freeze and one change per evening. **Mon 2 Nov evening is non-engine only** (first session with five engine changes): the restore test.
+**Evening rules:** freeze and one change per evening. **No engine change on Mon 2 Nov** (first session with five engine changes).
+
+**Schedule (owner, 31 Oct):**
+
+| Evening | Item | Condition |
+|---|---|---|
+| Mon 2 Nov, after 15:30 | dashboard #10 merge + deploy (frontend only) | preview checks pass; then production checks on all three projects |
+| Mon 2 Nov, after 16:05 | restore test in a throwaway container (256 MB cap, `--network none`) | the three gates; result in `docs/RUNBOOK.md` |
+| Tue 3 Nov, after 16:05 | #58 Redis bound to 127.0.0.1 | Monday clean; the three gates; snapshot first; `quant_redis` only |
+| Thu 5 Nov evening | #57 API date validation | `quant_api` only |
+
+#31 stays as in the table above.
 
 ## Waiting on the owner
 
-- **`chmod 600` on `.env`** (audit D4; no restart needed, nothing reads it as another user): the exact command is `chmod 600 ~/insider-quant-engine/.env ~/insider-quant-engine/.env.bak-20261029-pre41`. Not run yet.
-- **#58 Redis binding:** apply on your word (steps and rollback in the PR).
 - **The 15 older capital-skipped rows** (5–16 Oct): include them in the restore or not. The default is not.
 - **The old `vwap:*` keys:** the cleanup proposal in PR #38 (`docs/proposals/vwap-key-cleanup.md`), not run.
 

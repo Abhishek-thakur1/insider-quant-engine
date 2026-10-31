@@ -30,6 +30,7 @@ From 20 Oct the per-deploy evidence (logs, dumps, tags) lives in `HANDOFF.md`, `
 | 2026-10-31 | `5a4a78a` | VWAP from 09:15 (#40), series break with #45 | engine `462afa35612d` | `rollback-0845761` → `bbfe21291ad4`; or `VWAP_SESSION_GATE=false` |
 | 2026-10-31 | `696ad65` | 15:15 timer exit (#45), series break with #40 | engine **`afe0c959e652`** (also tagged `deployed-696ad65`) | `rollback-5a4a78a` → `462afa35612d`; or `SQUARE_OFF_TIMER=false` |
 | 2026-10-31 | host only | extended 09:25 status message (`check.sh` sha `599723541a28…`) | host only | `check.sh.bak-20261031-prestatus` |
+| 2026-10-31 21:42 | host only | `chmod 600` on `.env` and `.env.bak-20261029-pre41` (audit D4, owner OK; was 664). No restart; content hashes unchanged; the monitor's `.env` read and `docker compose config` checked OK | host only | `chmod 664` on the same two files |
 
 Image tags are cumulative: each `rollback-*` tag is the image from before that change, so it also removes every later one. See the rollback card in `HANDOFF.md`.
 
