@@ -1,0 +1,14 @@
+# Line endings: every text file is stored and checked out with LF, whatever the
+# client's core.autocrlf says. The engine's shell scripts, crontab and Dockerfiles
+# run on Linux, and a CRLF blob (from a Windows checkout written back with
+# `git hash-object --no-filters`) caused whole-file merge conflicts on 29 Oct.
+* text=auto eol=lf
+
+# Windows-only helper: keep CRLF so PowerShell reads it as written.
+*.ps1 text eol=crlf
+
+# Binary: never converted or diffed as text.
+*.gz binary
+*.png binary
+*.jpg binary
+*.dump binary
