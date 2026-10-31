@@ -2,7 +2,7 @@
 
 The state of the deploy queue and what waits on the owner. **`AGENTS.md` is the source of truth for how the system works.** This file only tracks order and status. Update it in the same PR as any change to the queue.
 
-Last updated: **2026-10-31, 19:20 IST**.
+Last updated: **2026-10-31, 19:45 IST**.
 
 ## Running on EC2
 
@@ -16,6 +16,45 @@ Last updated: **2026-10-31, 19:20 IST**.
   - backup `~/backups/pre-orphanfix-20261026T1651Z.dump` (3 TABLE DATA entries);
   - rollback tag `insider-quant-engine-quant_engine:rollback-1b2ec34` → `5250090191c8`;
   - engine logs saved to `~/evidence/2026-10-26/engine_pre_recreate_29.log`.
+
+## Rollback card (first session Mon 2 Nov; read before 09:00)
+
+The engine runs v2 `696ad65`, image `afe0c959e652`, also tagged `deployed-696ad65` for rolling forward. **Every action here recreates the engine, so it is allowed only outside 09:00–15:30 IST** (before about 08:55, or after 15:35). In market hours: report only. Before any of it: copy the logs and Telegram the owner.
+
+```bash
+cd ~/insider-quant-engine
+docker logs quant_engine > ~/evidence/$(TZ=Asia/Kolkata date +%F)/engine_pre_rollback.log 2>&1
+~/evidence/monitor/send_note.sh "Rolling back <what>, engine only, outside market hours."
+```
+
+| PR | Change | Kill switch (turns off this change alone) | Image rollback tag (cumulative, see below) | Lasting revert on v2 |
+|---|---|---|---|---|
+| #45 | 15:15 TIME exit by timer | `SQUARE_OFF_TIMER=false` | `rollback-5a4a78a` → `462afa35612d` | `git revert -m 1 696ad65` |
+| #40 | VWAP from 09:15 | `VWAP_SESSION_GATE=false` | `rollback-0845761` → `bbfe21291ad4` (also removes #45) | `git revert -m 1 5a4a78a` |
+| #37 | boot staleness message (log text) | none | `rollback-cfcb734` → `e282ddba76c2` (also removes #40, #45) | `git revert -m 1 0845761` |
+| #38 | 36 h TTL on `vwap:*` keys | none | `rollback-e66a199` → `4a447d238047` (also removes #37, #40, #45) | `git revert -m 1 cfcb734` |
+| #44 | per-symbol tick serialisation | none | `rollback-45236ee` → `c751a03b8678` (removes all five; #41 stays) | `git revert -m 1 e66a199`, **only together with #45**, which is built on it |
+
+**A. Kill switch: one change only, no rebuild (#40, #45).**
+```bash
+cp -p .env .env.bak-$(date +%Y%m%d-%H%M)
+echo 'SQUARE_OFF_TIMER=false' >> .env        # #45; or: echo 'VWAP_SESSION_GATE=false' >> .env   # #40
+docker compose up --no-start --no-deps --no-build --force-recreate quant_engine   # a recreate re-reads .env; stays Created, the 09:00 cron starts it
+docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' quant_engine | grep -E '^(SQUARE_OFF_TIMER|VWAP_SESSION_GATE|EV_SHADOW_ENABLED)='
+```
+Undo: delete that line from `.env` (or restore the `.env.bak-…`), then run the same recreate.
+
+**B. Image rollback (#37, #38, #44, or several).** The tags are cumulative: each one is the image from *before* that PR, so it also removes every PR deployed after it (the table says which). Pick the tag, then:
+```bash
+docker tag insider-quant-engine-quant_engine:rollback-5a4a78a insider-quant-engine-quant_engine:latest   # example: before #45
+docker compose up --no-start --no-deps --no-build --force-recreate quant_engine
+docker inspect -f '{{.State.Status}} {{.Image}}' quant_engine        # expect: created sha256:462afa35612d…
+```
+Roll forward: `docker tag insider-quant-engine-quant_engine:deployed-696ad65 insider-quant-engine-quant_engine:latest`, then the same recreate.
+
+**Make it last:** the next `docker compose build` rebuilds from v2 and brings the change back. For a lasting rollback, open a PR on v2 with the revert from the table, and merge it on an evening.
+
+**Not engine:** #33 digest: `cp -p ~/evidence/monitor/check.sh.bak-20261031-pre33 ~/evidence/monitor/check.sh`, no restart. #41 EV shadow: delete `EV_SHADOW_ENABLED=true` from `.env`, then recreate as in A.
 
 ## Deploy order (owner, 26 Oct; this week's schedule replaced by the owner on 28 Oct)
 
