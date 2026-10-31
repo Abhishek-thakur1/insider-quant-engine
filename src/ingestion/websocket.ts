@@ -4,7 +4,7 @@ import path from 'path'
 import { EventEmitter } from 'events'
 import { ENV } from '../config/env.js'
 import { bootRedis, redisClient } from '../config/redis.js'
-import { updateVwap, getVwap, updateNiftyBias, warnIfVwapMissing } from '../utils/vwapUtils.js'
+import { updateSessionVwap, getVwap, updateNiftyBias, warnIfVwapMissing } from '../utils/vwapUtils.js'
 import { buildOptionUniverse, updateOptionTick, hasATMShifted, OPTION_STRIKE_COUNT } from '../utils/optionUtils.js'
 import { seedHistoricalVwap, fetchAndSeedSymbol, getTodayString } from './vwapSeeder.js'
 import { feedTick } from '../utils/candleAggregator.js'
@@ -24,7 +24,8 @@ import { notifyAdmin } from '../utils/adminNotify.js'
 import { getISTDateString } from '../utils/marketHours.js'
 
 // [NEW] Regime detector feed
-import { pushNiftyReturn, restoreRegimeReturns } from '../utils/regimeDetector.js'
+import { restoreRegimeReturns } from '../utils/regimeDetector.js'
+import { getLastNiftyVwap, onNiftyTick, setLastNiftyVwap } from '../core/niftyMinuteState.js'
 import { describeBootCleanup, runBootCleanup } from '../core/bootCleanup.js'
 
 // Nifty detectors
@@ -43,66 +44,8 @@ import { VolatilityContraction } from '../detectors/v2/high_alpha/VolatilityCont
 
 const NIFTY_SYMBOL = 'NSE:NIFTY50-INDEX'
 
-// ── Nifty 1-minute state tracker ─────────────────────────────────────────────
-// Builds 1-minute O/H/L/C candles from Nifty spot ticks. On each candle close:
-//   1. computes the return % and pushes it to the Shannon entropy engine
-//   2. advances the Nifty session reference price (see below)
-//
-// [FIX — root cause #1] The Nifty VWAP used to be updated on EVERY tick with a
-// hardcoded weight of 1: `updateVwap(NIFTY, ltp, 1)`. With a constant weight,
-// cumulativePV/cumulativeVol collapses to an unweighted arithmetic mean of tick
-// PRICES, biased by tick arrival rate rather than by volume or by time. Combined
-// with the index never being seeded, the reference every Nifty detector filters
-// on was a mean of ticks since process boot.
-//
-// NSE indices have no traded volume, so a true VWAP is not computable from index
-// data. What IS well-defined is an equal-weight-per-minute mean of the candle
-// typical price (H+L+C)/3 — a session TWAP. We now advance it once per closed
-// minute, which matches exactly how vwapSeeder seeds the index, so the seeded
-// history and the live session are on the same weighting.
-//
-// The value is cached in memory so the per-tick bias check costs no Redis read.
-interface MinuteCandle {
-	open: number
-	high: number
-	low: number
-	close: number
-	startTs: number
-}
+// The Nifty 1-minute tracker (regime returns + session reference) lives in core/niftyMinuteState.ts.
 
-const MINUTE_MS = 60 * 1000
-let _niftyMinute: MinuteCandle | null = null
-let lastNiftyVwap = 0
-
-const updateNiftyMinuteState = async (price: number): Promise<void> => {
-	const now = Date.now()
-
-	if (!_niftyMinute) {
-		_niftyMinute = { open: price, high: price, low: price, close: price, startTs: now }
-		return
-	}
-
-	if (now - _niftyMinute.startTs < MINUTE_MS) {
-		_niftyMinute.high = Math.max(_niftyMinute.high, price)
-		_niftyMinute.low = Math.min(_niftyMinute.low, price)
-		_niftyMinute.close = price
-		return
-	}
-
-	// Candle closed.
-	const c = _niftyMinute
-	_niftyMinute = { open: price, high: price, low: price, close: price, startTs: now }
-
-	// 1. Regime engine
-	const returnPct = ((c.close - c.open) / c.open) * 100
-	await pushNiftyReturn(returnPct)
-
-	// 2. Session reference price — weight 1 for this minute, typical price from H/L/C.
-	//    updateVwap's optional high/low params yield typicalPrice = (h + l + c) / 3.
-	lastNiftyVwap = await updateVwap(NIFTY_SYMBOL, c.close, 1, c.high, c.low)
-}
-
-// ── END Nifty minute state tracker ───────────────────────────────────────────
 
 // Engine State
 const strategyRouter = new Map<string, IDetector[]>()
@@ -117,6 +60,7 @@ tickEmitter.setMaxListeners(200)
 
 import { positionTracker } from '../core/positionTracker.js'
 import { pool } from '../config/db.js'
+import { EvShadowTracker, evShadowEnabled, getEvShadow, pgEvShadowStore, setEvShadow } from '../core/evShadow.js'
 import { schemaProblem } from '../db/migrate.js'
 import { signalLog } from '../db/signalLog.js'
 import { registerWatchlistSources, setSymbolSource } from '../core/symbolSource.js'
@@ -202,6 +146,12 @@ export const startLiveEngine = async () => {
 	if (schemaIssue) console.error(`[Engine] ❌ Database schema not current: ${schemaIssue}`)
 	await positionTracker.init()
 	positionTracker.startSquareOffTimer() // 15:15 TIME exit without waiting for a traded tick (SQUARE_OFF_TIMER=false to disable)
+	// EV-reject shadow outcomes (observation only, off unless EV_SHADOW_ENABLED=true; core/evShadow.ts).
+	if (evShadowEnabled()) {
+		const evShadow = new EvShadowTracker(pgEvShadowStore(pool))
+		await evShadow.init()
+		setEvShadow(evShadow)
+	}
 
 	const activeUniverse = [...watchlist]
 	const activeUniverseSet = new Set<string>(activeUniverse)
@@ -312,9 +262,9 @@ export const startLiveEngine = async () => {
 
 	// Prime the in-memory Nifty reference from the seeded value so bias checks
 	// work from the very first tick rather than waiting a full minute.
-	lastNiftyVwap = (await getVwap(NIFTY_SYMBOL)) ?? 0
-	if (lastNiftyVwap > 0) {
-		console.log(`[Engine] 🎯 Nifty session reference seeded at ₹${lastNiftyVwap.toFixed(2)}`)
+	setLastNiftyVwap((await getVwap(NIFTY_SYMBOL)) ?? 0)
+	if (getLastNiftyVwap() > 0) {
+		console.log(`[Engine] 🎯 Nifty session reference seeded at ₹${getLastNiftyVwap().toFixed(2)}`)
 	} else {
 		console.warn(
 			'[Engine] ⚠️  Nifty session reference NOT seeded — bias/VWAP filters stay off until the first 1-min candle closes.',
@@ -340,16 +290,18 @@ export const startLiveEngine = async () => {
 			if (rawTick.symbol === NIFTY_SYMBOL) {
 				// Advances the regime engine and the session reference price on each
 				// closed 1-min candle (non-blocking).
-				updateNiftyMinuteState(rawTick.ltp).catch((e) =>
+				onNiftyTick(rawTick.ltp).catch((e) =>
 					console.error('[Nifty] Minute state update error:', e),
 				)
 
 				// Bias is still evaluated per tick, but against the cached minute-anchored
 				// reference instead of a tick mean. Skipped until the reference exists so a
 				// seeder failure can never silently pin the bias to a bogus level.
-				if (lastNiftyVwap > 0) await updateNiftyBias(rawTick.ltp, lastNiftyVwap)
+				const niftyRef = getLastNiftyVwap()
+				if (niftyRef > 0) await updateNiftyBias(rawTick.ltp, niftyRef)
 
 				feedTick(NIFTY_SYMBOL, rawTick.ltp, liveTick.volume)
+				getEvShadow()?.onTick(NIFTY_SYMBOL, rawTick.ltp, liveTick.timestamp).catch(() => {}) // observation only, never awaited
 
 				// Shadow only; a failure here must never touch the live Nifty stack.
 				try {
@@ -400,8 +352,10 @@ export const startLiveEngine = async () => {
 
 			// 3. Route Equities
 			if (activeUniverseSet.has(rawTick.symbol)) {
-				await updateVwap(rawTick.symbol, liveTick.price, liveTick.volume)
+				// Session-gated (09:15 IST): the pre-open auction print no longer enters the VWAP.
+				await updateSessionVwap(rawTick.symbol, liveTick.price, liveTick.volume, liveTick.timestamp)
 				feedTick(rawTick.symbol, liveTick.price, liveTick.volume)
+				getEvShadow()?.onTick(rawTick.symbol, liveTick.price, liveTick.timestamp).catch(() => {}) // observation only, never awaited
 				const strategies = strategyRouter.get(rawTick.symbol)
 				if (strategies) {
 					await Promise.all(strategies.map((s) => s.analyze(liveTick)))

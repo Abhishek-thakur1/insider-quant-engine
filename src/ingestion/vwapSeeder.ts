@@ -6,6 +6,7 @@ import { redisClient } from '../config/redis.js'
 import type { VwapState } from '../core/types.js'
 import { resolveScreenerFile } from '../screener/paths.js'
 import { getISTMinutes } from '../utils/marketHours.js'
+import { VWAP_TTL_SECS } from '../utils/vwapUtils.js'
 import { createSlidingWindowLimiter, isRateLimitError, retryDelayMs, type LimiterClock } from '../utils/rateLimit.js'
 import { QuotaStopError, type QuotaGate } from '../fyers/quota.js'
 import { engineGate } from '../fyers/engineGates.js'
@@ -69,7 +70,7 @@ export const fetchAndSeedSymbol = async (
 				cumulativeVol,
 				vwap: cumulativePV / cumulativeVol,
 			}
-			await redisClient.set(`vwap:${symbol}:${todayStr}`, JSON.stringify(state))
+			await redisClient.setEx(`vwap:${symbol}:${todayStr}`, VWAP_TTL_SECS, JSON.stringify(state))
 			return 'SEEDED'
 		}
 		return 'NO_DATA' // candles but zero total weight (e.g. all-zero volume)
