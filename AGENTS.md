@@ -79,7 +79,7 @@ Every entry checks `scheduler/trading_day.sh` first and does nothing on weekends
 | 09:10 | Token freshness check → admin alert if missing/stale | `liveness.sh` |
 | 15:17 | Random "market close" message | `market_message.sh close` |
 | 15:30 | `docker stop quant_engine`, stop `quant_auth` | `lifecycle.sh stop_engine` |
-| 16:00 | `pg_dump` (S3 upload currently broken — see RUNBOOK) | `db_backup.sh` |
+| 16:00 | `pg_dump` to `/var/backups/iqe` on the host (14 kept) + S3 upload, with a Telegram alert on failure (fixed by `fix/s3-backup`; before it, the upload never worked) | `db_backup.sh` |
 | 16:30 | **EOD screener** → tomorrow's watchlist (§11.11) | `lifecycle.sh run_screener` |
 | 17:15 | **Purge the token** (`rm` on the scheduler's own `token_store` mount) | `lifecycle.sh purge_token` |
 
@@ -1770,6 +1770,26 @@ On 26 Oct Nifty moved 22,386 → 22,700 with no Nifty alert, and the reasons had
 - **ORE note:** the call sites follow the current lock behaviour; if PR #31 (lock candle) merges, the
   `lock_candle_not_evaluated` record goes away with the early return.
 
+## 11.26 EV-reject shadow outcomes (2026-10-27, PR #41; deployed 29 Oct evening with migration 0007, **shadow ON** from the 30 Oct boot)
+
+**Purpose:** measure whether fires rejected by the EV hard gate would have won. Design: `docs/proposals/ev-shadow/DESIGN.md`.
+
+**How it works:**
+- On `rejectedAt === 'EV'`, `alertPipeline` calls the optional `deps.onEvRejected`. That is synchronous fire-and-forget in a `try`, after the existing logging and before the existing `return`.
+- `core/evShadow.ts` then records a simulated outcome in its own table, `ev_shadow_outcomes` (migration 0007).
+- **Rules:** the same levels (`core/tradeLevels.ts`, now shared with the pipeline), the same exits as `positionTracker.processTick` (TIME at 15:15, then stop, then target), and the same R.
+- **Nifty option fires** are evaluated on Nifty index ticks and flagged `index_proxy`.
+
+**Isolation and bounds:**
+- It never touches `paper_trades`, Redis trade keys, `pnl:daily`, alerts or stats. There are no Redis keys; state is in memory and reloaded from the table on a same-day restart.
+- **Bounds:** 50 rows a day, 20 open at once, one open per symbol + detector + side.
+- `EV_SHADOW_ENABLED=true` turns it on.
+- **After 0007, `pg_dump` has 4 TABLE DATA entries.**
+
+**Tests:** `tests/evShadow.test.ts` checks identical effects on and off, the same exits as the real tracker (including ticks exactly on the stop and the target), bounds, import-level isolation (only types and `tradeLevels`), no Redis or `positionTracker` calls, the daily cap across a same-day restart, and a non-blocking `init` (5 s timeout, then inactive for the day).
+
+**Deploy:** migration 0007 runs through `quant_api` after rebuilding both images. The owner turned the shadow on (`EV_SHADOW_ENABLED=true` in `.env`, 28 Oct decision); a recreate re-reads `.env`. Steps are in `DESIGN.md`. After 0007, the backup gate expects **4** TABLE DATA entries.
+
 ## 11.27 Watchlist population change, effective 2026-10-28 (config only; no code, no image)
 
 **This is a series break in the stock universe.** Every per-day count from 28 Oct onward covers a different set of stocks: fires, alerts, paper trades and stocks seen. Don't compare it with earlier days without splitting by group.
@@ -1793,7 +1813,31 @@ No hand-picked names, and none of RULE-85's extra 33.
 - Before 09:00: copy it back.
 - After 09:00: no restart in market hours; report only.
 
-## 11.29 processTick serialised per symbol: no double close (2026-10-28, branch `fix/tick-serialization`; PR, not deployed)
+### 11.27.1 New listing: Jio Platforms (`NSE:JPL-EQ`), effective 2026-10-29 (config only; owner decision 28 Oct)
+
+**A second population change, kept as its own group `new_listing`.** It's separate from the three groups in §11.27 (20-Oct live, owner pick, #34 rule). Any live table from 29 Oct onward reports this group on its own, or leaves it out. Its paper trades are analysed separately.
+
+**What changed:** `NSE:JPL-EQ` was appended as the **last entry** of `/app/data/watchlist.json` on 28 Oct at 22:00 IST, taking it from 51 to 52 stocks. Expected boot line on 29 Oct: `53/100 symbols — watchlist 52 + bench 0 + index 1 + options 0`.
+- **Date added:** 2026-10-28. The stock listed on NSE that day. **First session in the engine:** 2026-10-29.
+- **Why there's no group field:** the file is a flat `string[]`. Both readers (`websocket.ts` boot and `vwapSeeder.ts`) parse it as one, so a grouped object would break the boot. The group lives in the docs, like the §11.27 groups do.
+
+**Checks before the write:**
+- **The code:** it's in the public Fyers master `NSE_CM.csv` (master date 2026-10-27), as exactly one row: `JIO PLATFORMS LIMITED`, ISIN `INE0BJO01010`, series EQ, token 766830, lot 1, tick 0.10. The only other "JIO" equity is `JIOFIN`, a different company.
+- **An unknown symbol doesn't fail the chunk in the SDK.** In `fyers-api-v3` 1.7.0 (decoded offline), `subscribe` maps symbols to tokens through the `data/symbol-token` endpoint in batches of 500. It subscribes only the symbols returned in `validSymbol` and skips the rest. The residual risk: if that REST call errors as a whole, its whole batch (all 53) gets no tokens. The source can't show whether Fyers' server does that for one bad symbol, so the code was verified from the master instead.
+- **Seeder:** the 09:00 boot makes no Data-API calls (skipped before 09:15). A restart during the session makes at most 54, through the same limiter. A failure for one symbol stays with that symbol.
+
+**Known limits of this group:**
+- only 1-2 days of daily history, so ATR, ADR and the trend gate mean little for it;
+- first-days volatility and the listing price bands;
+- the 0.2% VWAP stop is likely to be hit often.
+
+**Depends on `quant_screener` staying absent.** If that job ever runs, it rewrites `watchlist.json` from its own rule and drops this name (and the §11.27 lists).
+
+**Rollback:** the backup is `watchlist.json.bak-20261028-prejpl` (sha `7bb595743f1b…`, the 51-stock file; the new file is `668c754d3cde…`).
+- Before 09:00: copy it back.
+- After 09:00: no restart in market hours; report only.
+
+## 11.29 processTick serialised per symbol: no double close (2026-10-28, PR #44; deployed 31 Oct evening, first session Mon 2 Nov)
 
 **Bug (pre-existing):** the tick handler calls `positionTracker.processTick` without awaiting it. Two overlapping calls for one symbol could both see a position open and both close it: two `trades:history` rows, `pnl:daily` counted twice, and two Postgres UPDATEs (the second one matched nothing). This was the "LOW 1" overlap noted in the PR #22 review.
 

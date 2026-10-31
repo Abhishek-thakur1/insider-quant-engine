@@ -2,11 +2,37 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## Unreleased: `fix/tick-serialization` (not merged, not deployed; owner: Fri 30 Oct)
+## `fix/tick-serialization` (PR #44): merged and deployed 31 Oct evening (owner moved it from Fri 30 Oct), first session Mon 2 Nov
 
 - **Bug fix:** two overlapping ticks could close one position twice, giving a double history row and a double `pnl:daily` (AGENTS.md §11.29). `processTick` is now serialised per symbol.
 - **Test:** `tests/tickSerialization.test.ts`, which fails without the fix.
 - Split out of PR #43 (owner, 28 Oct).
+
+## `fix/s3-backup` (PR #46): merged and deployed 29 Oct evening, scheduler only (IAM policy applied by the owner 28 Oct)
+
+- **The 16:00 S3 upload never worked.** The script bind-mounted a path that only existed inside the scheduler, so Docker created an empty directory on the host instead. There are 23 of them in /tmp by 28 Oct.
+- **Fix:**
+  - the dump is written straight to `/var/backups/iqe`, a host folder mounted at the same path;
+  - the upload names its region (`ap-south-1`);
+  - an upload failure sends a Telegram admin alert and no longer skips cleanup;
+  - the last 14 dumps are kept.
+- **Leftovers:** `scripts/ops/cleanup_backup_leftovers.sh` lists the empty leftover directories by exact path, and with `--apply` runs `rmdir` on exactly those.
+
+## `feat/ev-shadow` (PR #41): merged and deployed 29 Oct evening, migration 0007, **shadow ON** (`EV_SHADOW_ENABLED=true`, owner 28 Oct; first boot 30 Oct)
+
+- **EV-reject shadow outcomes** (AGENTS.md §11.26, `docs/proposals/ev-shadow/DESIGN.md`). A fire rejected by the EV gate gets a simulated outcome under the paper-trade rules, in a new table, `ev_shadow_outcomes` (migration 0007).
+- **Isolation:** that table is separate from `paper_trades`, so it is out of every stat, API endpoint and dashboard total. No alert and no gate change.
+- **Switch and bounds:** `EV_SHADOW_ENABLED=true` turns it on. 50 rows a day, 20 open at once.
+- **Refactor:** the level computation moved, unchanged, to `src/core/tradeLevels.ts`, so the pipeline and the shadow share it.
+- **Tests:** `tests/evShadow.test.ts`. `tests/migrate.test.ts` now lists 0007.
+
+## New listing `NSE:JPL-EQ` (Jio Platforms), live from 2026-10-29 (config only, owner decision 28 Oct)
+
+- **Population change, its own group `new_listing`** (AGENTS.md §11.27.1): appended as the last entry of `watchlist.json` on the data volume, 51 → 52 stocks, for a subscription of **53/100**.
+  - There was no image rebuild and no restart; the 29 Oct 09:00 boot picks it up.
+- **Code verified** against the public Fyers master (one row; ISIN `INE0BJO01010`).
+- **Backup:** `watchlist.json.bak-20261028-prejpl`.
+- **Note:** listed 28 Oct with 1-2 days of history. Its fires and paper trades are reported separately from the other groups.
 
 ## Watchlist 25 → 51, live from 2026-10-28 (config only, owner decision 27 Oct)
 
