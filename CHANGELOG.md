@@ -2,6 +2,10 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## `feat/near-miss-digest` (PR #33): host script, deployed 31 Oct evening (owner moved it from Fri 30 Oct); first digest Mon 2 Nov 15:45
+
+- **Near-miss digest** (AGENTS.md §11.24): `scripts/ops/near_miss_digest.sh` lists the day's rejected fires (detector, side, score, gate, reason, paper outcome so far), labelled "NOT ALERTS". It is sent as a second admin message after the 15:45 summary. Read-only; no engine rebuild.
+
 ## `fix/tick-serialization` (PR #44): merged and deployed 31 Oct evening (owner moved it from Fri 30 Oct), first session Mon 2 Nov
 
 - **Bug fix:** two overlapping ticks could close one position twice, giving a double history row and a double `pnl:daily` (AGENTS.md §11.29). `processTick` is now serialised per symbol.

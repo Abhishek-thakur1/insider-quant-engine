@@ -1770,6 +1770,19 @@ On 26 Oct Nifty moved 22,386 → 22,700 with no Nifty alert, and the reasons had
 - **ORE note:** the call sites follow the current lock behaviour; if PR #31 (lock candle) merges, the
   `lock_candle_not_evaluated` record goes away with the early return.
 
+## 11.24 Near-miss digest for the 15:45 admin summary (2026-10-26, PR #33, host script; deployed 31 Oct evening, first digest Mon 2 Nov 15:45)
+
+`scripts/ops/near_miss_digest.sh` prints every fire of the IST day that did **not** pass the filter: time,
+symbol, side, detector, score/threshold, rejecting gate (REGIME / EV / SCORE / FILTER ERROR) with the EV or
+regime reason, and the paper outcome so far (CLOSED R and exit reason, OPEN, SKIPPED, ORPHANED, or "no paper
+row" for EV/REGIME rejects, which create none). Headed **"NOT ALERTS, review only"**; paper R is as stored,
+before costs. One SELECT, read-only, sends nothing itself; lists the top `MAX_ROWS` (10, owner cap 28 Oct) rejected fires **by score**; the rest are counted by gate on one line.
+
+- **Hook (host, outside the repo):** `~/evidence/monitor/check.sh` MODE=summary sends it as a *second*
+  admin message after the existing summary, so the summary itself is unchanged. No engine, API or
+  container change; the script is copied alone to `~/evidence/monitor/` (no host `git pull`, so engine rebuild sources are untouched).
+- Nothing changes what reaches the alert channel: the digest goes to the admin chat, like the summary.
+
 ## 11.26 EV-reject shadow outcomes (2026-10-27, PR #41; deployed 29 Oct evening with migration 0007, **shadow ON** from the 30 Oct boot)
 
 **Purpose:** measure whether fires rejected by the EV hard gate would have won. Design: `docs/proposals/ev-shadow/DESIGN.md`.
