@@ -15,6 +15,7 @@
 import type { FilterDecision } from '../detectors/janeStreetFilter.js'
 import type { OpenPosition } from '../core/positionTracker.js'
 import { newPositionId } from '../core/positionStatus.js'
+import { computeTradeLevels } from '../core/tradeLevels.js'
 import type { AlertPayload } from './telegramWorker.js'
 import type { SignalDraft } from '../db/signalRecord.js'
 import {
@@ -64,6 +65,11 @@ export interface PipelineDeps {
 	randomIdSuffix?: () => string
 	sendChannel(text: string, markdown: boolean): Promise<unknown>
 	sendAdmin(text: string): Promise<unknown>
+	/**
+	 * Observation only (core/evShadow.ts): called when the EV gate rejects a fire. Synchronous
+	 * fire-and-forget; anything it throws is swallowed, and it never changes what happens next.
+	 */
+	onEvRejected?(data: AlertPayload, decision: FilterDecision, signalId: string | null): void
 	now(): number
 	config: {
 		shadowMode: boolean
@@ -129,6 +135,13 @@ export const runAlertPipeline = async (
 			note(obs, (o) => {
 				o.suppressed = 'FILTER_REJECTED'
 			})
+			if (decision.rejectedAt === 'EV' && deps.onEvRejected) {
+				try {
+					deps.onEvRejected(data, decision, obs?.signalId ?? null)
+				} catch {
+					// observation only: never affects the outcome
+				}
+			}
 			return
 		}
 	} catch (filterErr) {
@@ -151,31 +164,9 @@ export const runAlertPipeline = async (
 		const entry = data.price
 		const durationClass = data.durationClass || 'INTRADAY'
 
-		// Levels — computed ONCE; the same numbers are tracked in Postgres and
-		// shown in the message.
-		let stopLoss: number
-		let target1: number
-		let target2: number
-
-		if (!isOptions) {
-			stopLoss = isLong
-				? Number((data.vwap * 0.998).toFixed(2))
-				: Number((data.vwap * 1.002).toFixed(2))
-			const risk = Math.abs(entry - stopLoss)
-			target1 = isLong
-				? Number((entry + risk * 1.5).toFixed(2))
-				: Number((entry - risk * 1.5).toFixed(2))
-			target2 = isLong
-				? Number((entry + risk * 2.5).toFixed(2))
-				: Number((entry - risk * 2.5).toFixed(2))
-		} else {
-			// Option alerts embed index-level SL/T1 in the trigger text.
-			const slMatch = data.trigger.match(/SL ₹(\d+(\.\d+)?)/)
-			const t1Match = data.trigger.match(/T1 ₹(\d+(\.\d+)?)/)
-			stopLoss = slMatch ? Number(slMatch[1]) : isLong ? entry * 0.9 : entry * 1.1
-			target1 = t1Match ? Number(t1Match[1]) : isLong ? entry * 1.2 : entry * 0.8
-			target2 = target1
-		}
+		// Levels — computed ONCE (core/tradeLevels.ts); the same numbers are tracked in Postgres and
+		// shown in the message, and the EV-reject shadow outcome uses the same function.
+		const { stopLoss, target1, target2 } = computeTradeLevels(data)
 		const lv = { entry, stopLoss, target1 }
 		note(obs, (o) => {
 			o.levels = lv

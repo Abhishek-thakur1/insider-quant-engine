@@ -2,10 +2,54 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## Unreleased: `fix/staleness-message` (not merged, not deployed)
+## `fix/staleness-message` (PR #37): merged and deployed 31 Oct evening (owner moved it from Fri 30 Oct); boot log text only, first boot Mon 2 Nov
 
 - **Boot staleness message names the file actually in use.** With `/app/data/watchlist.json` present but no `watchlist_meta.json` (EC2 since 20 Oct), the engine said `screener output not found … using the baked-in watchlist.json` and sent it to the admin chat on every boot, although it reads the volume's file (`resolveScreenerFile`). It now says `watchlist_meta.json missing or unreadable in /app/data — using /app/data/watchlist.json; its age can't be checked`. The baked-in wording remains for when the volume file is missing too.
 - Log text only: which file is read, and when the warning fires, are unchanged. Test: `tests/screenerWiring.test.ts`.
+
+## `fix/vwap-ttl` (PR #38): merged and deployed 31 Oct evening (owner moved it from Fri 30 Oct), first session Mon 2 Nov
+
+- **The daily VWAP keys expire.** `vwap:{symbol}:{date}` is written with a 36 h TTL (`VWAP_TTL_SECS`) by both `updateVwap` and the seeder. Before, it had none, and 4,485 symbol-days had accumulated by 26 Oct (AGENTS.md §7).
+- **Unchanged:** the VWAP values themselves; same-day reads (`getVwap`, the seeder's `isSeeded`, the API's `stocksSeenToday`); mid-session restarts (the key is refreshed on every write).
+- **Lost:** the history the edge-map §J liquidity table read (its inputs were exported on 26 Oct and are committed with it).
+- **Old keys:** they still have no TTL. A proposal for removing them, not a command that has been run: `docs/proposals/vwap-key-cleanup.md`.
+- Test: `tests/vwapTtl.test.ts`.
+
+## `feat/near-miss-digest` (PR #33): host script, deployed 31 Oct evening (owner moved it from Fri 30 Oct); first digest Mon 2 Nov 15:45
+
+- **Near-miss digest** (AGENTS.md §11.24): `scripts/ops/near_miss_digest.sh` lists the day's rejected fires (detector, side, score, gate, reason, paper outcome so far), labelled "NOT ALERTS". It is sent as a second admin message after the 15:45 summary. Read-only; no engine rebuild.
+
+## `fix/tick-serialization` (PR #44): merged and deployed 31 Oct evening (owner moved it from Fri 30 Oct), first session Mon 2 Nov
+
+- **Bug fix:** two overlapping ticks could close one position twice, giving a double history row and a double `pnl:daily` (AGENTS.md §11.29). `processTick` is now serialised per symbol.
+- **Test:** `tests/tickSerialization.test.ts`, which fails without the fix.
+- Split out of PR #43 (owner, 28 Oct).
+
+## `fix/s3-backup` (PR #46): merged and deployed 29 Oct evening, scheduler only (IAM policy applied by the owner 28 Oct)
+
+- **The 16:00 S3 upload never worked.** The script bind-mounted a path that only existed inside the scheduler, so Docker created an empty directory on the host instead. There are 23 of them in /tmp by 28 Oct.
+- **Fix:**
+  - the dump is written straight to `/var/backups/iqe`, a host folder mounted at the same path;
+  - the upload names its region (`ap-south-1`);
+  - an upload failure sends a Telegram admin alert and no longer skips cleanup;
+  - the last 14 dumps are kept.
+- **Leftovers:** `scripts/ops/cleanup_backup_leftovers.sh` lists the empty leftover directories by exact path, and with `--apply` runs `rmdir` on exactly those.
+
+## `feat/ev-shadow` (PR #41): merged and deployed 29 Oct evening, migration 0007, **shadow ON** (`EV_SHADOW_ENABLED=true`, owner 28 Oct; first boot 30 Oct)
+
+- **EV-reject shadow outcomes** (AGENTS.md §11.26, `docs/proposals/ev-shadow/DESIGN.md`). A fire rejected by the EV gate gets a simulated outcome under the paper-trade rules, in a new table, `ev_shadow_outcomes` (migration 0007).
+- **Isolation:** that table is separate from `paper_trades`, so it is out of every stat, API endpoint and dashboard total. No alert and no gate change.
+- **Switch and bounds:** `EV_SHADOW_ENABLED=true` turns it on. 50 rows a day, 20 open at once.
+- **Refactor:** the level computation moved, unchanged, to `src/core/tradeLevels.ts`, so the pipeline and the shadow share it.
+- **Tests:** `tests/evShadow.test.ts`. `tests/migrate.test.ts` now lists 0007.
+
+## New listing `NSE:JPL-EQ` (Jio Platforms), live from 2026-10-29 (config only, owner decision 28 Oct)
+
+- **Population change, its own group `new_listing`** (AGENTS.md §11.27.1): appended as the last entry of `watchlist.json` on the data volume, 51 → 52 stocks, for a subscription of **53/100**.
+  - There was no image rebuild and no restart; the 29 Oct 09:00 boot picks it up.
+- **Code verified** against the public Fyers master (one row; ISIN `INE0BJO01010`).
+- **Backup:** `watchlist.json.bak-20261028-prejpl`.
+- **Note:** listed 28 Oct with 1-2 days of history. Its fires and paper trades are reported separately from the other groups.
 
 ## Watchlist 25 → 51, live from 2026-10-28 (config only, owner decision 27 Oct)
 
