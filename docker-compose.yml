@@ -4,8 +4,10 @@ services:
     image: redis:7-alpine
     container_name: quant_redis
     restart: always
+    # Loopback only (audit of 31 Oct): Redis has no password, and every container reaches it by
+    # service name on the compose network. Nothing uses the host port except host-side tools.
     ports:
-      - '6379:6379'
+      - '127.0.0.1:6379:6379'
 
     command: >
       redis-server
