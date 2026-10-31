@@ -1213,8 +1213,8 @@ FYERS_PIN=                  # read into ENV, never used
 TELEGRAM_BOT_TOKEN=...      # required
 TELEGRAM_CHANNEL_ID=-100... # required — public alert channel
 TELEGRAM_ADMIN_ID=...       # private control DM (NOT in the fail-fast check)
-REDIS_HOST=redis_cache
-REDIS_PORT=6379
+REDIS_HOST=redis_cache       # the compose service name: containers never use the host port
+REDIS_PORT=6379             # host port is bound to 127.0.0.1 only (branch ops/redis-bind-localhost); Redis has no password
 SHADOW_MODE=false           # read directly via process.env in janeStreetFilter + telegramWorker
 CONFIRMATION_THRESHOLD=78   # read directly via process.env in janeStreetFilter
 SUBSCRIPTION_CAP=100        # data-socket symbol cap checked at engine boot (Fyers Standard = 100); invalid → 100

@@ -2,6 +2,12 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased: `ops/redis-bind-localhost` (compose only; not merged, not applied: owner's word)
+
+- **Redis's host port is bound to 127.0.0.1** instead of every interface (audit of 31 Oct, D2). Redis runs with no password and protected mode off; until now only the cloud firewall kept it private. No user of the host port was found: every container uses the service name on the compose network, and the host monitor uses `docker exec quant_redis redis-cli`.
+- **Test:** `tests/composeExposure.test.ts` (Redis loopback-only; Postgres never published). It fails on the old line.
+- **Apply:** recreate `quant_redis` only, outside market hours; data stays in the `redis_data` volume (AOF + RDB). Steps and rollback in the PR.
+
 ## `feat/timer-square-off-exit` (PR #45): merged and deployed 31 Oct evening with #40 as ONE series break; first session Mon 2 Nov
 
 - **The 15:15 TIME exit no longer waits for a traded tick** (AGENTS.md §11.30). A timer closes open INTRADAY positions at the last known price, which is noted from every feed message. On 28 Oct, 6 exits waited until about 15:28.
