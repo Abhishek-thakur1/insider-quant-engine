@@ -1718,7 +1718,7 @@ Pure logic lives in `src/api/publicData.ts`, wired in `src/api/server.ts`. There
   - **No** quota, monitor, restart or host details.
 - **`/api/events` keep-alive** (`src/api/sseHeartbeat.ts`): an SSE comment `: ping <ms>` every 25 s (`SSE_HEARTBEAT_MS`), stopped on client close. EventSource ignores comments, so no client change is needed.
   - **Why:** the Vercel `/api` rewrite closed the idle stream after 151 s on both production domains (measured 2026-10-23 10:16 IST with no position open; re-measured 19:10 IST, 150 s, 0 pings).
-  - **Unverified:** whether the cut is an idle timeout (the heartbeat fixes it) or a hard cap (it doesn't). After the API deploy, run `scripts/sse_soak.sh` (one read-only GET through ninefifteen's `/api`, 300 s). PASS means the stream held past 151 s with pings arriving.
+  - **Verified: the cut was an idle timeout, and the heartbeat fixes it.** `scripts/sse_soak.sh` (one read-only GET through the production dashboard's `/api`, 300 s) passed after the API deploy on 27 Oct (11 pings), and again on 2026-10-31: `duration=301s curl_exit=28 pings=11`, `PASS`. The dashboard's 30 s polling fallback stays as a second line of defence.
 
 - **`quant_api` loses its anonymous `/app/node_modules` volume** (`docker-compose.yml`). This is the first of four services, approved per service by the owner on 2026-10-23.
   - **Why:** nothing bind-mounts source over `/app`, so the mount had no purpose. Compose carries the old anonymous volume into every recreate: on 2026-10-23 `quant_api`, `quant_engine` and `quant_auth` all still mounted volumes from 2026-09-09. A future dependency change would be built into the image and silently masked. Their lockfiles matched the images on 23 Oct, so nothing is wrong yet.

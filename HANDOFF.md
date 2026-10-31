@@ -2,7 +2,7 @@
 
 The state of the deploy queue and what waits on the owner. **`AGENTS.md` is the source of truth for how the system works.** This file only tracks order and status. Update it in the same PR as any change to the queue.
 
-Last updated: **2026-10-31, 19:45 IST**.
+Last updated: **2026-10-31, 20:40 IST**.
 
 ## Running on EC2
 
@@ -104,13 +104,15 @@ Roll forward: `docker tag insider-quant-engine-quant_engine:deployed-696ad65 ins
 
 ## Open PRs (31 Oct, evening)
 
-Merged as docs/study only: #34, #36 (27 Oct); #35, #42, #39, #28 (28 Oct). Code merged on its evening: #29, #22, #32, #41, #46 (29 Oct); #44, #33, #38, #37, #40, #45 (31 Oct). Docs: #47-#51, #53. Closed: #43, split by the owner into #44 + #45.
+Merged as docs/study only: #34, #36 (27 Oct); #35, #42, #39, #28 (28 Oct). Code merged on its evening: #29, #22, #32, #41, #46 (29 Oct); #44, #33, #38, #37, #40, #45 (31 Oct). Repo config: #52 `.gitattributes` (31 Oct). Docs: #47-#51, #53-#55. Dashboard: #9 (31 Oct, `49a0f80`; rollback `git revert -m 1 49a0f80`). Closed: #43, split by the owner into #44 + #45.
 
 | PR | Title (short) | Type | Runtime effect if deployed | Evening / condition | Independent review | Status |
 |---|---|---|---|---|---|---|
-| #31 | Nifty ORE evaluates the lock candle | code (detector) | changes when ORE can fire | **hold** | — | open |
-| #52 | `.gitattributes` (LF line endings) | repo config | none at runtime; diff 1 file, +14 lines (renormalize changes nothing) | owner decision | — | open, not merged |
-| dashboard #9 | Today: alerted vs recorded-only | frontend | Today view split | owner's word; never merge `main` 09:00–15:30 | preview verified 23 Oct | open |
+| #31 | Nifty ORE evaluates the lock candle | code (detector) | changes when ORE can fire | **hold**; suggested: review Mon/Tue evening, deploy Wed 4 Nov after two clean sessions | — | open |
+| #56 | Mobile backend readiness audit | docs | none | owner review; **do not merge** before | — | open |
+| #57 | `/api/trades/history` 400 on a bad date | code (API only) | bad dates get 400, not a 500 with DB text | an evening, `quant_api` only | — | open, not merged |
+| #58 | Redis host port bound to 127.0.0.1 | compose (Redis) | Redis no longer listens on public interfaces | **owner's word**; recreate `quant_redis` only | — | open, not merged |
+| dashboard #10 | Stats exclude flagged rows (toggle) | frontend | stat cards/curve leave out flagged rows by default | owner's word; never merge `main` 09:00–15:30 | — | open, not merged |
 
 **Reviews:** each independent review runs in its **own clone** (`git clone --shared`), not a worktree of this repo. Worktrees share one `.git`, so a reviewer's git commands could collide with mine ("another command ran in this repository at the same time", owner, 28 Oct).
 
@@ -140,8 +142,23 @@ Group `new_listing`, added 28 Oct (listing day), first session 29 Oct. See AGENT
 - **Rollback:** before 09:00 copy back `watchlist.json.bak-20261028-prejpl`. After 09:00, report only.
 - **The PC must stay awake.** On 28 Oct the PC slept and all three check-ins fired at about 18:32. Before each session, re-create them for that date (CronCreate one-shot; PC local time is IST).
 
+## Mobile backend decisions (owner, 31 Oct; from the audit, PR #56)
+
+1. **HTTPS entry:** the existing Vercel route + tokens now. Investigate an API-only subdomain behind a reverse proxy that keeps the Fyers redirect and `quant_auth` exactly as they are (report in `docs/mobile-backend-readiness/HTTPS_SUBDOMAIN.md`, PR #56).
+2. **Auth:** per-device tokens.
+3. **Distribution:** Play **internal testing only**.
+4. **Push:** FCM direct, later.
+5. **Default content:** alerted only; recorded-only behind a toggle.
+6. **History:** from 2026-10-21, flagged rows excluded by default, `includeFlagged` toggle.
+7. **Restore test:** yes, in a **throwaway container** with a memory cap, on an evening after 16:05, never inside the live Postgres; recorded in `docs/RUNBOOK.md` (procedure there). Planned for Mon 2 Nov evening (non-engine).
+8. **Git history:** leave it; no Fyers secret rotation now.
+
+**Evening rules:** freeze and one change per evening. **Mon 2 Nov evening is non-engine only** (first session with five engine changes): the restore test.
+
 ## Waiting on the owner
 
+- **`chmod 600` on `.env`** (audit D4; no restart needed, nothing reads it as another user): the exact command is `chmod 600 ~/insider-quant-engine/.env ~/insider-quant-engine/.env.bak-20261029-pre41`. Not run yet.
+- **#58 Redis binding:** apply on your word (steps and rollback in the PR).
 - **The 15 older capital-skipped rows** (5–16 Oct): include them in the restore or not. The default is not.
 - **The old `vwap:*` keys:** the cleanup proposal in PR #38 (`docs/proposals/vwap-key-cleanup.md`), not run.
 
