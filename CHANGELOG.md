@@ -2,6 +2,11 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## `fix/staleness-message` (PR #37): merged and deployed 31 Oct evening (owner moved it from Fri 30 Oct); boot log text only, first boot Mon 2 Nov
+
+- **Boot staleness message names the file actually in use.** With `/app/data/watchlist.json` present but no `watchlist_meta.json` (EC2 since 20 Oct), the engine said `screener output not found … using the baked-in watchlist.json` and sent it to the admin chat on every boot, although it reads the volume's file (`resolveScreenerFile`). It now says `watchlist_meta.json missing or unreadable in /app/data — using /app/data/watchlist.json; its age can't be checked`. The baked-in wording remains for when the volume file is missing too.
+- Log text only: which file is read, and when the warning fires, are unchanged. Test: `tests/screenerWiring.test.ts`.
+
 ## `fix/vwap-ttl` (PR #38): merged and deployed 31 Oct evening (owner moved it from Fri 30 Oct), first session Mon 2 Nov
 
 - **The daily VWAP keys expire.** `vwap:{symbol}:{date}` is written with a 36 h TTL (`VWAP_TTL_SECS`) by both `updateVwap` and the seeder. Before, it had none, and 4,485 symbol-days had accumulated by 26 Oct (AGENTS.md §7).
