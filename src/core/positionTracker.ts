@@ -32,6 +32,9 @@ export interface ClosedPosition extends OpenPosition {
 	exitReason: 'STOP_LOSS' | 'TARGET' | 'TIME'
 }
 
+/** The 15:15 timer closes at the last known price only if it is at most this old; otherwise it waits for a traded tick. */
+export const SQUARE_OFF_MAX_PRICE_AGE_S = 120
+
 class PositionTracker {
 	private openPositions = new Map<string, OpenPosition[]>()
 	private lastPnlPublishTime = new Map<string, number>()
@@ -183,6 +186,63 @@ class PositionTracker {
 			if (this.tickQueues.get(symbol) === tail) this.tickQueues.delete(symbol)
 		})
 		return run
+	}
+
+	// ── 15:15 square-off by timer (2026-10-28) ────────────────────────────────────
+	// The 15:15 TIME exit used to need a traded tick: on 28 Oct the feed thinned after 15:15 and six
+	// positions closed at about 15:28, at the 15:28 price. The last price of every symbol is noted
+	// from every feed message (zero-volume quotes included; ingestion/websocket.ts), and from 15:15
+	// a timer closes any INTRADAY position still open at that last known price, through the same
+	// (serialised) close path, so the exit reason, R and the Postgres/Redis writes are unchanged.
+	// Kill switch: SQUARE_OFF_TIMER=false. Series break for time-exit prices from its deploy date.
+	private lastPrice = new Map<string, { price: number; ts: number }>()
+	private squareOffTimer: ReturnType<typeof setInterval> | null = null
+
+	/** Synchronous and allocation-light: called for every feed message. */
+	public notePrice(symbol: string, price: number, ts: number): void {
+		if (price > 0) this.lastPrice.set(symbol, { price, ts })
+	}
+
+	/** From 15:15 IST: close every open INTRADAY position at its symbol's last known price. Returns how many symbols it swept. */
+	public async squareOffSweep(now: number = Date.now()): Promise<number> {
+		const ist = new Date(now + 5.5 * 3600 * 1000)
+		const minute = ist.getUTCHours() * 60 + ist.getUTCMinutes()
+		// Only inside the session's last 15 minutes: a restart in the evening never closes at a stale
+		// price with an evening exit time (review of 28 Oct). Outside it, the next traded tick still closes.
+		if (minute < 15 * 60 + 15 || minute >= 15 * 60 + 30) return 0
+		let swept = 0
+		for (const [symbol, positions] of [...this.openPositions]) {
+			if (!positions.some((p) => !p.durationClass || p.durationClass === 'INTRADAY')) continue
+			const last = this.lastPrice.get(symbol)
+			if (!last) {
+				console.warn(`[PositionTracker] ⏱️ 15:15 timer: ${symbol} has no known price yet — left for the next traded tick`)
+				continue
+			}
+			const ageS = Math.round((now - last.ts) / 1000)
+			if (ageS > SQUARE_OFF_MAX_PRICE_AGE_S) {
+				// A feed outage: don't close at a minutes-old price; wait for the next traded tick as before.
+				console.warn(`[PositionTracker] ⏱️ 15:15 timer: ${symbol} last price is ${ageS} s old (> ${SQUARE_OFF_MAX_PRICE_AGE_S} s) — left for the next traded tick`)
+				continue
+			}
+			console.log(`[PositionTracker] ⏱️ 15:15 timer square-off: ${symbol} at last price ₹${last.price} (${ageS} s old)`)
+			await this.processTick(symbol, { price: last.price, volume: 0, timestamp: now })
+			swept++
+		}
+		return swept
+	}
+
+	public startSquareOffTimer(intervalMs = 5000): void {
+		if (this.squareOffTimer || process.env.SQUARE_OFF_TIMER === 'false') return
+		this.squareOffTimer = setInterval(() => {
+			this.squareOffSweep().catch((e) => console.error('[PositionTracker] ⏱️ square-off timer error:', e))
+		}, intervalMs)
+		this.squareOffTimer.unref?.()
+	}
+
+	/** Engine shutdown: no new sweep may start a close during the grace period (review of 28 Oct). */
+	public stopSquareOffTimer(): void {
+		if (this.squareOffTimer) clearInterval(this.squareOffTimer)
+		this.squareOffTimer = null
 	}
 
 	private async processTickNow(symbol: string, tick: TickData) {

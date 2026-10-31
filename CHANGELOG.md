@@ -2,6 +2,14 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## `feat/timer-square-off-exit` (PR #45): merged and deployed 31 Oct evening with #40 as ONE series break; first session Mon 2 Nov
+
+- **The 15:15 TIME exit no longer waits for a traded tick** (AGENTS.md §11.30). A timer closes open INTRADAY positions at the last known price, which is noted from every feed message. On 28 Oct, 6 exits waited until about 15:28.
+- **Limits:** it runs only from 15:15 to 15:30, a price older than 120 s is skipped (the next traded tick closes the position, as before), and shutdown stops the timer.
+- **Kill switch:** `SQUARE_OFF_TIMER=false`. **Tests:** `tests/squareOffTimer.test.ts`.
+- **Series break, dated 2026-10-31** (with #40) for time-exit prices; first session Mon 2 Nov.
+- Builds on `fix/tick-serialization` (#44). Split out of PR #43 (owner, 28 Oct).
+
 ## `feat/vwap-session-gate` (PR #40): merged and deployed 31 Oct evening with #45 as ONE series break; first session Mon 2 Nov
 
 - **Series break, dated 2026-10-31 (with #45, timer exit):** from Mon 2 Nov, early-session VWAP-based values (stops, the Nifty reference and bias) and 15:15 TIME-exit prices are measured differently. Live tables split at 2026-11-02 for these.

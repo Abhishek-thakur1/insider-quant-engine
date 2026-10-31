@@ -1888,6 +1888,22 @@ No hand-picked names, and none of RULE-85's extra 33.
 
 **Behaviour:** close outcomes are unchanged; only the duplicate second close is gone. This is the prerequisite for the 15:15 timer exit (PR "timer square-off").
 
+## 11.30 15:15 square-off by timer (2026-10-28, PR #45; deployed 31 Oct evening, ONE series break together with #40; first session Mon 2 Nov)
+
+**Finding (28 Oct):** the TIME exit ran only on a traded tick. The feed thinned after 15:15, so 6 of 17 TIME exits closed at about 15:28, at the 15:28 price (`docs/analysis/late-time-exits-2026-10-28.md`). On 23 Oct none of 3 was late.
+
+**Change:**
+- `positionTracker.notePrice` records the last price from every feed message, before the zero-volume filter.
+- From 15:15 IST, `squareOffSweep`, on a 5-second timer started after `init()`, closes open INTRADAY positions at that price through the serialised close path (§11.29), logging the price's age.
+- **Limits** (review of 28 Oct):
+  - it sweeps only from 15:15 to 15:30, so a restart in the evening never closes at an evening time;
+  - it skips a price older than `SQUARE_OFF_MAX_PRICE_AGE_S` (120 s), leaving that position for the next traded tick as before;
+  - the engine's shutdown stops the timer before the grace period.
+- **Kill switch:** `SQUARE_OFF_TIMER=false`.
+- **Tests:** `tests/squareOffTimer.test.ts`.
+
+**Series break, dated 2026-10-31 (deployed with #40; first session Mon 2 Nov):** time-exit prices are the last known price at the 15:15 timer, not the first traded tick after 15:15. The same date is in the CHANGELOG, HANDOFF and the study's deviation log.
+
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
 The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 
