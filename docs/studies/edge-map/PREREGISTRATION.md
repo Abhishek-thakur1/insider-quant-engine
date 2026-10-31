@@ -231,3 +231,10 @@ Append only, with the date, what changed and why. It is empty at registration.
 14. **A new listing joins the live universe on 2026-10-29:** `NSE:JPL-EQ` (Jio Platforms, listed 28 Oct), group `new_listing`, 51 → 52 stocks. See AGENTS.md §11.27.1.
    - Any later live table either reports this group on its own or excludes it. It is **never pooled** with the other groups: it has 1-2 days of history (ATR, ADR and trend gate not meaningful), first-days volatility and listing price bands.
    - The replay sections and the §G/§I freezes are unaffected.
+
+**2026-10-31, about 19:20 IST. A series break in the live data, recorded before it takes effect.** This changes no decision rule.
+
+15. **From Mon 2026-11-02, two live measurements change together** (PR #40 + PR #45, deployed 2026-10-31; AGENTS.md §11.25, §11.30):
+   - **VWAP starts at 09:15 IST** (#40): the pre-open auction print and pre-open Nifty minutes no longer enter the VWAP, so early-session VWAP stops, the Nifty reference and the bias differ from earlier days (largest at 09:20-09:25, small after about 10:15).
+   - **15:15 TIME exits close at the last known price by timer** (#45), not at the first traded tick after 15:15, so TIME-exit prices and R differ on days the feed thins.
+   - Any later live table that uses early-session VWAP-based values or TIME-exit R **splits at 2026-11-02**. The replay sections and the §G/§I freezes are unaffected; the replay already starts its VWAP at 09:15.
