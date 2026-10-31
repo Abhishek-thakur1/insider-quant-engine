@@ -1,6 +1,6 @@
 # RUNBOOK — operating the EC2 deployment
 
-> The owner runs every command here on the host (`ubuntu@<EIP>`, repo at `~/insider-quant-engine`).
+> The owner runs every command here on the host (`ubuntu@<host>`, repo at `~/insider-quant-engine`). This repo is public: never write the host's address here.
 > Agents have no SSH access. They hand over commands and record the pasted output as evidence.
 > Every "verified" line below cites the output it came from. If there's no evidence, it isn't verified.
 
@@ -10,18 +10,41 @@
 |---|---|---|---|
 | 2026-10-18 ~18:20 | `bb7fb46` | Versioned migrations (0001–0003), read-only `quant_api` boot, ghost-row fix. Rebuilt `quant_api` + `quant_engine`. | Migrate output: 3 applied 12:53:26 UTC. `quant_api` log "✅ Database schema is current." `quant_engine` recreated, status `Created`. Host `git log --oneline -1` → `bb7fb46 (HEAD -> v2, origin/v2)`. |
 
+From 20 Oct the per-deploy evidence (logs, dumps, tags) lives in `HANDOFF.md`, `CHANGELOG.md` and `~/evidence/<day>/actions.log` on the host. Rows below are copied from those (updated 2026-10-31 after the audit found this table stale); the 31 Oct images were re-checked on the host with `docker inspect`.
+
+| Date (IST) | Deployed SHA | What | Container(s) / image | Rollback |
+|---|---|---|---|---|
+| 2026-10-20 | `05f4bf3`, `508ab01` | Fyers quota discipline (#11); screener v2 (#9; job later disabled) | engine | per CHANGELOG |
+| 2026-10-21 | `bd20eec`, `8caf9a3` | subscription cap (#13); signal-log stall fix (#15), real-path test (#16) | engine | per CHANGELOG |
+| 2026-10-22 | `ab5b573` | day-aware boot cleanup (#21) | engine `b210b5c7…` (tagged `rollback-2fcbe9e` before the next deploy) | per CHANGELOG |
+| 2026-10-23 | (see CHANGELOG) | unique position ids (#23); API signals + health (#24) | engine; API | per CHANGELOG |
+| 2026-10-26 | `11dda4d` | boot orphaning touches OPEN rows only (#29) | engine `b23c6f864696` | `rollback-1b2ec34` → `5250090191c8` |
+| 2026-10-27 | `5e95059` | duplicate-alert policy (#22) + API | engine `0231f64ab9ef`, API `147035ad51c6` | engine `rollback-11dda4d`; API `rollback-255adfd` |
+| 2026-10-28 | `609755e` | Nifty "why no alert" diagnostics (#32) | engine `413505a5bffb` | `rollback-5e95059` → `0231f64ab9ef` |
+| 2026-10-29 | `825726c` | EV shadow + migration 0007, shadow ON (#41) | engine `c751a03b8678`, API `fb075db5737c` | engine `rollback-609755e`, API `rollback-5e95059`; `.env.bak-20261029-pre41` |
+| 2026-10-29 | `45236ee` | S3 backup fix (#46) | scheduler `48819ab8155f` | `rollback-pre46` → `48ed31bfd5fb` |
+| 2026-10-31 | `e66a199` | per-symbol tick serialisation (#44) | engine `4a447d238047` | `rollback-45236ee` → `c751a03b8678` |
+| 2026-10-31 | `a28d57c` | near-miss digest (#33), host script + `check.sh` hook | host only | `check.sh.bak-20261031-pre33` |
+| 2026-10-31 | `cfcb734` | VWAP key TTL (#38) | engine `e282ddba76c2` | `rollback-e66a199` → `4a447d238047` |
+| 2026-10-31 | `0845761` | staleness message (#37) | engine `bbfe21291ad4` | `rollback-cfcb734` → `e282ddba76c2` |
+| 2026-10-31 | `5a4a78a` | VWAP from 09:15 (#40), series break with #45 | engine `462afa35612d` | `rollback-0845761` → `bbfe21291ad4`; or `VWAP_SESSION_GATE=false` |
+| 2026-10-31 | `696ad65` | 15:15 timer exit (#45), series break with #40 | engine **`afe0c959e652`** (also tagged `deployed-696ad65`) | `rollback-5a4a78a` → `462afa35612d`; or `SQUARE_OFF_TIMER=false` |
+| 2026-10-31 | host only | extended 09:25 status message (`check.sh` sha `599723541a28…`) | host only | `check.sh.bak-20261031-prestatus` |
+
+Image tags are cumulative: each `rollback-*` tag is the image from before that change, so it also removes every later one. See the rollback card in `HANDOFF.md`.
+
 ### Container restart counts
 
-Recorded 2026-10-18, after the bb7fb46 deploy (owner-pasted `docker inspect`). All times UTC.
+Recorded **2026-10-31 20:26 IST** on the host (`docker inspect`, command below). All times UTC.
 
-| Container | Restarts | Last started | Status | Note |
-|---|---|---|---|---|
-| `quant_api` | 0 | 2026-10-18 12:54:33 | running | Recreated for bb7fb46 |
-| `quant_engine` | 0 | never (new container) | created | Recreated for bb7fb46. Cron starts it 09:00 IST Mon. |
-| `quant_auth` | 0 | 2026-10-16 02:15:01 (07:45 IST Fri) | exited | Normal: exits after writing the token |
-| `quant_scheduler` | 0 | 2026-09-25 00:50:49 | running | |
-| `quant_postgres` | 0 | 2026-09-09 16:37:44 | running | |
-| `quant_redis` | 0 | 2026-09-09 16:37:44 | running | |
+| Container | Restarts | Last started | Status | Image | Note |
+|---|---|---|---|---|---|
+| `quant_api` | 0 | 2026-10-29 16:29:07 | running | `fb075db5737c` | #41 deploy |
+| `quant_engine` | 0 | never (recreated 31 Oct) | created | `afe0c959e652` | the 09:00 cron starts it |
+| `quant_auth` | 0 | 2026-10-30 02:15:00 (07:45 IST) | exited | `b80820d9d021` | normal: exits after writing the token |
+| `quant_scheduler` | 0 | 2026-10-29 16:33:05 | running | `48819ab8155f` | #46 deploy |
+| `quant_postgres` | 0 | 2026-09-09 16:37:44 | running | `fe0737ba566a` | |
+| `quant_redis` | 0 | 2026-09-09 16:37:44 | running | `ff02b58f971e` | |
 
 To capture them again:
 
@@ -153,7 +176,26 @@ docker cp quant_postgres:/tmp/pre_<sha>.dump ~/pre_<sha>.dump && ls -lh ~/pre_<s
 
 ## Restore
 
-**Test restore** into a scratch database. This never touches `insider_quant`:
+**Test restore in a throwaway container (owner decision 2026-10-31; use this one).** It never touches the live `quant_postgres`: a separate Postgres container with a memory cap and no network, removed at the end. Run it on an evening after 16:05 (after that day's 16:00 dump; the engine is stopped, so the live counts don't move).
+
+```bash
+F=$(sudo ls -1t /var/backups/iqe/paper_trades_*.sql | head -1); echo "$F"        # newest scheduled dump
+sudo cp "$F" /tmp/rt.dump && sudo chown "$USER" /tmp/rt.dump
+docker run -d --rm --name iqe-restore-test --memory 256m --network none -e POSTGRES_PASSWORD=throwaway postgres:15-alpine
+until docker exec iqe-restore-test pg_isready -U postgres -q; do sleep 1; done
+docker cp /tmp/rt.dump iqe-restore-test:/tmp/rt.dump
+docker exec iqe-restore-test createdb -U postgres restore_test
+docker exec iqe-restore-test pg_restore -U postgres -d restore_test --no-owner /tmp/rt.dump; echo "pg_restore exit $?"
+Q="select 'paper_trades', count(*) from paper_trades union all select 'signals', count(*) from signals union all select 'ev_shadow_outcomes', count(*) from ev_shadow_outcomes union all select 'schema_migrations', count(*) from schema_migrations"
+docker exec iqe-restore-test psql -U postgres -d restore_test -tA -c "$Q"                       # restored
+docker exec quant_postgres sh -c "psql -U \$POSTGRES_USER -d \$POSTGRES_DB -tA -c \"$Q\""      # live, read-only
+docker stop iqe-restore-test     # --rm deletes the container and its data
+rm -f /tmp/rt.dump
+```
+
+Pass = `pg_restore` exit 0 and the four counts equal. Record it in the log below.
+
+**Older method** (into a scratch database inside the live container; no longer used):
 
 ```bash
 docker run --rm -v ~/<file>.dump:/d:ro postgres:15-alpine pg_restore -l /d | grep -E "TABLE|SEQUENCE"   # archive readable?
@@ -182,6 +224,7 @@ The real restore has **not** been exercised. Only the test restore has.
 
 | Date | Dump | Result | Evidence |
 |---|---|---|---|
+| (next) | newest `/var/backups/iqe` dump, throwaway container | **Planned**: owner approved 31 Oct; first evening after 16:05 with no engine change (Mon 2 Nov) | — |
 | 2026-10-18 | `~/pre_bb7fb46.dump` (87 KB, written 12:50 UTC, 3 min before migration 0003) | ✅ **Passed.** Archive lists `paper_trades` + data + sequence. Restored without errors: 1,555 `CLOSED` + 27 `OPEN` = 1,582 rows, matching the live pre-migration count. `schema_migrations` absent, as expected. Scratch DB dropped. | Owner-pasted `pg_restore -l` and `psql` output, 2026-10-18 |
 
 ## Planned deploy: session robustness (`fix/session-robustness`) — NOT DEPLOYED
@@ -344,11 +387,11 @@ powercfg /change standby-timeout-ac 0
 # ── 1. Today's token, copied from EC2 (after that day's login) ─────────────
 # The token is a secret: don't paste it into chat, don't commit it
 # (backtest/access_token.txt is gitignored).
-ssh ubuntu@3.6.238.160 "docker volume ls --format '{{.Name}}' | grep token_store"
+ssh ubuntu@<host> "docker volume ls --format '{{.Name}}' | grep token_store"
 # use the name printed above in place of <VOL>:
-ssh ubuntu@3.6.238.160 "docker run --rm -v <VOL>:/t alpine cat /t/access_token.txt > ~/tok.txt && chmod 600 ~/tok.txt"
-scp ubuntu@3.6.238.160:~/tok.txt .\backtest\access_token.txt
-ssh ubuntu@3.6.238.160 "rm -f ~/tok.txt"
+ssh ubuntu@<host> "docker run --rm -v <VOL>:/t alpine cat /t/access_token.txt > ~/tok.txt && chmod 600 ~/tok.txt"
+scp ubuntu@<host>:~/tok.txt .\backtest\access_token.txt
+ssh ubuntu@<host> "rm -f ~/tok.txt"
 $env:FYERS_TOKEN_PATH = (Resolve-Path .\backtest\access_token.txt).Path
 
 # ── 2. Fetch (API calls; mind the window above) ─────────────────────────────
