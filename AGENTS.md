@@ -1141,7 +1141,7 @@ version live in `backtest/core/symbolClass.ts`, with a test pinning the five aff
 
 | Key | Type | TTL | Writer | Reader |
 |---|---|---|---|---|
-| `vwap:{symbol}:{YYYY-MM-DD}` | JSON `VwapState` | none | `updateVwap`, `vwapSeeder` | `getVwap`, `warnIfVwapMissing` |
+| `vwap:{symbol}:{YYYY-MM-DD}` | JSON `VwapState` | 36 h (`VWAP_TTL_SECS`, refreshed on every write; none before 2026-10-27, so older keys stay until removed, see `docs/proposals/vwap-key-cleanup.md`) | `updateVwap`, `vwapSeeder` | `getVwap`, `warnIfVwapMissing`, the seeder's `isSeeded`, the API's `stocksSeenToday` (all today's key only) |
 | `market:nifty:bias` | `bullish\|bearish\|neutral` | none | `updateNiftyBias` | `getMarketBias` |
 | `regime:nifty:returns_1min` | list of return % | none | `pushNiftyReturn` (mirror) | engine boot on a **same-day restart** only: `restoreRegimeReturns` re-loads it into memory (§11.17) |
 | `engine:boot_day` | IST date of the last engine boot | 7 d | boot cleanup (`core/bootCleanup.ts`) | boot cleanup: same day → keep session state; older/missing → clear it (§11.17). **Never cleared at boot.** |
@@ -1194,7 +1194,7 @@ Boot cleanup (`core/bootCleanup.ts`, day-aware since 2026-10-22, §11.17):
 > SWING positions, and marks prior-day INTRADAY ones `ORPHANED` (§14) instead of closing them at the
 > next session's price. No live detector emits SWING today, so in practice everything is INTRADAY.
 
-It does **not** clear `vwap:*` (correct — the seeder owns those), `orb:*`, `HTF_TREND:*`, or the
+It does **not** clear `vwap:*` (correct — the seeder owns those; they expire after 36 h), `orb:*`, `HTF_TREND:*`, or the
 in-memory `optionTickStore` / `candleAggregator` / `bosStreak` (irrelevant on a fresh process, but
 relevant if you ever add hot reload).
 

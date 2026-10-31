@@ -2,6 +2,14 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## `fix/vwap-ttl` (PR #38): merged and deployed 31 Oct evening (owner moved it from Fri 30 Oct), first session Mon 2 Nov
+
+- **The daily VWAP keys expire.** `vwap:{symbol}:{date}` is written with a 36 h TTL (`VWAP_TTL_SECS`) by both `updateVwap` and the seeder. Before, it had none, and 4,485 symbol-days had accumulated by 26 Oct (AGENTS.md §7).
+- **Unchanged:** the VWAP values themselves; same-day reads (`getVwap`, the seeder's `isSeeded`, the API's `stocksSeenToday`); mid-session restarts (the key is refreshed on every write).
+- **Lost:** the history the edge-map §J liquidity table read (its inputs were exported on 26 Oct and are committed with it).
+- **Old keys:** they still have no TTL. A proposal for removing them, not a command that has been run: `docs/proposals/vwap-key-cleanup.md`.
+- Test: `tests/vwapTtl.test.ts`.
+
 ## `feat/near-miss-digest` (PR #33): host script, deployed 31 Oct evening (owner moved it from Fri 30 Oct); first digest Mon 2 Nov 15:45
 
 - **Near-miss digest** (AGENTS.md §11.24): `scripts/ops/near_miss_digest.sh` lists the day's rejected fires (detector, side, score, gate, reason, paper outcome so far), labelled "NOT ALERTS". It is sent as a second admin message after the 15:45 summary. Read-only; no engine rebuild.
