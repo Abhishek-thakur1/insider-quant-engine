@@ -2,7 +2,7 @@ import Fastify from 'fastify'
 import { redisClient, bootRedis } from '../config/redis.js'
 import { pool } from '../config/db.js'
 import { schemaProblem } from '../db/migrate.js'
-import { coarseHealth, mapSignalRow, signalsQuery } from './publicData.js'
+import { coarseHealth, isIsoDate, mapSignalRow, signalsQuery } from './publicData.js'
 import { startSseHeartbeat } from './sseHeartbeat.js'
 import { loadHolidays } from '../core/sessionGuard.js'
 import { getISTDateString } from '../utils/marketHours.js'
@@ -101,6 +101,10 @@ fastify.get('/api/trades/history', async (request, reply) => {
 	const date = query.date // format YYYY-MM-DD
 	const detector = query.detector
 	const includeUngated = query.includeUngated === 'true'
+	// A bad date used to reach Postgres and come back as a 500 with the database's error text.
+	if (date !== undefined && date !== '' && !isIsoDate(date)) {
+		return reply.code(400).send({ success: false, error: 'date must be YYYY-MM-DD' })
+	}
 
 	// By default, only show signals that passed the JaneStreetFilter (gated = true).
 	let sql = `SELECT * FROM paper_trades WHERE status = 'CLOSED'`

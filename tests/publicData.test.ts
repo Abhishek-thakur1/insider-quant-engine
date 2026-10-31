@@ -6,7 +6,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
-import { SIGNAL_COLUMNS, SIGNALS_LIMIT, coarseHealth, mapSignalRow, signalsQuery } from '../src/api/publicData.js'
+import { SIGNAL_COLUMNS, SIGNALS_LIMIT, coarseHealth, isIsoDate, mapSignalRow, signalsQuery } from '../src/api/publicData.js'
 
 const IST = 330 * 60_000
 const at = (day: string, hhmm: string) => Date.parse(`${day}T${hhmm}:00Z`) - IST
@@ -20,6 +20,19 @@ test('SIGNALS QUERY: SELECT only, parameterised date, capped, no capital or trig
 	for (const c of ['trigger', 'qty', 'actual_size', 'capital_outcome', 'breakdown']) assert.ok(!(SIGNAL_COLUMNS as readonly string[]).includes(c), `${c} not exposed`)
 	assert.equal(signalsQuery("2026-10-22'; DROP TABLE signals; --"), null, 'bad date rejected, never interpolated')
 	assert.equal(signalsQuery(''), null)
+	assert.equal(signalsQuery('2026-02-30'), null, 'right shape, impossible date: rejected before Postgres')
+})
+
+test('DATE VALIDATION (audit of 31 Oct): real calendar dates only; /api/trades/history answers 400 before any query', () => {
+	for (const ok of ['2026-10-30', '2024-02-29', '2026-12-31']) assert.equal(isIsoDate(ok), true, ok)
+	for (const bad of ['abc', '', '2026-2-3', '2026-13-01', '2026-02-29', '2026-04-31', '2026-10-30T00:00', "2026-10-30'--", undefined, 20261030])
+		assert.equal(isIsoDate(bad), false, String(bad))
+	const src = fs.readFileSync('src/api/server.ts', 'utf8')
+	const route = src.slice(src.indexOf("fastify.get('/api/trades/history'"), src.indexOf("fastify.get('/api/live-pnl'"))
+	const check = route.indexOf('!isIsoDate(date)')
+	assert.ok(check > 0, 'history route validates the date')
+	assert.ok(check < route.indexOf('pool.query'), 'before the query')
+	assert.match(route.slice(check, check + 200), /reply\.code\(400\)/)
 })
 
 test('SIGNALS ROW: maps the AEQUS 11:06 fire (real row shape) to the public shape', () => {
