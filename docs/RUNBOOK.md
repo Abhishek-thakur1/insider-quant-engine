@@ -139,7 +139,11 @@ SELECT 'signals', count(*) FROM signals WHERE 'invalid_geometry' = ANY(data_qual
 
 ## Backup
 
-- **Automated:** `scheduler/db_backup.sh` runs at 16:00 Mon–Fri. It writes a `pg_dump -F c` and uploads it to S3 (`S3_BACKUP_BUCKET`).
+- **Automated:** `scheduler/db_backup.sh` runs at 16:00 Mon–Fri.
+  - It writes a `pg_dump -F c` to `/var/backups/iqe` on the host (mode 700, the newest 14 kept), checks it, and uploads it to S3 (`S3_BACKUP_BUCKET`, region `ap-south-1`, pinned `amazon/aws-cli:2.36.42`).
+  - A failed dump check or upload sends a Telegram admin alert; a bad dump is kept as `*.bad` and not uploaded.
+  - The upload needs the instance role's IAM policy (`PutObject` on `db_backups/*`).
+  - Before `fix/s3-backup`, the upload never worked.
 - **Manual, before any deploy or migration:**
 
 ```bash

@@ -4,6 +4,11 @@ import { getISTMinutes } from './marketHours.js'
 
 const NIFTY_BIAS_KEY = 'market:nifty:bias'
 
+// vwap:{symbol}:{date} is only read on its own IST day (getVwap, the seeder's isSeeded check, the
+// API's stocksSeenToday). 36 h covers the session and a same-day restart; before 2026-10-27 the keys
+// had no TTL and accumulated (4,485 on 26 Oct).
+export const VWAP_TTL_SECS = 36 * 3600
+
 // [FIX: CORRECTNESS] The original updateVwap used raw price (last trade price) as the
 // price component. Standard VWAP = Σ(typicalPrice × volume) / Σ(volume), where
 // typicalPrice = (high + low + close) / 3.
@@ -40,7 +45,7 @@ export const updateVwap = async (
 	state.cumulativeVol += volume
 	state.vwap = state.cumulativeVol > 0 ? state.cumulativePV / state.cumulativeVol : price
 
-	await redisClient.set(key, JSON.stringify(state))
+	await redisClient.setEx(key, VWAP_TTL_SECS, JSON.stringify(state))
 	return state.vwap
 }
 

@@ -60,6 +60,7 @@ tickEmitter.setMaxListeners(200)
 
 import { positionTracker } from '../core/positionTracker.js'
 import { pool } from '../config/db.js'
+import { EvShadowTracker, evShadowEnabled, getEvShadow, pgEvShadowStore, setEvShadow } from '../core/evShadow.js'
 import { schemaProblem } from '../db/migrate.js'
 import { signalLog } from '../db/signalLog.js'
 import { registerWatchlistSources, setSymbolSource } from '../core/symbolSource.js'
@@ -144,6 +145,12 @@ export const startLiveEngine = async () => {
 	const schemaIssue = await schemaProblem(pool)
 	if (schemaIssue) console.error(`[Engine] ❌ Database schema not current: ${schemaIssue}`)
 	await positionTracker.init()
+	// EV-reject shadow outcomes (observation only, off unless EV_SHADOW_ENABLED=true; core/evShadow.ts).
+	if (evShadowEnabled()) {
+		const evShadow = new EvShadowTracker(pgEvShadowStore(pool))
+		await evShadow.init()
+		setEvShadow(evShadow)
+	}
 
 	const activeUniverse = [...watchlist]
 	const activeUniverseSet = new Set<string>(activeUniverse)
@@ -293,6 +300,7 @@ export const startLiveEngine = async () => {
 				if (niftyRef > 0) await updateNiftyBias(rawTick.ltp, niftyRef)
 
 				feedTick(NIFTY_SYMBOL, rawTick.ltp, liveTick.volume)
+				getEvShadow()?.onTick(NIFTY_SYMBOL, rawTick.ltp, liveTick.timestamp).catch(() => {}) // observation only, never awaited
 
 				// Shadow only; a failure here must never touch the live Nifty stack.
 				try {
@@ -346,6 +354,7 @@ export const startLiveEngine = async () => {
 				// Session-gated (09:15 IST): the pre-open auction print no longer enters the VWAP.
 				await updateSessionVwap(rawTick.symbol, liveTick.price, liveTick.volume, liveTick.timestamp)
 				feedTick(rawTick.symbol, liveTick.price, liveTick.volume)
+				getEvShadow()?.onTick(rawTick.symbol, liveTick.price, liveTick.timestamp).catch(() => {}) // observation only, never awaited
 				const strategies = strategyRouter.get(rawTick.symbol)
 				if (strategies) {
 					await Promise.all(strategies.map((s) => s.analyze(liveTick)))

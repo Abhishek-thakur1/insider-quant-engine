@@ -79,7 +79,7 @@ Every entry checks `scheduler/trading_day.sh` first and does nothing on weekends
 | 09:10 | Token freshness check → admin alert if missing/stale | `liveness.sh` |
 | 15:17 | Random "market close" message | `market_message.sh close` |
 | 15:30 | `docker stop quant_engine`, stop `quant_auth` | `lifecycle.sh stop_engine` |
-| 16:00 | `pg_dump` (S3 upload currently broken — see RUNBOOK) | `db_backup.sh` |
+| 16:00 | `pg_dump` to `/var/backups/iqe` on the host (14 kept) + S3 upload, with a Telegram alert on failure (fixed by `fix/s3-backup`; before it, the upload never worked) | `db_backup.sh` |
 | 16:30 | **EOD screener** → tomorrow's watchlist (§11.11) | `lifecycle.sh run_screener` |
 | 17:15 | **Purge the token** (`rm` on the scheduler's own `token_store` mount) | `lifecycle.sh purge_token` |
 
@@ -286,7 +286,7 @@ vwap = cumulativeVol > 0 ? cumulativePV / cumulativeVol : price
 
 Live ticks pass no H/L → `typicalPrice = ltp` (each tick treated as its own zero-range candle).
 
-**Session gate (branch `feat/vwap-session-gate`, not deployed; §11.25).** On that branch only data from 09:15 IST enters the VWAP: equity ticks go through `updateSessionVwap`, and Nifty minutes through `onNiftyTick` in `core/niftyMinuteState.ts`. `VWAP_SESSION_GATE=false` turns it off.
+**Session gate (PR #40, deployed 31 Oct evening, first session Mon 2 Nov; §11.25).** On that branch only data from 09:15 IST enters the VWAP: equity ticks go through `updateSessionVwap`, and Nifty minutes through `onNiftyTick` in `core/niftyMinuteState.ts`. `VWAP_SESSION_GATE=false` turns it off.
 **This is a read-modify-write on Redis per tick with no atomicity.** In practice the single-listener
 handler serialises around `await` boundaries, but it is not guaranteed.
 
@@ -1143,7 +1143,7 @@ version live in `backtest/core/symbolClass.ts`, with a test pinning the five aff
 
 | Key | Type | TTL | Writer | Reader |
 |---|---|---|---|---|
-| `vwap:{symbol}:{YYYY-MM-DD}` | JSON `VwapState` | none | `updateVwap`, `vwapSeeder` | `getVwap`, `warnIfVwapMissing` |
+| `vwap:{symbol}:{YYYY-MM-DD}` | JSON `VwapState` | 36 h (`VWAP_TTL_SECS`, refreshed on every write; none before 2026-10-27, so older keys stay until removed, see `docs/proposals/vwap-key-cleanup.md`) | `updateVwap`, `vwapSeeder` | `getVwap`, `warnIfVwapMissing`, the seeder's `isSeeded`, the API's `stocksSeenToday` (all today's key only) |
 | `market:nifty:bias` | `bullish\|bearish\|neutral` | none | `updateNiftyBias` | `getMarketBias` |
 | `regime:nifty:returns_1min` | list of return % | none | `pushNiftyReturn` (mirror) | engine boot on a **same-day restart** only: `restoreRegimeReturns` re-loads it into memory (§11.17) |
 | `engine:boot_day` | IST date of the last engine boot | 7 d | boot cleanup (`core/bootCleanup.ts`) | boot cleanup: same day → keep session state; older/missing → clear it (§11.17). **Never cleared at boot.** |
@@ -1196,7 +1196,7 @@ Boot cleanup (`core/bootCleanup.ts`, day-aware since 2026-10-22, §11.17):
 > SWING positions, and marks prior-day INTRADAY ones `ORPHANED` (§14) instead of closing them at the
 > next session's price. No live detector emits SWING today, so in practice everything is INTRADAY.
 
-It does **not** clear `vwap:*` (correct — the seeder owns those), `orb:*`, `HTF_TREND:*`, or the
+It does **not** clear `vwap:*` (correct — the seeder owns those; they expire after 36 h), `orb:*`, `HTF_TREND:*`, or the
 in-memory `optionTickStore` / `candleAggregator` / `bosStreak` (irrelevant on a fresh process, but
 relevant if you ever add hot reload).
 
@@ -1772,30 +1772,20 @@ On 26 Oct Nifty moved 22,386 → 22,700 with no Nifty alert, and the reasons had
 - **ORE note:** the call sites follow the current lock behaviour; if PR #31 (lock candle) merges, the
   `lock_candle_not_evaluated` record goes away with the early return.
 
-## 11.27 Watchlist population change, effective 2026-10-28 (config only; no code, no image)
+## 11.24 Near-miss digest for the 15:45 admin summary (2026-10-26, PR #33, host script; deployed 31 Oct evening, first digest Mon 2 Nov 15:45)
 
-**This is a series break in the stock universe.** Every per-day count from 28 Oct onward covers a different set of stocks: fires, alerts, paper trades and stocks seen. Don't compare it with earlier days without splitting by group.
+`scripts/ops/near_miss_digest.sh` prints every fire of the IST day that did **not** pass the filter: time,
+symbol, side, detector, score/threshold, rejecting gate (REGIME / EV / SCORE / FILTER ERROR) with the EV or
+regime reason, and the paper outcome so far (CLOSED R and exit reason, OPEN, SKIPPED, ORPHANED, or "no paper
+row" for EV/REGIME rejects, which create none). Headed **"NOT ALERTS, review only"**; paper R is as stored,
+before costs. One SELECT, read-only, sends nothing itself; lists the top `MAX_ROWS` (10, owner cap 28 Oct) rejected fires **by score**; the rest are counted by gate on one line.
 
-**What changed:** `/app/data/watchlist.json` (volume `screener_data`) went from **25 to 51 stocks** on 27 Oct at about 20:42 IST. The engine reads it once at boot (`websocket.ts`, `resolveScreenerFile`), so it takes effect at the 28 Oct 09:00 boot. Expected boot line: `52/100 symbols — watchlist 51 + bench 0 + index 1 + options 0`.
+- **Hook (host, outside the repo):** `~/evidence/monitor/check.sh` MODE=summary sends it as a *second*
+  admin message after the existing summary, so the summary itself is unchanged. No engine, API or
+  container change; the script is copied alone to `~/evidence/monitor/` (no host `git pull`, so engine rebuild sources are untouched).
+- Nothing changes what reaches the alert channel: the digest goes to the admin chat, like the summary.
 
-**The 51:**
-- the 25 names live since 20 Oct;
-- the 4 owner picks (PR #36): BSE, MCX, PAYTM, ATHERENERG;
-- the 22 names from #34's `RULE.md`, the rule committed before ranking, with BSE, MCX and PAYTM counted once.
-
-No hand-picked names, and none of RULE-85's extra 33.
-
-**Checks before the write:**
-- every code is in `fyersUniverse.json` and the screener's 19-Oct universe, and the engine had received ticks for each;
-- no per-stock config is needed;
-- seeder pacing: a restart during the session makes at most 53 Data-API calls through the engine limiter (4/s, 40/min; simulated on the real limiter: at most 40 in any 60 s). A 09:00 boot makes none.
-- The monitor's stocks-seen total is now read from the heartbeat (it was hard-coded at 25).
-
-**Rollback:** the backup is `watchlist.json.bak-20261027-25` (sha `da466dc769c0…`; the new file is `7bb595743f1b…`).
-- Before 09:00: copy it back.
-- After 09:00: no restart in market hours; report only.
-
-## 11.25 VWAP session gate (2026-10-27, branch `feat/vwap-session-gate`; PR, not deployed)
+## 11.25 VWAP session gate (2026-10-27, PR #40; deployed 31 Oct evening together with #45 as ONE series break; first session Mon 2 Nov)
 
 **Finding:**
 - On the usual 09:00 boot, the live VWAP included pre-open data:
@@ -1820,6 +1810,83 @@ No hand-picked names, and none of RULE-85's extra 33.
 **Side effect:** on a 09:00 boot the Nifty bias is unset until about 09:16.
 
 **Deploy (owner, 28 Oct): Sat 31 Oct, together with #45 (timer square-off) as ONE series break; first session Mon 2 Nov.** Note (review of 28 Oct): live Nifty minutes start at their first tick, not on the clock, so the first in-session minute begins at about 09:15:xx rather than exactly 09:15:00. The effect is about one minute in 375. The deploy date is a **series break**: before it, live VWAP, VWAP stops, the Nifty reference and the bias included pre-open data; after it they don't. Values from the first hour (about 09:15–10:15) are not comparable across the break. At deploy, record the date here, in the CHANGELOG, and as a deviation-log entry in `docs/studies/edge-map/PREREGISTRATION.md`. Deploy date: _not yet deployed_.
+
+## 11.26 EV-reject shadow outcomes (2026-10-27, PR #41; deployed 29 Oct evening with migration 0007, **shadow ON** from the 30 Oct boot)
+
+**Purpose:** measure whether fires rejected by the EV hard gate would have won. Design: `docs/proposals/ev-shadow/DESIGN.md`.
+
+**How it works:**
+- On `rejectedAt === 'EV'`, `alertPipeline` calls the optional `deps.onEvRejected`. That is synchronous fire-and-forget in a `try`, after the existing logging and before the existing `return`.
+- `core/evShadow.ts` then records a simulated outcome in its own table, `ev_shadow_outcomes` (migration 0007).
+- **Rules:** the same levels (`core/tradeLevels.ts`, now shared with the pipeline), the same exits as `positionTracker.processTick` (TIME at 15:15, then stop, then target), and the same R.
+- **Nifty option fires** are evaluated on Nifty index ticks and flagged `index_proxy`.
+
+**Isolation and bounds:**
+- It never touches `paper_trades`, Redis trade keys, `pnl:daily`, alerts or stats. There are no Redis keys; state is in memory and reloaded from the table on a same-day restart.
+- **Bounds:** 50 rows a day, 20 open at once, one open per symbol + detector + side.
+- `EV_SHADOW_ENABLED=true` turns it on.
+- **After 0007, `pg_dump` has 4 TABLE DATA entries.**
+
+**Tests:** `tests/evShadow.test.ts` checks identical effects on and off, the same exits as the real tracker (including ticks exactly on the stop and the target), bounds, import-level isolation (only types and `tradeLevels`), no Redis or `positionTracker` calls, the daily cap across a same-day restart, and a non-blocking `init` (5 s timeout, then inactive for the day).
+
+**Deploy:** migration 0007 runs through `quant_api` after rebuilding both images. The owner turned the shadow on (`EV_SHADOW_ENABLED=true` in `.env`, 28 Oct decision); a recreate re-reads `.env`. Steps are in `DESIGN.md`. After 0007, the backup gate expects **4** TABLE DATA entries.
+
+## 11.27 Watchlist population change, effective 2026-10-28 (config only; no code, no image)
+
+**This is a series break in the stock universe.** Every per-day count from 28 Oct onward covers a different set of stocks: fires, alerts, paper trades and stocks seen. Don't compare it with earlier days without splitting by group.
+
+**What changed:** `/app/data/watchlist.json` (volume `screener_data`) went from **25 to 51 stocks** on 27 Oct at about 20:42 IST. The engine reads it once at boot (`websocket.ts`, `resolveScreenerFile`), so it takes effect at the 28 Oct 09:00 boot. Expected boot line: `52/100 symbols — watchlist 51 + bench 0 + index 1 + options 0`.
+
+**The 51:**
+- the 25 names live since 20 Oct;
+- the 4 owner picks (PR #36): BSE, MCX, PAYTM, ATHERENERG;
+- the 22 names from #34's `RULE.md`, the rule committed before ranking, with BSE, MCX and PAYTM counted once.
+
+No hand-picked names, and none of RULE-85's extra 33.
+
+**Checks before the write:**
+- every code is in `fyersUniverse.json` and the screener's 19-Oct universe, and the engine had received ticks for each;
+- no per-stock config is needed;
+- seeder pacing: a restart during the session makes at most 53 Data-API calls through the engine limiter (4/s, 40/min; simulated on the real limiter: at most 40 in any 60 s). A 09:00 boot makes none.
+- The monitor's stocks-seen total is now read from the heartbeat (it was hard-coded at 25).
+
+**Rollback:** the backup is `watchlist.json.bak-20261027-25` (sha `da466dc769c0…`; the new file is `7bb595743f1b…`).
+- Before 09:00: copy it back.
+- After 09:00: no restart in market hours; report only.
+
+### 11.27.1 New listing: Jio Platforms (`NSE:JPL-EQ`), effective 2026-10-29 (config only; owner decision 28 Oct)
+
+**A second population change, kept as its own group `new_listing`.** It's separate from the three groups in §11.27 (20-Oct live, owner pick, #34 rule). Any live table from 29 Oct onward reports this group on its own, or leaves it out. Its paper trades are analysed separately.
+
+**What changed:** `NSE:JPL-EQ` was appended as the **last entry** of `/app/data/watchlist.json` on 28 Oct at 22:00 IST, taking it from 51 to 52 stocks. Expected boot line on 29 Oct: `53/100 symbols — watchlist 52 + bench 0 + index 1 + options 0`.
+- **Date added:** 2026-10-28. The stock listed on NSE that day. **First session in the engine:** 2026-10-29.
+- **Why there's no group field:** the file is a flat `string[]`. Both readers (`websocket.ts` boot and `vwapSeeder.ts`) parse it as one, so a grouped object would break the boot. The group lives in the docs, like the §11.27 groups do.
+
+**Checks before the write:**
+- **The code:** it's in the public Fyers master `NSE_CM.csv` (master date 2026-10-27), as exactly one row: `JIO PLATFORMS LIMITED`, ISIN `INE0BJO01010`, series EQ, token 766830, lot 1, tick 0.10. The only other "JIO" equity is `JIOFIN`, a different company.
+- **An unknown symbol doesn't fail the chunk in the SDK.** In `fyers-api-v3` 1.7.0 (decoded offline), `subscribe` maps symbols to tokens through the `data/symbol-token` endpoint in batches of 500. It subscribes only the symbols returned in `validSymbol` and skips the rest. The residual risk: if that REST call errors as a whole, its whole batch (all 53) gets no tokens. The source can't show whether Fyers' server does that for one bad symbol, so the code was verified from the master instead.
+- **Seeder:** the 09:00 boot makes no Data-API calls (skipped before 09:15). A restart during the session makes at most 54, through the same limiter. A failure for one symbol stays with that symbol.
+
+**Known limits of this group:**
+- only 1-2 days of daily history, so ATR, ADR and the trend gate mean little for it;
+- first-days volatility and the listing price bands;
+- the 0.2% VWAP stop is likely to be hit often.
+
+**Depends on `quant_screener` staying absent.** If that job ever runs, it rewrites `watchlist.json` from its own rule and drops this name (and the §11.27 lists).
+
+**Rollback:** the backup is `watchlist.json.bak-20261028-prejpl` (sha `7bb595743f1b…`, the 51-stock file; the new file is `668c754d3cde…`).
+- Before 09:00: copy it back.
+- After 09:00: no restart in market hours; report only.
+
+## 11.29 processTick serialised per symbol: no double close (2026-10-28, PR #44; deployed 31 Oct evening, first session Mon 2 Nov)
+
+**Bug (pre-existing):** the tick handler calls `positionTracker.processTick` without awaiting it. Two overlapping calls for one symbol could both see a position open and both close it: two `trades:history` rows, `pnl:daily` counted twice, and two Postgres UPDATEs (the second one matched nothing). This was the "LOW 1" overlap noted in the PR #22 review.
+
+**Fix:** `processTick` queues calls per symbol (`tickQueues`); each runs `processTickNow` when the previous one for that symbol has finished. Other symbols are not delayed.
+
+**Tests:** `tests/tickSerialization.test.ts`. The double-close test fails when the queue is removed (checked).
+
+**Behaviour:** close outcomes are unchanged; only the duplicate second close is gone. This is the prerequisite for the 15:15 timer exit (PR "timer square-off").
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
