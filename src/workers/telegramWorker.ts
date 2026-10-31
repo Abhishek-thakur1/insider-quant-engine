@@ -3,11 +3,12 @@ import { Telegraf } from 'telegraf'
 import { ENV } from '../config/env.js'
 import { runJaneStreetFilter, CONFIRMATION_THRESHOLD } from '../detectors/janeStreetFilter.js'
 import type { DetectorType } from '../utils/regimeDetector.js'
-import { parseMaxAlertsPerDay } from './alertPolicy.js'
+import { COMPARE_AND_DELETE_LUA, COMPARE_AND_SET_LUA, parseMaxAlertsPerDay } from './alertPolicy.js'
 import { runAlertPipeline, type PipelineDeps } from './alertPipeline.js'
 import { newSignalDraft, buildSignalRow, type SignalDraft } from '../db/signalRecord.js'
 import { signalLog } from '../db/signalLog.js'
 import { getSymbolSource } from '../core/symbolSource.js'
+import { getEvShadow } from '../core/evShadow.js'
 
 const bot = new Telegraf(ENV.TELEGRAM_BOT_TOKEN)
 const SHADOW_MODE = process.env.SHADOW_MODE === 'true'
@@ -51,15 +52,29 @@ export const backtestSink: { collect: ((payload: AlertPayload) => void) | null }
 const BACKTEST_MODE = process.env.BACKTEST_MODE === 'true'
 
 // Live I/O for the pipeline (alertPipeline.ts holds the logic, env-free and tested).
+const loadRedis = async () => (await import('../config/redis.js')).redisClient
 const liveDeps: PipelineDeps = {
 	runFilter: (data) => runJaneStreetFilter(data, data.detectorName),
 	getTracker: async () => (await import('../core/positionTracker.js')).positionTracker,
-	getAlertStore: async () => (await import('../config/redis.js')).redisClient,
+	getAlertStore: loadRedis,
+	getClaimStore: async () => {
+		const redisClient = await loadRedis()
+		return {
+			get: (k) => redisClient.get(k),
+			set: (k, v, o) => redisClient.set(k, v, o),
+			compareAndSet: async (k, expected, next, ttl) =>
+				Number(await redisClient.eval(COMPARE_AND_SET_LUA, { keys: [k], arguments: [expected, next, String(ttl)] })) === 1,
+			compareAndDelete: async (k, expected) =>
+				Number(await redisClient.eval(COMPARE_AND_DELETE_LUA, { keys: [k], arguments: [expected] })) === 1,
+		}
+	},
 	sendChannel: (text, markdown) =>
 		markdown
 			? bot.telegram.sendMessage(ENV.TELEGRAM_CHANNEL_ID, text, { parse_mode: 'Markdown' })
 			: bot.telegram.sendMessage(ENV.TELEGRAM_CHANNEL_ID, text),
 	sendAdmin: (text) => bot.telegram.sendMessage(ENV.TELEGRAM_ADMIN_ID, text),
+	// No-op unless the engine created the EV-reject shadow tracker (EV_SHADOW_ENABLED=true).
+	onEvRejected: (data, decision, signalId) => getEvShadow()?.record(data, decision, signalId),
 	now: () => Date.now(),
 	// SHADOW_MODE / MAX_ALERTS_PER_DAY were module-level constants in the old
 	// worker; ENV.* was read on every call. Getters keep exactly that timing

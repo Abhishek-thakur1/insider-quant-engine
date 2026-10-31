@@ -42,6 +42,21 @@ export const isOrphanedAtBoot = (
 	(!pos.durationClass || pos.durationClass === 'INTRADAY') &&
 	istDate(pos.timestamp) !== istDate(nowMs)
 
+/**
+ * The boot-time ORPHANED update for a prior-day leftover. Only a row that is still OPEN is a
+ * real position no process tracks any more. A SKIPPED row (capital-skipped, size 0) was never a
+ * position and keeps its status. Until 2026-10-26 this matched `status IN ('OPEN', 'SKIPPED')`
+ * (bb7fb46) and relabelled capital-skipped Nifty options, which never close in-session, as
+ * ORPHANED at the next boot (rows 1583, 1585, 1590, 1596, 1599, 1603).
+ */
+export const orphanUpdate = (match: { where: string; params: unknown[] }): { text: string; params: unknown[] } => ({
+	text: `UPDATE paper_trades
+	 SET status = 'ORPHANED',
+	     data_quality = CASE WHEN 'orphaned' = ANY(data_quality) THEN data_quality ELSE array_append(data_quality, 'orphaned') END
+	 WHERE ${match.where} AND status = 'OPEN'`,
+	params: match.params,
+})
+
 // ── Position identity (2026-10-22) ──────────────────────────────────────────
 // The id used to be `trade_<ms>_<symbol>`. On Oct 22 at 11:06 two detectors fired AEQUS LONG
 // in the same millisecond: both positions got the same id, the second overwrote the first in

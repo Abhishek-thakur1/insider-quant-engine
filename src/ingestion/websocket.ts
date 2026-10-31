@@ -117,6 +117,7 @@ tickEmitter.setMaxListeners(200)
 
 import { positionTracker } from '../core/positionTracker.js'
 import { pool } from '../config/db.js'
+import { EvShadowTracker, evShadowEnabled, getEvShadow, pgEvShadowStore, setEvShadow } from '../core/evShadow.js'
 import { schemaProblem } from '../db/migrate.js'
 import { signalLog } from '../db/signalLog.js'
 import { registerWatchlistSources, setSymbolSource } from '../core/symbolSource.js'
@@ -201,6 +202,12 @@ export const startLiveEngine = async () => {
 	const schemaIssue = await schemaProblem(pool)
 	if (schemaIssue) console.error(`[Engine] ❌ Database schema not current: ${schemaIssue}`)
 	await positionTracker.init()
+	// EV-reject shadow outcomes (observation only, off unless EV_SHADOW_ENABLED=true; core/evShadow.ts).
+	if (evShadowEnabled()) {
+		const evShadow = new EvShadowTracker(pgEvShadowStore(pool))
+		await evShadow.init()
+		setEvShadow(evShadow)
+	}
 
 	const activeUniverse = [...watchlist]
 	const activeUniverseSet = new Set<string>(activeUniverse)
@@ -280,7 +287,7 @@ export const startLiveEngine = async () => {
 	// Nifty cooldown keys (cooldown:v2:nifty_pulse, cooldown:v2:vwap_reclaim,
 	// cooldown:v2:nifty_ore, cooldown:oi_sweep, cooldown:delta_squeeze) are TTL'd
 	// and intentionally survive restarts — see the per-symbol note above.
-	// alert:sent:{day}:* / alert:count:{day} (alertPolicy) are date-keyed and
+	// alert:sent:{day}:* / alert:count:{day} / alert:sym:{day}:* / paper:sym:{day}:* (alertPolicy) are date-keyed and
 	// must never be cleared here either.
 	// trades:open is NOT cleared: positionTracker.init() (above) already loaded
 	// it, and deleting it orphaned every position still open at the next boot.
@@ -290,6 +297,7 @@ export const startLiveEngine = async () => {
 	// cleanup above removes only the legacy un-dated jsfilter:stats hash.
 	// ema_shadow:nifty:bars5 is NOT cleared: it is the EMA shadow's warm-up history
 	// (its own closed 5-min candles, capped at MAX_STORED_BARS).
+	// diag:nifty:{day} (detectorDiagnostics) is date-keyed with a 36 h TTL: never cleared here.
 	// engine:boot_day is the cleanup's own marker (IST date of the last boot, 7-day TTL).
 
 	// EMA trend study in SHADOW (owner spec 2026-10-21): no alerts, no filter,
@@ -348,6 +356,7 @@ export const startLiveEngine = async () => {
 				if (lastNiftyVwap > 0) await updateNiftyBias(rawTick.ltp, lastNiftyVwap)
 
 				feedTick(NIFTY_SYMBOL, rawTick.ltp, liveTick.volume)
+				getEvShadow()?.onTick(NIFTY_SYMBOL, rawTick.ltp, liveTick.timestamp).catch(() => {}) // observation only, never awaited
 
 				// Shadow only; a failure here must never touch the live Nifty stack.
 				try {
@@ -400,6 +409,7 @@ export const startLiveEngine = async () => {
 			if (activeUniverseSet.has(rawTick.symbol)) {
 				await updateVwap(rawTick.symbol, liveTick.price, liveTick.volume)
 				feedTick(rawTick.symbol, liveTick.price, liveTick.volume)
+				getEvShadow()?.onTick(rawTick.symbol, liveTick.price, liveTick.timestamp).catch(() => {}) // observation only, never awaited
 				const strategies = strategyRouter.get(rawTick.symbol)
 				if (strategies) {
 					await Promise.all(strategies.map((s) => s.analyze(liveTick)))
