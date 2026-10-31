@@ -2,6 +2,15 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## `feat/vwap-session-gate` (PR #40): merged and deployed 31 Oct evening with #45 as ONE series break; first session Mon 2 Nov
+
+- **Series break, dated 2026-10-31 (with #45, timer exit):** from Mon 2 Nov, early-session VWAP-based values (stops, the Nifty reference and bias) and 15:15 TIME-exit prices are measured differently. Live tables split at 2026-11-02 for these.
+- **VWAP starts at 09:15 IST** (AGENTS.md §11.25). The pre-open auction print (equities) and the pre-open index minutes (Nifty) no longer enter the day's VWAP or the Nifty session reference. That matches the seeder and the backtest.
+- **The effect, measured before deciding:** `docs/proposals/vwap-session-gate/EFFECT.md`. Nifty is +32 to +44 pts at 09:20–09:25 on 26 Oct. Equity stops: median 2.4 bps at 09:20, 99th percentile 32 bps (cache, upper bound).
+- **Unchanged:** regime returns, detectors, thresholds and the filter. The kill switch is `VWAP_SESSION_GATE=false`.
+- **Refactor:** the Nifty one-minute tracker moved to `src/core/niftyMinuteState.ts` so the test drives the real code.
+- **Test:** `tests/vwapSessionGate.test.ts`, a parity test against `replaySession` on real cached bars.
+
 ## `fix/staleness-message` (PR #37): merged and deployed 31 Oct evening (owner moved it from Fri 30 Oct); boot log text only, first boot Mon 2 Nov
 
 - **Boot staleness message names the file actually in use.** With `/app/data/watchlist.json` present but no `watchlist_meta.json` (EC2 since 20 Oct), the engine said `screener output not found … using the baked-in watchlist.json` and sent it to the admin chat on every boot, although it reads the volume's file (`resolveScreenerFile`). It now says `watchlist_meta.json missing or unreadable in /app/data — using /app/data/watchlist.json; its age can't be checked`. The baked-in wording remains for when the volume file is missing too.

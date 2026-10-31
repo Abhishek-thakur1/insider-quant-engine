@@ -1,5 +1,6 @@
 import { redisClient } from '../config/redis.js'
 import type { MarketBias, VwapState } from '../core/types.js'
+import { getISTMinutes } from './marketHours.js'
 
 const NIFTY_BIAS_KEY = 'market:nifty:bias'
 
@@ -47,6 +48,25 @@ export const updateVwap = async (
 	await redisClient.setEx(key, VWAP_TTL_SECS, JSON.stringify(state))
 	return state.vwap
 }
+
+// ── Session gate (2026-10-27) ────────────────────────────────────────────────
+// The engine boots at 09:00. Before this gate, every equity tick with volume and every Nifty minute
+// from boot onward entered the day's VWAP: the pre-open auction print (equities) and ~13 pre-open
+// index minutes (Nifty, 388 candles on 26 Oct instead of 375). The seeder (1-minute candles from
+// 09:15) and the backtest replay (bars from 09:15) never include them, so live and backtest VWAP
+// differed most in the first hour. Only data from 09:15 IST counts now.
+// Kill switch: VWAP_SESSION_GATE=false restores the old behaviour without a rebuild.
+export const VWAP_SESSION_START_MIN = 9 * 60 + 15
+
+export const vwapSessionGateEnabled = (): boolean => process.env.VWAP_SESSION_GATE !== 'false'
+
+/** True when data stamped at `ms` may enter the day's VWAP. */
+export const inVwapSession = (ms: number): boolean =>
+	!vwapSessionGateEnabled() || getISTMinutes(ms) >= VWAP_SESSION_START_MIN
+
+/** The live equity tick path: updateVwap, but only for ticks from 09:15 IST. Returns null when skipped. */
+export const updateSessionVwap = async (symbol: string, price: number, volume: number, ms: number): Promise<number | null> =>
+	inVwapSession(ms) ? updateVwap(symbol, price, volume) : null
 
 // [FIX: SILENT FAILURE] The original getVwap returned null when no VWAP key existed.
 // Detectors treated null as "no filter — allow the alert through", which means a

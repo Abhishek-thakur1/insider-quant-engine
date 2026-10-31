@@ -285,6 +285,8 @@ vwap = cumulativeVol > 0 ? cumulativePV / cumulativeVol : price
 ```
 
 Live ticks pass no H/L → `typicalPrice = ltp` (each tick treated as its own zero-range candle).
+
+**Session gate (PR #40, deployed 31 Oct evening, first session Mon 2 Nov; §11.25).** On that branch only data from 09:15 IST enters the VWAP: equity ticks go through `updateSessionVwap`, and Nifty minutes through `onNiftyTick` in `core/niftyMinuteState.ts`. `VWAP_SESSION_GATE=false` turns it off.
 **This is a read-modify-write on Redis per tick with no atomicity.** In practice the single-listener
 handler serialises around `await` boundaries, but it is not guaranteed.
 
@@ -1782,6 +1784,32 @@ before costs. One SELECT, read-only, sends nothing itself; lists the top `MAX_RO
   admin message after the existing summary, so the summary itself is unchanged. No engine, API or
   container change; the script is copied alone to `~/evidence/monitor/` (no host `git pull`, so engine rebuild sources are untouched).
 - Nothing changes what reaches the alert channel: the digest goes to the admin chat, like the summary.
+
+## 11.25 VWAP session gate (2026-10-27, PR #40; deployed 31 Oct evening together with #45 as ONE series break; first session Mon 2 Nov)
+
+**Finding:**
+- On the usual 09:00 boot, the live VWAP included pre-open data:
+  - each equity's pre-open auction print (about 09:08);
+  - about 13 pre-open Nifty minutes (388 candles on 26 Oct instead of 375).
+- The seeder and the backtest replay start at 09:15, so live and backtest differed.
+- Measured size, in `docs/proposals/vwap-session-gate/EFFECT.md`:
+  - **Nifty:** +32 to +44 pts at 09:20–09:25, under 7 pts from 10:15.
+  - **Equity stops** (cache estimate, upper bound): median 2.4 bps at 09:20, 99th percentile 32 bps, under 1 bp median after 09:50.
+
+**Change:**
+- `vwapUtils.inVwapSession(ms)` is true from 09:15 IST.
+- `updateSessionVwap` is the equity tick path.
+- The Nifty one-minute tracker moved, otherwise unchanged, from `websocket.ts` to `core/niftyMinuteState.ts` (`onNiftyTick`, `get/setLastNiftyVwap`). It updates the reference only for minutes that start at or after 09:15.
+- **Regime returns are not gated.**
+- **Kill switch:** `VWAP_SESSION_GATE=false`.
+
+**Test:** `tests/vwapSessionGate.test.ts` drives the real live paths and `replaySession` on real cached bars for 2026-09-07. That day has 5 real Nifty pre-open bars, and the SBIN auction residual is used.
+- With the gate, the VWAP state equals the replay's exactly.
+- Without it, it differs by exactly the pre-open data.
+
+**Side effect:** on a 09:00 boot the Nifty bias is unset until about 09:16.
+
+**Deploy (owner, 28 Oct): Sat 31 Oct, together with #45 (timer square-off) as ONE series break; first session Mon 2 Nov.** Note (review of 28 Oct): live Nifty minutes start at their first tick, not on the clock, so the first in-session minute begins at about 09:15:xx rather than exactly 09:15:00. The effect is about one minute in 375. The deploy date is a **series break**: before it, live VWAP, VWAP stops, the Nifty reference and the bias included pre-open data; after it they don't. Values from the first hour (about 09:15–10:15) are not comparable across the break. At deploy, record the date here, in the CHANGELOG, and as a deviation-log entry in `docs/studies/edge-map/PREREGISTRATION.md`. Deploy date: _not yet deployed_.
 
 ## 11.26 EV-reject shadow outcomes (2026-10-27, PR #41; deployed 29 Oct evening with migration 0007, **shadow ON** from the 30 Oct boot)
 
