@@ -155,8 +155,8 @@ export const validateDailyFile = (f: unknown): string[] => {
 	return [...errs, ...validateList(x.symbols)]
 }
 
-/** SCREENER_ENABLED: on unless exactly 'false'. */
-export const screenerEnabled = (env: NodeJS.ProcessEnv = process.env): boolean => env.SCREENER_ENABLED !== 'false'
+/** SCREENER_ENABLED: off unless exactly 'true' (owner, 2 Nov: default off until a scan has been reviewed). */
+export const screenerEnabled = (env: NodeJS.ProcessEnv = process.env): boolean => env.SCREENER_ENABLED === 'true'
 
 export interface WatchlistChoice {
 	path: string
@@ -177,7 +177,7 @@ export const chooseWatchlist = (opts: { enabled: boolean; dailyPath: string; sta
 		reason,
 		fellBack,
 	})
-	if (!opts.enabled) return fromStatic('SCREENER_ENABLED=false', false)
+	if (!opts.enabled) return fromStatic('SCREENER_ENABLED is not true', false)
 	let f: DailyWatchlistFile
 	try {
 		f = JSON.parse(read(opts.dailyPath)) as DailyWatchlistFile

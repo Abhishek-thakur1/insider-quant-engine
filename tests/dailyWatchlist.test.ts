@@ -106,7 +106,7 @@ test('the engine uses the daily list only when enabled, valid and for today; oth
 	c = pick(true)
 	assert.equal(c.source, 'daily'); assert.equal(c.symbols.length, 94); assert.equal(c.fellBack, false); assert.equal(c.path, dailyPath)
 	c = pick(false)
-	assert.equal(c.source, 'static'); assert.equal(c.fellBack, false); assert.equal(c.reason, 'SCREENER_ENABLED=false'); assert.deepEqual(c.symbols, core)
+	assert.equal(c.source, 'static'); assert.equal(c.fellBack, false); assert.equal(c.reason, 'SCREENER_ENABLED is not true'); assert.deepEqual(c.symbols, core)
 	c = pick(true, '2026-11-04')
 	assert.equal(c.source, 'static'); assert.equal(c.fellBack, true); assert.match(c.reason, /is for 2026-11-03/)
 	fs.writeFileSync(dailyPath, daily({ symbols: core }))
@@ -119,10 +119,11 @@ test('the engine uses the daily list only when enabled, valid and for today; oth
 	assert.equal(fs.readFileSync(staticPath, 'utf8'), JSON.stringify(core), 'the static file is never written')
 })
 
-test('SCREENER_ENABLED defaults to true; only "false" turns it off', () => {
-	assert.equal(screenerEnabled({}), true)
+test('SCREENER_ENABLED defaults to false; only "true" turns it on (owner, 2 Nov)', () => {
+	assert.equal(screenerEnabled({}), false)
 	assert.equal(screenerEnabled({ SCREENER_ENABLED: 'true' }), true)
-	assert.equal(screenerEnabled({ SCREENER_ENABLED: '0' }), true)
+	assert.equal(screenerEnabled({ SCREENER_ENABLED: '1' }), false)
+	assert.equal(screenerEnabled({ SCREENER_ENABLED: 'TRUE' }), false)
 	assert.equal(screenerEnabled({ SCREENER_ENABLED: 'false' }), false)
 })
 

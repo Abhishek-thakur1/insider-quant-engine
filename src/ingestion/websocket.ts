@@ -94,7 +94,7 @@ export const startLiveEngine = async () => {
 
 	const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt')
 	// Daily list (scripts/daily_watchlist.ts → /app/data/watchlist_daily.json) when SCREENER_ENABLED
-	// isn't 'false' and it is valid and for today; else the static watchlist.json (screener/paths.ts).
+	// is 'true' and it is valid and for today; else the static watchlist.json (screener/paths.ts).
 	let choice: ReturnType<typeof resolveWatchlist> | null = null
 	try {
 		choice = resolveWatchlist()
