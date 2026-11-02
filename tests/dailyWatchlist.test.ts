@@ -1,4 +1,4 @@
-// Daily watchlist (rules dw-1, docs/studies/daily-watchlist/PREREGISTRATION.md). No Fyers calls:
+// Daily watchlist (rules dw-2, docs/studies/daily-watchlist/PREREGISTRATION_dw2.md). No Fyers calls:
 // the master, quotes, file writes and alerts are all fakes.
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -11,6 +11,7 @@ import {
 	chooseWatchlist,
 	CORE_SIZE,
 	DAILY_FILE,
+	eligibilityFunnel,
 	eligible,
 	inSessionWindow,
 	MAX_STOCKS,
@@ -26,8 +27,8 @@ import {
 
 const AS_OF = '2026-11-02'
 const FOR = '2026-11-03'
-// 2 Nov 2026 15:29:59 IST in epoch seconds
-const TT = Math.floor(Date.parse('2026-11-02T09:59:59Z') / 1000)
+// Fyers `tt` ("Today's time") for 2 Nov 2026: a date stamp, 00:00 UTC = 05:30 IST
+const TT = Math.floor(Date.parse('2026-11-02T00:00:00Z') / 1000)
 const q = (o: Partial<DailyQuote> = {}): DailyQuote => ({ lp: 100, prevClose: 100, high: 102, low: 98, volume: 10_000_000, tt: TT, ...o })
 const core = JSON.parse(fs.readFileSync(path.resolve('config/daily_watchlist_core.json'), 'utf8')) as string[]
 const sym = (i: number) => `NSE:S${String(i).padStart(4, '0')}-EQ`
@@ -46,11 +47,12 @@ test('percentiles: 0..1, ties averaged', () => {
 	assert.deepEqual(percentiles([]), [])
 })
 
-test('as-of rule and eligibility floors', () => {
-	assert.equal(eligible(q(), AS_OF), true)
-	assert.equal(eligible(q({ tt: TT + 86_400 }), AS_OF), false, 'a quote from the target session is never used')
-	assert.equal(eligible(q({ tt: TT - 86_400 }), AS_OF), false, 'did not trade on the as-of day')
-	assert.equal(eligible(q({ tt: Math.floor(Date.parse('2026-11-02T03:40:00Z') / 1000) }), AS_OF), false, '09:10 IST is pre-open')
+test('as-of rule (dw-2): the IST date of tt is the as-of day and volume > 0; then the floors', () => {
+	assert.equal(eligible(q(), AS_OF), true, 'the date stamp 00:00 UTC (05:30 IST) of the as-of day counts')
+	assert.equal(eligible(q({ tt: TT + 16 * 3600 }), AS_OF), true, 'any time on the as-of day (e.g. a fetch-time stamp at 21:30 IST)')
+	assert.equal(eligible(q({ tt: TT + 86_400 }), AS_OF), false, 'a quote stamped on the target session is never used')
+	assert.equal(eligible(q({ tt: TT - 86_400 }), AS_OF), false, 'stamped the day before')
+	assert.equal(eligible(q({ volume: 0 }), AS_OF), false, 'did not trade')
 	assert.equal(eligible(q({ lp: 49.9, prevClose: 49.9, high: 51, low: 48 }), AS_OF), false, 'below ₹50')
 	assert.equal(eligible(q({ volume: 4_999_999 }), AS_OF), false, 'turnover below ₹50 crore')
 	assert.equal(eligible(q({ high: 100, low: 100 }), AS_OF), false, 'stuck at one price')
@@ -91,7 +93,7 @@ test('validation: 60–94 unique well-formed stocks', () => {
 })
 
 const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'dw-'))
-const daily = (o: Record<string, unknown> = {}) => JSON.stringify({ rulesVersion: 'dw-1', asOf: AS_OF, forSession: FOR, generatedAt: 'x', requests: 49, symbols: Array.from({ length: 94 }, (_, i) => sym(i)), entries: [], ...o })
+const daily = (o: Record<string, unknown> = {}) => JSON.stringify({ rulesVersion: 'dw-2', asOf: AS_OF, forSession: FOR, generatedAt: 'x', requests: 49, symbols: Array.from({ length: 94 }, (_, i) => sym(i)), entries: [], ...o })
 
 test('the engine uses the daily list only when enabled, valid and for today; otherwise the static file', () => {
 	const dir = tmpDir()
@@ -112,7 +114,7 @@ test('the engine uses the daily list only when enabled, valid and for today; oth
 	fs.writeFileSync(dailyPath, daily({ symbols: core }))
 	c = pick(true)
 	assert.equal(c.source, 'static'); assert.match(c.reason, /25 stocks/)
-	fs.writeFileSync(dailyPath, daily({ rulesVersion: 'dw-0' }))
+	fs.writeFileSync(dailyPath, daily({ rulesVersion: 'dw-1' }))
 	assert.equal(pick(true).source, 'static')
 	fs.writeFileSync(dailyPath, '{not json')
 	assert.equal(pick(true).source, 'static')
@@ -141,6 +143,7 @@ const fakeScan = (o: { n?: number; quote?: (s: string, i: number) => DailyQuote 
 	const universe = [...core, ...Array.from({ length: n - core.length }, (_, i) => sym(i))]
 	const writes = new Map<string, string>()
 	const alerts: string[] = []
+	const rawLines: string[] = []
 	let batchNo = 0
 	const raw = budgeted(async (batch: string[]) => {
 		const i = batchNo++
@@ -156,15 +159,18 @@ const fakeScan = (o: { n?: number; quote?: (s: string, i: number) => DailyQuote 
 		getQuotes: raw.call,
 		quoteRequestsUsed: raw.used,
 		writeFile: (name, content) => writes.set(name, content),
+		saveRaw: (line) => rawLines.push(line),
 		notify: async (t) => alerts.push(t),
 		log: { log: () => {}, warn: () => {} },
 	}
-	return { deps, writes, alerts, raw }
+	return { deps, writes, alerts, raw, rawLines }
 }
 
 test('a good scan writes the list and the day log: 25 core + 69 ranked, with reasons and the request count', async () => {
-	const { deps, writes, alerts, raw } = fakeScan()
+	const { deps, writes, alerts, raw, rawLines } = fakeScan()
 	const r = await runDailyScan(deps)
+	assert.equal(rawLines.length, 24, 'one raw line per quote batch')
+	assert.equal(JSON.parse(rawLines[0]!).resp.s, 'ok')
 	assert.equal(r.ok, true)
 	assert.equal(alerts.length, 0)
 	assert.equal(raw.used(), Math.ceil((1200 - 25) / 50)) // core isn't quoted: 24 batches
@@ -173,7 +179,8 @@ test('a good scan writes the list and the day log: 25 core + 69 ranked, with rea
 	assert.equal(f.symbols.length, 94)
 	assert.deepEqual(f.symbols.slice(0, 25), core)
 	assert.equal(f.requests, 1 + 24)
-	assert.equal(f.asOf, AS_OF); assert.equal(f.forSession, FOR); assert.equal(f.rulesVersion, 'dw-1')
+	assert.equal(f.asOf, AS_OF); assert.equal(f.forSession, FOR); assert.equal(f.rulesVersion, 'dw-2')
+	assert.deepEqual(f.funnel, { quoted: 1175, asOfDay: 1175, price: 1175, turnover: 1175, eligible: 1175 })
 	const rot = f.entries.filter((e: { group: string }) => e.group === 'rotating')
 	assert.equal(rot.length, 69)
 	assert.ok(rot.every((e: { rank: number; score: number; move: number; range: number; turnover: number }) => e.rank > 0 && e.score >= 0 && e.move >= 0 && e.range > 0 && e.turnover > 0))
@@ -187,7 +194,8 @@ test('failures keep the previous list and alert the owner', async () => {
 		['quotes from the target session only', { quote: () => q({ tt: TT + 86_400 }) }, /validation/],
 		['>10% batches failed', { failBatch: (i) => i % 5 === 0 }, /quote batches failed/],
 		['request cap', { cap: 10 }, /quota stop: quote request cap 10/],
-		['more batches than the cap allows', { n: 50 * QUOTE_REQUEST_CAP + 26 }, /> cap 59/],
+		['more batches than the cap allows', { n: 50 * QUOTE_REQUEST_CAP + 26 }, /> cap 47/],
+		['not traded (volume 0)', { quote: () => q({ volume: 0 }) }, /as-of day 0/],
 	]
 	for (const [name, opts, re] of cases) {
 		const { deps, writes, alerts } = fakeScan(opts)
@@ -197,18 +205,18 @@ test('failures keep the previous list and alert the owner', async () => {
 		assert.equal(alerts.length, 1, `${name}: one alert`)
 		assert.match(alerts[0]!, /NOT updated/)
 		assert.match(alerts[0]!, re, name)
-		assert.ok((r as { requests: number }).requests <= 60, `${name}: within 60 requests`)
+		assert.ok((r as { requests: number }).requests <= 48, `${name}: within 48 requests`)
 	}
 })
 
-test('the request cap counts every attempt, retries included, and never exceeds 59 quote calls', async () => {
+test('the request cap counts every attempt, retries included, and never exceeds 47 quote calls', async () => {
 	let calls = 0
 	const raw = budgeted(async () => { calls++; return { s: 'ok', d: [] } }, 3)
 	await raw.call([]); await raw.call([]); await raw.call([]) // e.g. one batch tried 3 times by the gate
 	await assert.rejects(raw.call([]), /cap 3 reached/)
 	assert.equal(calls, 3)
 	assert.equal(raw.used(), 3)
-	assert.equal(QUOTE_REQUEST_CAP, 59)
+	assert.equal(QUOTE_REQUEST_CAP, 47)
 })
 
 test('atomic writer: temp file then rename, subdirectories created', () => {
@@ -219,4 +227,25 @@ test('atomic writer: temp file then rename, subdirectories created', () => {
 	assert.equal(fs.readFileSync(path.join(dir, DAILY_FILE), 'utf8'), '{"b":2}')
 	assert.equal(fs.readFileSync(path.join(dir, 'watchlist_daily_history', '2026-11-03.json'), 'utf8'), '{"a":1}')
 	assert.deepEqual(fs.readdirSync(dir).filter((f) => f.includes('.tmp-')), [])
+})
+
+test('a failed scan still keeps its raw quote sample, error batches included', async () => {
+	const { deps, writes, rawLines } = fakeScan({ failBatch: (i) => i % 5 === 0 })
+	const r = await runDailyScan(deps)
+	assert.equal(r.ok, false)
+	assert.equal(writes.size, 0)
+	assert.equal(rawLines.length, 24)
+	assert.equal(rawLines.filter((l) => JSON.parse(l).error).length, 5)
+})
+
+test('eligibility funnel counts each step in order, core excluded', () => {
+	const quotes = new Map<string, DailyQuote>([
+		[core[0]!, q()],
+		['NSE:OK-EQ', q()],
+		['NSE:OLD-EQ', q({ tt: TT - 86_400 })],
+		['NSE:CHEAP-EQ', q({ lp: 10, prevClose: 10, high: 11, low: 9, volume: 1e9 })],
+		['NSE:THIN-EQ', q({ volume: 10 })],
+		['NSE:FLAT-EQ', q({ high: 100, low: 100 })],
+	])
+	assert.deepEqual(eligibilityFunnel(quotes, core, AS_OF), { quoted: 5, asOfDay: 4, price: 3, turnover: 2, eligible: 1 })
 })

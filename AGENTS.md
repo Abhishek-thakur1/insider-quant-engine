@@ -1927,6 +1927,15 @@ No hand-picked names, and none of RULE-85's extra 33.
   - **A restart during the session** now seeds up to 94 stocks + Nifty from Fyers history (was 53), paced at 4/s and 40/min. That's within the seeder's 300/day allocation for up to 3 restarts.
   - **Load:** with about 95 symbols, ticks per 5 minutes and engine CPU should roughly double (52 stocks: about 7% CPU, 127 MiB on 2 Nov).
 
+### 11.31.1 Rules dw-2 (`feat/daily-watchlist-dw2`, pre-registered 2 Nov `5082c6c`; NOT merged, NOT deployed)
+
+`docs/studies/daily-watchlist/PREREGISTRATION_dw2.md`. Three differences from dw-1:
+- **As-of rule:** the IST date of `tt` equals the as-of day, and volume > 0. `tt` is a date stamp, so there is no time-of-day check.
+- **Request cap:** 48 in total (1 master + 47 quote requests, retries counted).
+- **Raw sample:** every raw quote response is saved to `raw_quotes/<session>.jsonl`, and the run reports how many quotes pass each step (`eligibilityFunnel`).
+
+The daily file's `rulesVersion` must be `dw-2`, so a dw-1 file is rejected at boot. **One scan is authorized** (owner): Tue 3 Nov at about 16:10 IST, before the 17:15 token purge. Its output goes to a host evidence directory via `SCREENER_DATA_DIR`, not to the `screener_data` volume.
+
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
 The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 
