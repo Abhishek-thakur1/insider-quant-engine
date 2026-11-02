@@ -2,6 +2,10 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## Unreleased: `fix/history-date-validation` (API only; not merged, not deployed)
+
+- **`/api/trades/history?date=` returns 400 for a bad date** instead of a 500 carrying the Postgres error text (found in the 31 Oct audit). `/api/signals` now also rejects impossible dates (e.g. 2026-02-30), which used to fail the same way. Validator: `isIsoDate` in `src/api/publicData.ts`; test in `tests/publicData.test.ts`. No engine change.
+
 ## `feat/timer-square-off-exit` (PR #45): merged and deployed 31 Oct evening with #40 as ONE series break; first session Mon 2 Nov
 
 - **The 15:15 TIME exit no longer waits for a traded tick** (AGENTS.md §11.30). A timer closes open INTRADAY positions at the last known price, which is noted from every feed message. On 28 Oct, 6 exits waited until about 15:28.

@@ -16,6 +16,14 @@ import { SESSION_CLOSE_MIN, SESSION_OPEN_MIN, tradingDayVerdict } from '../core/
 import { getISTDateString, getISTMinutes } from '../utils/marketHours.js'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+/** A real calendar date as YYYY-MM-DD. The shape alone lets 2026-02-30 through to Postgres, which
+ *  then fails the query with a 500 that carries the database's error text (audit of 31 Oct). */
+export const isIsoDate = (s: unknown): s is string => {
+	if (typeof s !== 'string' || !DATE_RE.test(s)) return false
+	const [y, m, d] = s.split('-').map(Number) as [number, number, number]
+	const t = new Date(Date.UTC(y, m - 1, d))
+	return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d
+}
 export const SIGNALS_LIMIT = 500
 
 /** Columns safe to expose publicly (no trigger text with sizes, no capital fields). */
@@ -39,7 +47,7 @@ export const SIGNAL_COLUMNS = [
 ] as const
 
 export const signalsQuery = (date: string): { sql: string; params: unknown[] } | null => {
-	if (!DATE_RE.test(date)) return null
+	if (!isIsoDate(date)) return null
 	return {
 		sql: `SELECT ${SIGNAL_COLUMNS.join(', ')} FROM signals WHERE trade_date = $1 ORDER BY fired_at DESC LIMIT ${SIGNALS_LIMIT}`,
 		params: [date],
