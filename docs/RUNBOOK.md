@@ -180,7 +180,7 @@ docker cp quant_postgres:/tmp/pre_<sha>.dump ~/pre_<sha>.dump && ls -lh ~/pre_<s
 **Test restore in a throwaway container (owner decision 2026-10-31; use this one).** It never touches the live `quant_postgres`: a separate Postgres container with a memory cap and no network, removed at the end. Run it on an evening after 16:05 (after that day's 16:00 dump; the engine is stopped, so the live counts don't move).
 
 ```bash
-F=$(sudo ls -1t /var/backups/iqe/paper_trades_*.sql | head -1); echo "$F"        # newest scheduled dump
+F=$(sudo sh -c 'ls -1t /var/backups/iqe/paper_trades_*.sql' | head -1); echo "$F"   # newest scheduled dump (glob under sudo: the directory is root-only)
 sudo cp "$F" /tmp/rt.dump && sudo chown "$USER" /tmp/rt.dump
 docker run -d --rm --name iqe-restore-test --memory 256m --network none -e POSTGRES_PASSWORD=throwaway postgres:15-alpine
 until docker exec iqe-restore-test pg_isready -U postgres -q; do sleep 1; done
@@ -225,7 +225,7 @@ The real restore has **not** been exercised. Only the test restore has.
 
 | Date | Dump | Result | Evidence |
 |---|---|---|---|
-| (next) | newest `/var/backups/iqe` dump, throwaway container | **Planned**: owner approved 31 Oct; first evening after 16:05 with no engine change (Mon 2 Nov) | — |
+| 2026-11-02 19:51 IST | `paper_trades_20261102_160000.sql` (152,645 B, the day's 16:00 dump, 4 TABLE DATA), throwaway container (`postgres:15-alpine`, `--memory 256m`, `--network none`, `--rm`) | ✅ **Passed.** `pg_restore` exit 0. Counts equal live: `paper_trades` 1,750, `signals` 196, `ev_shadow_outcomes` 5, `schema_migrations` 6. Container used about 37–50 MiB of its 256 MiB cap, and was removed (0 left, `/tmp` copy deleted). The first attempt a minute earlier found no file: the old command expanded the glob as `ubuntu`, which can't list the root-only directory; nothing was restored and the live database was only read. The command above is fixed. | `~/evidence/2026-11-02/actions.log` on the host |
 | 2026-10-18 | `~/pre_bb7fb46.dump` (87 KB, written 12:50 UTC, 3 min before migration 0003) | ✅ **Passed.** Archive lists `paper_trades` + data + sequence. Restored without errors: 1,555 `CLOSED` + 27 `OPEN` = 1,582 rows, matching the live pre-migration count. `schema_migrations` absent, as expected. Scratch DB dropped. | Owner-pasted `pg_restore -l` and `psql` output, 2026-10-18 |
 
 ## Planned deploy: session robustness (`fix/session-robustness`) — NOT DEPLOYED

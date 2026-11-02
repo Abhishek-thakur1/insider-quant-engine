@@ -104,7 +104,7 @@ Roll forward: `docker tag insider-quant-engine-quant_engine:deployed-696ad65 ins
 
 ## Open PRs (31 Oct, evening)
 
-Merged as docs/study only: #34, #36 (27 Oct); #35, #42, #39, #28 (28 Oct). Code merged on its evening: #29, #22, #32, #41, #46 (29 Oct); #44, #33, #38, #37, #40, #45 (31 Oct). Repo config: #52 `.gitattributes` (31 Oct). Docs: #47-#51, #53-#55. Dashboard: #9 (31 Oct, `49a0f80`; rollback `git revert -m 1 49a0f80`). Closed: #43, split by the owner into #44 + #45.
+Merged as docs/study only: #34, #36 (27 Oct); #35, #42, #39, #28 (28 Oct). Code merged on its evening: #29, #22, #32, #41, #46 (29 Oct); #44, #33, #38, #37, #40, #45 (31 Oct). Repo config: #52 `.gitattributes` (31 Oct). Docs: #47-#51, #53-#55. Dashboard: #9 (31 Oct, `49a0f80`; rollback `git revert -m 1 49a0f80`). Dashboard #10 (2 Nov, `b163ab9`; rollback `git revert -m 1 b163ab9`). Closed: #43, split by the owner into #44 + #45.
 
 | PR | Title (short) | Type | Runtime effect if deployed | Evening / condition | Independent review | Status |
 |---|---|---|---|---|---|---|
@@ -112,7 +112,6 @@ Merged as docs/study only: #34, #36 (27 Oct); #35, #42, #39, #28 (28 Oct). Code 
 | #56 | Mobile backend readiness audit | docs | none | owner review; **do not merge** before | — | open |
 | #57 | `/api/trades/history` 400 on a bad date | code (API only) | bad dates get 400, not a 500 with DB text | **Thu 5 Nov evening** (owner, 31 Oct), `quant_api` only; not before | — | open, not merged |
 | #58 | Redis host port bound to 127.0.0.1 | compose (Redis) | Redis no longer listens on public interfaces | **Tue 3 Nov evening only, if Mon 2 Nov was clean** (owner, 31 Oct): after 16:05 and the three checks; Redis snapshot first; recreate `quant_redis` only; verify API health that evening and the engine's next boot (Wed 09:00); rollback in the PR | — | open, not merged |
-| dashboard #10 | Stats exclude flagged rows (toggle) | frontend | stat cards/curve leave out flagged rows by default | **Mon 2 Nov evening, after 15:30** (owner, 31 Oct), once the preview checks pass; same checks as dashboard #9 (preview, then production on all three projects); not before | — | open, not merged |
 
 **Reviews:** each independent review runs in its **own clone** (`git clone --shared`), not a worktree of this repo. Worktrees share one `.git`, so a reviewer's git commands could collide with mine ("another command ran in this repository at the same time", owner, 28 Oct).
 
@@ -159,8 +158,8 @@ Group `new_listing`, added 28 Oct (listing day), first session 29 Oct. See AGENT
 
 | Evening | Item | Condition |
 |---|---|---|
-| Mon 2 Nov, after 15:30 | dashboard #10 merge + deploy (frontend only) | preview checks pass; then production checks on all three projects |
-| Mon 2 Nov, after 16:05 | restore test in a throwaway container (256 MB cap, `--network none`) | the three gates; result in `docs/RUNBOOK.md` |
+| Mon 2 Nov, after 15:30 | dashboard #10 merge + deploy (frontend only) | **done** 19:47: preview and production (all three projects, phone + desktop) passed; merge `b163ab9`, rollback `git revert -m 1 b163ab9` |
+| Mon 2 Nov, after 16:05 | restore test in a throwaway container (256 MB cap, `--network none`) | **done** 19:51: passed, counts equal live; result in `docs/RUNBOOK.md` |
 | Tue 3 Nov, after 16:05 | #58 Redis bound to 127.0.0.1 | Monday clean; the three gates; snapshot first; `quant_redis` only |
 | Thu 5 Nov evening | #57 API date validation | `quant_api` only |
 
