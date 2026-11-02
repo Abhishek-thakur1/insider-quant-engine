@@ -2,8 +2,9 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## `feat/daily-watchlist`: daily watchlist, rules dw-1 (owner, 2 Nov; first session Tue 3 Nov)
+## `feat/daily-watchlist`: daily watchlist, rules dw-1 (owner, 2 Nov): merged `db42dea`, NOT deployed
 
+- **Not deployed:** the one authorized scan wrote nothing. The as-of rule misread the quote field `tt` (a date stamp, not a last-trade time), so 0 names were eligible. The engine is unchanged (`afe0c959e652`, static list). Details in AGENTS.md §11.31.
 - **What:** an evening scan (1 symbol-master download + at most 59 batched quote requests) ranks the next session's rotating names. The list is the core 25 + up to 69 = 94 stocks + Nifty (AGENTS.md §11.31). The rules were pre-registered before any scan (`docs/studies/daily-watchlist/PREREGISTRATION.md`, `2dc912f`).
 - **Engine:** at boot the engine and the VWAP seeder use `/app/data/watchlist_daily.json` when `SCREENER_ENABLED` isn't `false` and the file is valid and for today. Otherwise they use the static `watchlist.json`, which the scan never writes, and log and alert why.
 - **Kill switch:** `SCREENER_ENABLED=false` (default true).

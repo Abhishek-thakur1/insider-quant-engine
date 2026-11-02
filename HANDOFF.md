@@ -167,6 +167,11 @@ Group `new_listing`, added 28 Oct (listing day), first session 29 Oct. See AGENT
 
 ## Waiting on the owner
 
+- **Daily watchlist (PR #63, merged `db42dea`, NOT deployed; AGENTS §11.31):**
+  - The dw-1 scan on 2 Nov found 0 eligible names (the quote field `tt` is a date stamp, not a last-trade time). The engine is unchanged (`afe0c959e652`, static 52).
+  - **Owner decides:** keep the merge on `v2` or merge the revert PR; whether to pre-register dw-2 (as-of = `tt`'s date equals the as-of day and volume > 0); and a new scan budget.
+  - **Careful:** the `latest` engine image tag (`437efe7d8a41`) is this undeployed build. Recreate the engine only from a reviewed deploy.
+  - **Token:** for the scan, the owner logged in at 20:26 (one Fyers auth call). The token was purged again at 20:28, so Tuesday still needs the 07:45 login.
 - **The 15 older capital-skipped rows** (5–16 Oct): include them in the restore or not. The default is not.
 - **The old `vwap:*` keys:** the cleanup proposal in PR #38 (`docs/proposals/vwap-key-cleanup.md`), not run.
 

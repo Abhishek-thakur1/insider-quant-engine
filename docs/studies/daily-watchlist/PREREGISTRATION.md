@@ -2,6 +2,10 @@
 
 **Committed before any scan was run** (owner, 2 Nov 2026, rule 1). Rules version **`dw-1`**. A rule change means a new version and a new commit, made before the scan that uses it. Nothing here claims an edge: the list decides which stocks the engine watches, and whether that helps is **untracked**.
 
+## Outcome of the first dw-1 scan (2 Nov 2026, 20:27 IST)
+
+No list. 0 rotating names were eligible: the as-of rule below treats the quote field `tt` as a last-trade time, but Fyers documents it as "Today's time", a date stamp (00:00 UTC = 05:30 IST), so no quote fell between 09:15 and 15:30. 48 of 60 requests were used (1 master + 47 quote batches). Nothing was written. These dw-1 rules are kept unchanged as the record. Any fix is a new version (dw-2), committed before the scan that uses it.
+
 ## Inputs (one scan per evening, at most 60 Fyers requests)
 
 1. **Symbol master:** the public `NSE_CM.csv` (1 download, counted as 1 of the 60). The universe is every `NSE:<SYM>-EQ` with an `INE` ISIN (`parseCashUniverse`, `src/screener/masters.ts`; ETFs, MFs and BE/BZ series are left out). If the master can't be read, the scan fails (no fallback file).
