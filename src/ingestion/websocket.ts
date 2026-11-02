@@ -64,7 +64,7 @@ import { EvShadowTracker, evShadowEnabled, getEvShadow, pgEvShadowStore, setEvSh
 import { schemaProblem } from '../db/migrate.js'
 import { signalLog } from '../db/signalLog.js'
 import { registerWatchlistSources, setSymbolSource } from '../core/symbolSource.js'
-import { readMetaSources, resolveAnomalyUniverseFile, resolveScreenerFile, screenerStaleness } from '../screener/paths.js'
+import { readMetaSources, resolveAnomalyUniverseFile, resolveWatchlist, screenerStaleness } from '../screener/paths.js'
 import { engineGate } from '../fyers/engineGates.js'
 
 // High-Conviction Nifty Singleton Detectors
@@ -93,11 +93,15 @@ export const startLiveEngine = async () => {
 	if (calendarWarning) void notifyAdmin(`⚠️ quant_engine: ${calendarWarning}`)
 
 	const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt')
-	// The EOD screener (scripts/screener_eod.ts) writes /app/data/watchlist.json; the
-	// engine only reads it. Falls back to the baked-in file before the first run.
-	const WATCHLIST_PATH = resolveScreenerFile('watchlist.json')
+	// Daily list (scripts/daily_watchlist.ts → /app/data/watchlist_daily.json) when SCREENER_ENABLED
+	// isn't 'false' and it is valid and for today; else the static watchlist.json (screener/paths.ts).
+	let choice: ReturnType<typeof resolveWatchlist> | null = null
+	try {
+		choice = resolveWatchlist()
+	} catch {}
+	const WATCHLIST_PATH = choice?.path ?? 'watchlist.json'
 
-	if (!fs.existsSync(TOKEN_PATH) || !fs.existsSync(WATCHLIST_PATH)) {
+	if (!fs.existsSync(TOKEN_PATH) || !choice) {
 		console.error('❌ CRITICAL: Missing access_token.txt or watchlist.json.')
 		process.exit(1)
 	}
@@ -105,7 +109,9 @@ export const startLiveEngine = async () => {
 	// Subscription plan (core/subscriptionPlan.ts): only what the engine evaluates,
 	// checked against the Fyers per-user symbol cap before any Fyers call is made.
 	// The bench is the Layer B scan set; promotions draw from it and add nothing.
-	const watchlist: string[] = JSON.parse(fs.readFileSync(WATCHLIST_PATH, 'utf8'))
+	const watchlist: string[] = choice.symbols
+	console.log(`[Engine] 🗂️ Watchlist source: ${choice.source} (${choice.reason})`)
+	if (choice.fellBack) void notifyAdmin(`⚠️ quant_engine: daily watchlist not used, static list instead (${choice.reason})`)
 	const scanSetPath = resolveAnomalyUniverseFile()
 	const bench: string[] = scanSetPath ? Object.keys(JSON.parse(fs.readFileSync(scanSetPath, 'utf8'))) : []
 	const optionsEnabled = process.env.NIFTY_OPTIONS_ENABLED === 'true' // off until the expiry fix
