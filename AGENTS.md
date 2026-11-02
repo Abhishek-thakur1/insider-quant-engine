@@ -1904,6 +1904,27 @@ No hand-picked names, and none of RULE-85's extra 33.
 
 **Series break, dated 2026-10-31 (deployed with #40; first session Mon 2 Nov):** time-exit prices are the last known price at the 15:15 timer, not the first traded tick after 15:15. The same date is in the CHANGELOG, HANDOFF and the study's deviation log.
 
+## 11.31 Daily watchlist, rules dw-1 (2026-11-02, owner decision; first session Tue 3 Nov)
+
+**What:** an evening scan picks the next session's watchlist: the **core 25** (the 20 Oct list, `config/daily_watchlist_core.json`) plus up to **69 rotating names**, so 94 stocks + Nifty = 95 symbols (cap 100). The rules are pre-registered in `docs/studies/daily-watchlist/PREREGISTRATION.md`, committed before any scan ran (`2dc912f`). Nothing claims an edge; whether the list helps is **untracked**.
+
+| Piece | Where |
+|---|---|
+| Rules, ranking, validation, which file the engine uses | `src/screener/dailyWatchlist.ts` (pure; tests in `tests/dailyWatchlist.test.ts`, no Fyers calls) |
+| The scan (1 `NSE_CM.csv` download + ≤ 59 batched quote requests, retries counted, through the quota gate as job `screener`; refuses 09:00–15:30 on trading days) | `scripts/daily_watchlist.ts` |
+| Engine boot and VWAP seeder read the same choice | `resolveWatchlist()` in `src/screener/paths.ts`; `websocket.ts` boot, `vwapSeeder.ts` |
+
+- **Outputs** (volume `screener_data`): `/app/data/watchlist_daily.json` and a copy per day in `/app/data/watchlist_daily_history/<session>.json`. Each holds the as-of day, target session, rules version, request count, list, and for every rotating name its rank, score and measures (the reasons). Written atomically. **The static `watchlist.json` is never written by the scan.**
+- **Choice at boot:** the daily file if `SCREENER_ENABLED` isn't `false`, it validates (60–94 unique well-formed stocks, rules `dw-1`) and its `forSession` is today (IST). Otherwise the static `watchlist.json`, with the reason in the boot line `[Engine] 🗂️ Watchlist source: …`, plus a Telegram warning when the flag is on.
+- **Kill switch:** `SCREENER_ENABLED=false` in `.env`, then recreate the engine (outside 09:00–15:30). It returns to the static file with no scan and no rebuild.
+- **On a failed scan** (master unreadable, request cap, > 10% of quote batches failed, validation): nothing is written, the previous file stays, and the owner gets a Telegram alert. A previous file for an older session then fails the `forSession` check at boot, and the engine uses the static file.
+- **Schedule:** **not scheduled.** Each scan is a set of Fyers calls and needs the owner's OK (2 Nov: one scan only). It runs by hand: `docker compose run --rm --no-deps --entrypoint "" quant_engine node --import tsx scripts/daily_watchlist.ts`. The old 16:30 `quant_screener` job is unchanged and still absent.
+- **Side effects to know:**
+  - **A population change** from Tue 3 Nov, so the stock groups of §11.27 and §11.27.1 stop being the live list. Report daily-list days as their own group (`daily_dw1`).
+  - `NSE:JPL-EQ` is in the list only if it ranks.
+  - **A restart during the session** now seeds up to 94 stocks + Nifty from Fyers history (was 53), paced at 4/s and 40/min. That's within the seeder's 300/day allocation for up to 3 restarts.
+  - **Load:** with about 95 symbols, ticks per 5 minutes and engine CPU should roughly double (52 stocks: about 7% CPU, 127 MiB on 2 Nov).
+
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
 The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 

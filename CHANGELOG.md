@@ -2,6 +2,16 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## `feat/daily-watchlist`: daily watchlist, rules dw-1 (owner, 2 Nov; first session Tue 3 Nov)
+
+- **What:** an evening scan (1 symbol-master download + at most 59 batched quote requests) ranks the next session's rotating names. The list is the core 25 + up to 69 = 94 stocks + Nifty (AGENTS.md §11.31). The rules were pre-registered before any scan (`docs/studies/daily-watchlist/PREREGISTRATION.md`, `2dc912f`).
+- **Engine:** at boot the engine and the VWAP seeder use `/app/data/watchlist_daily.json` when `SCREENER_ENABLED` isn't `false` and the file is valid and for today. Otherwise they use the static `watchlist.json`, which the scan never writes, and log and alert why.
+- **Kill switch:** `SCREENER_ENABLED=false` (default true).
+- **Failure:** the previous list is kept, with a Telegram alert.
+- **Not scheduled:** each scan needs the owner's OK.
+- **Population change** from 3 Nov (series break for any per-stock-group table). A restart now seeds up to 95 symbols.
+- **Tests:** `tests/dailyWatchlist.test.ts` (12; no Fyers calls).
+
 ## `feat/timer-square-off-exit` (PR #45): merged and deployed 31 Oct evening with #40 as ONE series break; first session Mon 2 Nov
 
 - **The 15:15 TIME exit no longer waits for a traded tick** (AGENTS.md §11.30). A timer closes open INTRADAY positions at the last known price, which is noted from every feed message. On 28 Oct, 6 exits waited until about 15:28.

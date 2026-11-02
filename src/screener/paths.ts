@@ -12,6 +12,7 @@ import path from 'node:path'
 import type { PromotionSource } from '../core/symbolSource.js'
 import { loadHolidays, tradingDayVerdict } from '../core/sessionGuard.js'
 import { getISTDateString } from '../utils/marketHours.js'
+import { chooseWatchlist, DAILY_FILE, screenerEnabled, type WatchlistChoice } from './dailyWatchlist.js'
 
 export const screenerDataDir = (): string => process.env.SCREENER_DATA_DIR || '/app/data'
 
@@ -73,3 +74,16 @@ export const screenerStaleness = (nowMs = Date.now()): string | null => {
 		? `screener watchlist is from ${meta.asOf} — ${missed} trading days old (> ${MAX_STALE_TRADING_DAYS}); check the 16:30 quant_screener job`
 		: null
 }
+
+/**
+ * The watchlist the engine and the VWAP seeder use today (rules dw-1): the daily scan's
+ * watchlist_daily.json when SCREENER_ENABLED isn't 'false' and the file is valid and for
+ * today (IST); otherwise the static watchlist.json (resolveScreenerFile), unchanged.
+ */
+export const resolveWatchlist = (nowMs = Date.now()): WatchlistChoice =>
+	chooseWatchlist({
+		enabled: screenerEnabled(),
+		dailyPath: path.join(screenerDataDir(), DAILY_FILE),
+		staticPath: resolveScreenerFile('watchlist.json'),
+		today: getISTDateString(nowMs),
+	})
