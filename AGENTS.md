@@ -1904,7 +1904,9 @@ No hand-picked names, and none of RULE-85's extra 33.
 
 **Series break, dated 2026-10-31 (deployed with #40; first session Mon 2 Nov):** time-exit prices are the last known price at the 15:15 timer, not the first traded tick after 15:15. The same date is in the CHANGELOG, HANDOFF and the study's deviation log.
 
-## 11.31 Daily watchlist, rules dw-1 (2026-11-02, owner decision; first session Tue 3 Nov)
+## 11.31 Daily watchlist, rules dw-1 (2026-11-02, owner decision; NOT deployed, see status)
+
+**Status (2 Nov, 20:30 IST): merged into `v2` (`db42dea`) but NOT deployed.** The engine container still runs `afe0c959e652` (= `rollback-696ad65`) on the static `watchlist.json`. The one authorized dw-1 scan (20:27) wrote nothing: 0 rotating names were eligible, because the as-of rule read the quote field `tt` as a last-trade time. Fyers documents `tt` as "Today's time", a date stamp (their example is 00:00 UTC = 05:30 IST), so no quote passed the 09:15–15:30 check. Validation failed (25 < 60), the previous state was kept, and the owner was alerted. 48 of 60 requests used. A fix needs a new rules version (dw-2), committed before a new scan, and the owner's OK for that scan. **The `latest` engine image tag (`437efe7d8a41`) is this unreleased build:** a plain `docker compose up`/`create` of the engine would deploy it. The 09:00 cron only `docker start`s the existing container.
 
 **What:** an evening scan picks the next session's watchlist: the **core 25** (the 20 Oct list, `config/daily_watchlist_core.json`) plus up to **69 rotating names**, so 94 stocks + Nifty = 95 symbols (cap 100). The rules are pre-registered in `docs/studies/daily-watchlist/PREREGISTRATION.md`, committed before any scan ran (`2dc912f`). Nothing claims an edge; whether the list helps is **untracked**.
 
