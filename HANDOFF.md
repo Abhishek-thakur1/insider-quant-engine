@@ -14,7 +14,7 @@ Last updated: **2026-10-31, 20:40 IST**.
 
 - **#29 deploy (26 Oct, evening):**
   - backup `~/backups/pre-orphanfix-20261026T1651Z.dump` (3 TABLE DATA entries);
-  - rollback tag `insider-quant-engine-quant_engine:rollback-1b2ec34` → `5250090191c8`;
+  - rollback tag `insider-quant-engine-quant_engine:rollback-1b2ec34` → `5250090191c8` (tag removed 2 Nov, disk cleanup);
   - engine logs saved to `~/evidence/2026-10-26/engine_pre_recreate_29.log`.
 
 ## Rollback card (first session Mon 2 Nov; read before 09:00)
@@ -31,9 +31,24 @@ docker logs quant_engine > ~/evidence/$(TZ=Asia/Kolkata date +%F)/engine_pre_rol
 |---|---|---|---|---|
 | #45 | 15:15 TIME exit by timer | `SQUARE_OFF_TIMER=false` | `rollback-5a4a78a` → `462afa35612d` | `git revert -m 1 696ad65` |
 | #40 | VWAP from 09:15 | `VWAP_SESSION_GATE=false` | `rollback-0845761` → `bbfe21291ad4` (also removes #45) | `git revert -m 1 5a4a78a` |
-| #37 | boot staleness message (log text) | none | `rollback-cfcb734` → `e282ddba76c2` (also removes #40, #45) | `git revert -m 1 0845761` |
-| #38 | 36 h TTL on `vwap:*` keys | none | `rollback-e66a199` → `4a447d238047` (also removes #37, #40, #45) | `git revert -m 1 cfcb734` |
-| #44 | per-symbol tick serialisation | none | `rollback-45236ee` → `c751a03b8678` (removes all five; #41 stays) | `git revert -m 1 e66a199`, **only together with #45**, which is built on it |
+| #37 | boot staleness message (log text) | none | **none kept**: `rollback-cfcb734` was removed 2 Nov | `git revert -m 1 0845761`, then rebuild (C) |
+| #38 | 36 h TTL on `vwap:*` keys | none | **none kept**: `rollback-e66a199` was removed 2 Nov | `git revert -m 1 cfcb734`, then rebuild (C) |
+| #44 | per-symbol tick serialisation | none | **none kept**: `rollback-45236ee` was removed 2 Nov | `git revert -m 1 e66a199`, **only together with #45**, which is built on it; then rebuild (C) |
+
+**Image tags kept (2 Nov, 21:01 IST, after the owner-approved disk cleanup):**
+
+| Service | Tags |
+|---|---|
+| Engine | running `afe0c959e652` (`latest`, `deployed-696ad65`, `rollback-696ad65`); `rollback-5a4a78a` → `462afa35612d`; `rollback-0845761` → `bbfe21291ad4`; `dw2-scan-8115808` (scan only, removed after the 3 Nov scan) |
+| API | running `fb075db5737c`; `rollback-5e95059` → `147035ad51c6`; `rollback-255adfd` → `2138a8191f64` |
+| Scheduler | running `48819ab8155f`; `rollback-pre46` → `48ed31bfd5fb` |
+
+**Removed 2 Nov:**
+- engine `rollback-cfcb734`, `-e66a199`, `-45236ee`, `-609755e`, `-5e95059`, `-11dda4d`, `-1b2ec34`, `-2fcbe9e`, `-34debe8`, `-d53c882` and `build-db42dea`;
+- API `rollback-pre24`;
+- `quant_screener:latest`.
+
+Older deploy rows below still name these tags as history; those tags no longer exist.
 
 **A. Kill switch: one change only, no rebuild (#40, #45).**
 ```bash
@@ -44,13 +59,15 @@ docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' quant_engine | gre
 ```
 Undo: delete that line from `.env` (or restore the `.env.bak-…`), then run the same recreate.
 
-**B. Image rollback (#37, #38, #44, or several).** The tags are cumulative: each one is the image from *before* that PR, so it also removes every PR deployed after it (the table says which). Pick the tag, then:
+**B. Image rollback (#45, or #40 and #45).** Only `rollback-5a4a78a` (before #45) and `rollback-0845761` (before #40 and #45) remain. The tags are cumulative: each is the image from *before* that PR, so it also removes every PR deployed after it. Pick the tag, then:
 ```bash
 docker tag insider-quant-engine-quant_engine:rollback-5a4a78a insider-quant-engine-quant_engine:latest   # example: before #45
 docker compose up --no-start --no-deps --no-build --force-recreate quant_engine
 docker inspect -f '{{.State.Status}} {{.Image}}' quant_engine        # expect: created sha256:462afa35612d…
 ```
 Roll forward: `docker tag insider-quant-engine-quant_engine:deployed-696ad65 insider-quant-engine-quant_engine:latest`, then the same recreate.
+
+**C. Rollback of #37, #38 or #44 (no image kept).** Open a revert PR on v2 (table), merge it on an evening, then follow the normal deploy procedure (logs, dump, rollback tag, `docker compose build quant_engine`, recreate, leave Created).
 
 **Make it last:** the next `docker compose build` rebuilds from v2 and brings the change back. For a lasting rollback, open a PR on v2 with the revert from the table, and merge it on an evening.
 

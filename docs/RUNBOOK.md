@@ -32,6 +32,11 @@ From 20 Oct the per-deploy evidence (logs, dumps, tags) lives in `HANDOFF.md`, `
 | 2026-10-31 | host only | extended 09:25 status message (`check.sh` sha `599723541a28…`) | host only | `check.sh.bak-20261031-prestatus` |
 | 2026-10-31 21:42 | host only | `chmod 600` on `.env` and `.env.bak-20261029-pre41` (audit D4, owner OK; was 664). No restart; content hashes unchanged; the monitor's `.env` read and `docker compose config` checked OK | host only | `chmod 664` on the same two files |
 
+**Disk cleanup, 2 Nov 21:01 IST (owner approved exact targets; `docker rmi` one at a time, no `-f`, image ID checked first):**
+- **Removed:** engine `rollback-cfcb734`, `-e66a199`, `-45236ee`, `-609755e`, `-5e95059`, `-11dda4d`, `-1b2ec34`, `-2fcbe9e`, `-34debe8`, `-d53c882`, `build-db42dea`; API `rollback-pre24`; `quant_screener:latest`; plus `apt-get clean`.
+- **Disk:** 77% → 72%. Most of the freed image layers are still held by Docker's build cache (1.4 GB reclaimable); no prune was run.
+- **The table above keeps the old tag names as history.** Tags that still exist: engine `rollback-5a4a78a`, `rollback-0845761`, `rollback-696ad65`/`deployed-696ad65`; API `rollback-5e95059`, `rollback-255adfd`; scheduler `rollback-pre46`.
+
 Image tags are cumulative: each `rollback-*` tag is the image from before that change, so it also removes every later one. See the rollback card in `HANDOFF.md`.
 
 ### Container restart counts
