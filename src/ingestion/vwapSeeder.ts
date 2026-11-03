@@ -4,7 +4,7 @@ import path from 'path'
 import { ENV } from '../config/env.js'
 import { redisClient } from '../config/redis.js'
 import type { VwapState } from '../core/types.js'
-import { resolveScreenerFile } from '../screener/paths.js'
+import { resolveWatchlist } from '../screener/paths.js'
 import { getISTMinutes } from '../utils/marketHours.js'
 import { VWAP_TTL_SECS } from '../utils/vwapUtils.js'
 import { createSlidingWindowLimiter, isRateLimitError, retryDelayMs, type LimiterClock } from '../utils/rateLimit.js'
@@ -14,7 +14,6 @@ import { engineGate } from '../fyers/engineGates.js'
 const fyersApi = new fyers.fyersModel({ path: './', enableLogging: false })
 
 const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt')
-const WATCHLIST_PATH = resolveScreenerFile('watchlist.json')
 const NIFTY_SYMBOL = 'NSE:NIFTY50-INDEX'
 
 export const getTodayString = (): string => {
@@ -169,13 +168,20 @@ export const seedHistoricalVwap = async (nowMs = Date.now()): Promise<void> => {
 		return
 	}
 
-	if (!fs.existsSync(TOKEN_PATH) || !fs.existsSync(WATCHLIST_PATH)) {
+	if (!fs.existsSync(TOKEN_PATH)) {
 		console.error('[Seeder] ❌ Missing auth files. Cannot seed VWAP.')
 		return
 	}
 
 	const accessToken = fs.readFileSync(TOKEN_PATH, 'utf8').trim()
-	const watchlist: string[] = JSON.parse(fs.readFileSync(WATCHLIST_PATH, 'utf8'))
+	// The same list the engine booted with (daily or static, screener/paths.ts resolveWatchlist).
+	let watchlist: string[]
+	try {
+		watchlist = resolveWatchlist(nowMs).symbols
+	} catch {
+		console.error('[Seeder] ❌ No readable watchlist. Cannot seed VWAP.')
+		return
+	}
 
 	// The active universe tracked by the engine
 	const activeUniverse = watchlist.slice(0, 100)

@@ -2,11 +2,22 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## Unreleased: `ops/redis-bind-localhost` (compose only; not merged, not applied: owner's word)
+## `ops/redis-bind-localhost` (PR #58): merged and applied 3 Nov evening (owner's OK; `quant_redis` recreated with `--no-deps`)
 
 - **Redis's host port is bound to 127.0.0.1** instead of every interface (audit of 31 Oct, D2). Redis runs with no password and protected mode off; until now only the cloud firewall kept it private. No user of the host port was found: every container uses the service name on the compose network, and the host monitor uses `docker exec quant_redis redis-cli`.
 - **Test:** `tests/composeExposure.test.ts` (Redis loopback-only; Postgres never published). It fails on the old line.
 - **Apply:** recreate `quant_redis` only, outside market hours; data stays in the `redis_data` volume (AOF + RDB). Steps and rollback in the PR.
+
+## `feat/daily-watchlist`: daily watchlist, rules dw-1 (owner, 2 Nov): merged `db42dea`, NOT deployed
+
+- **Not deployed:** the one authorized scan wrote nothing. The as-of rule misread the quote field `tt` (a date stamp, not a last-trade time), so 0 names were eligible. The engine is unchanged (`afe0c959e652`, static list). Details in AGENTS.md §11.31.
+- **What:** an evening scan (1 symbol-master download + at most 59 batched quote requests) ranks the next session's rotating names. The list is the core 25 + up to 69 = 94 stocks + Nifty (AGENTS.md §11.31). The rules were pre-registered before any scan (`docs/studies/daily-watchlist/PREREGISTRATION.md`, `2dc912f`).
+- **Engine:** at boot the engine and the VWAP seeder use `/app/data/watchlist_daily.json` when `SCREENER_ENABLED` isn't `false` and the file is valid and for today. Otherwise they use the static `watchlist.json`, which the scan never writes, and log and alert why.
+- **Kill switch:** `SCREENER_ENABLED=false` (default true).
+- **Failure:** the previous list is kept, with a Telegram alert.
+- **Not scheduled:** each scan needs the owner's OK.
+- **Population change** from 3 Nov (series break for any per-stock-group table). A restart now seeds up to 95 symbols.
+- **Tests:** `tests/dailyWatchlist.test.ts` (12; no Fyers calls).
 
 ## `feat/timer-square-off-exit` (PR #45): merged and deployed 31 Oct evening with #40 as ONE series break; first session Mon 2 Nov
 

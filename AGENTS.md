@@ -1718,7 +1718,7 @@ Pure logic lives in `src/api/publicData.ts`, wired in `src/api/server.ts`. There
   - **No** quota, monitor, restart or host details.
 - **`/api/events` keep-alive** (`src/api/sseHeartbeat.ts`): an SSE comment `: ping <ms>` every 25 s (`SSE_HEARTBEAT_MS`), stopped on client close. EventSource ignores comments, so no client change is needed.
   - **Why:** the Vercel `/api` rewrite closed the idle stream after 151 s on both production domains (measured 2026-10-23 10:16 IST with no position open; re-measured 19:10 IST, 150 s, 0 pings).
-  - **Unverified:** whether the cut is an idle timeout (the heartbeat fixes it) or a hard cap (it doesn't). After the API deploy, run `scripts/sse_soak.sh` (one read-only GET through ninefifteen's `/api`, 300 s). PASS means the stream held past 151 s with pings arriving.
+  - **Verified: the cut was an idle timeout, and the heartbeat fixes it.** `scripts/sse_soak.sh` (one read-only GET through the production dashboard's `/api`, 300 s) passed after the API deploy on 27 Oct (11 pings), and again on 2026-10-31: `duration=301s curl_exit=28 pings=11`, `PASS`. The dashboard's 30 s polling fallback stays as a second line of defence.
 
 - **`quant_api` loses its anonymous `/app/node_modules` volume** (`docker-compose.yml`). This is the first of four services, approved per service by the owner on 2026-10-23.
   - **Why:** nothing bind-mounts source over `/app`, so the mount had no purpose. Compose carries the old anonymous volume into every recreate: on 2026-10-23 `quant_api`, `quant_engine` and `quant_auth` all still mounted volumes from 2026-09-09. A future dependency change would be built into the image and silently masked. Their lockfiles matched the images on 23 Oct, so nothing is wrong yet.
@@ -1903,6 +1903,29 @@ No hand-picked names, and none of RULE-85's extra 33.
 - **Tests:** `tests/squareOffTimer.test.ts`.
 
 **Series break, dated 2026-10-31 (deployed with #40; first session Mon 2 Nov):** time-exit prices are the last known price at the 15:15 timer, not the first traded tick after 15:15. The same date is in the CHANGELOG, HANDOFF and the study's deviation log.
+
+## 11.31 Daily watchlist, rules dw-1 (2026-11-02, owner decision; NOT deployed, see status)
+
+**Status (2 Nov, 20:30 IST): merged into `v2` (`db42dea`) but NOT deployed.** The engine container still runs `afe0c959e652` (= `rollback-696ad65`) on the static `watchlist.json`. The one authorized dw-1 scan (20:27) wrote nothing: 0 rotating names were eligible, because the as-of rule read the quote field `tt` as a last-trade time. Fyers documents `tt` as "Today's time", a date stamp (their example is 00:00 UTC = 05:30 IST), so no quote passed the 09:15–15:30 check. Validation failed (25 < 60), the previous state was kept, and the owner was alerted. 48 of 60 requests used. A fix needs a new rules version (dw-2), committed before a new scan, and the owner's OK for that scan. **The `latest` engine image tag (`437efe7d8a41`) is this unreleased build:** a plain `docker compose up`/`create` of the engine would deploy it. The 09:00 cron only `docker start`s the existing container.
+
+**What:** an evening scan picks the next session's watchlist: the **core 25** (the 20 Oct list, `config/daily_watchlist_core.json`) plus up to **69 rotating names**, so 94 stocks + Nifty = 95 symbols (cap 100). The rules are pre-registered in `docs/studies/daily-watchlist/PREREGISTRATION.md`, committed before any scan ran (`2dc912f`). Nothing claims an edge; whether the list helps is **untracked**.
+
+| Piece | Where |
+|---|---|
+| Rules, ranking, validation, which file the engine uses | `src/screener/dailyWatchlist.ts` (pure; tests in `tests/dailyWatchlist.test.ts`, no Fyers calls) |
+| The scan (1 `NSE_CM.csv` download + ≤ 59 batched quote requests, retries counted, through the quota gate as job `screener`; refuses 09:00–15:30 on trading days) | `scripts/daily_watchlist.ts` |
+| Engine boot and VWAP seeder read the same choice | `resolveWatchlist()` in `src/screener/paths.ts`; `websocket.ts` boot, `vwapSeeder.ts` |
+
+- **Outputs** (volume `screener_data`): `/app/data/watchlist_daily.json` and a copy per day in `/app/data/watchlist_daily_history/<session>.json`. Each holds the as-of day, target session, rules version, request count, list, and for every rotating name its rank, score and measures (the reasons). Written atomically. **The static `watchlist.json` is never written by the scan.**
+- **Choice at boot:** the daily file if `SCREENER_ENABLED` isn't `false`, it validates (60–94 unique well-formed stocks, rules `dw-1`) and its `forSession` is today (IST). Otherwise the static `watchlist.json`, with the reason in the boot line `[Engine] 🗂️ Watchlist source: …`, plus a Telegram warning when the flag is on.
+- **Kill switch:** `SCREENER_ENABLED=false` in `.env`, then recreate the engine (outside 09:00–15:30). It returns to the static file with no scan and no rebuild.
+- **On a failed scan** (master unreadable, request cap, > 10% of quote batches failed, validation): nothing is written, the previous file stays, and the owner gets a Telegram alert. A previous file for an older session then fails the `forSession` check at boot, and the engine uses the static file.
+- **Schedule:** **not scheduled.** Each scan is a set of Fyers calls and needs the owner's OK (2 Nov: one scan only). It runs by hand: `docker compose run --rm --no-deps --entrypoint "" quant_engine node --import tsx scripts/daily_watchlist.ts`. The old 16:30 `quant_screener` job is unchanged and still absent.
+- **Side effects to know:**
+  - **A population change** from Tue 3 Nov, so the stock groups of §11.27 and §11.27.1 stop being the live list. Report daily-list days as their own group (`daily_dw1`).
+  - `NSE:JPL-EQ` is in the list only if it ranks.
+  - **A restart during the session** now seeds up to 94 stocks + Nifty from Fyers history (was 53), paced at 4/s and 40/min. That's within the seeder's 300/day allocation for up to 3 restarts.
+  - **Load:** with about 95 symbols, ticks per 5 minutes and engine CPU should roughly double (52 stocks: about 7% CPU, 127 MiB on 2 Nov).
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
