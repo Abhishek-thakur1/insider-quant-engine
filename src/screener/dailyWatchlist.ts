@@ -5,7 +5,7 @@
 // kept as the record of the 2 Nov scan); this file implements dw-2.
 // Pure functions (ranking, validation, which file the engine boots from) plus the scan
 // runner, whose Fyers access, file writes and alerts are injected so tests make no calls.
-// One scan = 1 master download + at most 47 quote requests (hard cap 48, retries included).
+// One scan = 1 master download + at most 48 quote batches + at most 6 retries (hard cap 55, 4 Nov amendment).
 // ============================================================
 
 import fs from 'node:fs'
@@ -18,8 +18,10 @@ export const CORE_SIZE = 25
 export const ROTATING_SLOTS = 69 // 25 core + 69 = 94 stocks + Nifty = 95 symbols
 export const MIN_STOCKS = 60
 export const MAX_STOCKS = 94
-export const SCAN_REQUEST_CAP = 48 // master download + quote requests (owner, 3 Nov scan)
-export const QUOTE_REQUEST_CAP = SCAN_REQUEST_CAP - 1
+export const SCAN_REQUEST_CAP = 55 // master download + quote requests (owner, 4 Nov scan)
+export const QUOTE_BATCH_CAP = 48 // more batches needed → fail before any quote call
+export const QUOTE_RETRY_CAP = 6 // attempts beyond the batch count
+export const QUOTE_REQUEST_CAP = SCAN_REQUEST_CAP - 1 // 54 = 48 + 6
 export const MIN_PRICE = 50
 export const MIN_TURNOVER_RUPEES = 50 * 1e7 // ₹50 crore
 export const MAX_FAILED_BATCH_SHARE = 0.1
@@ -210,6 +212,7 @@ export interface ScanDeps {
 	downloadMaster: () => Promise<string[]> // the universe from NSE_CM.csv
 	getQuotes: (batch: string[]) => Promise<unknown> // production: gate.call(() => budgeted api.getQuotes)
 	quoteRequestsUsed: () => number // attempts made by getQuotes so far (gate retries included)
+	limitQuoteRequests?: (n: number) => void // lowers the attempt cap to batches + QUOTE_RETRY_CAP, once the batch count is known
 	writeFile: (name: string, content: string) => void // atomic, relative to the data dir
 	saveRaw?: (line: string) => void // one JSON line per quote batch, written as it returns (dw-2 raw sample)
 	notify: (text: string) => Promise<unknown>
@@ -247,7 +250,10 @@ export const runDailyScan = async (d: ScanDeps): Promise<ScanResult> => {
 	const universeSet = new Set(universe)
 	const toQuote = universe.filter((s) => !d.core.includes(s))
 	const groups = batches(toQuote, QUOTE_BATCH)
-	if (groups.length > QUOTE_REQUEST_CAP) return fail(`${groups.length} quote batches needed > cap ${QUOTE_REQUEST_CAP}`)
+	if (groups.length > QUOTE_BATCH_CAP) return fail(`${groups.length} quote batches needed > cap ${QUOTE_BATCH_CAP}`)
+	const attemptCap = Math.min(QUOTE_REQUEST_CAP, groups.length + QUOTE_RETRY_CAP)
+	d.limitQuoteRequests?.(attemptCap)
+	log.log(`[DailyWatchlist] universe ${universe.length} · ${groups.length} quote batches (cap ${QUOTE_BATCH_CAP}) · at most ${attemptCap} quote attempts`)
 
 	const quotes = new Map<string, DailyQuote>()
 	let failed = 0
@@ -303,12 +309,17 @@ export const runDailyScan = async (d: ScanDeps): Promise<ScanResult> => {
 /** The hard request cap around the raw API call. Put it INSIDE gate.call so every attempt (retries too) counts. */
 export const budgeted = (inner: (batch: string[]) => Promise<unknown>, cap = QUOTE_REQUEST_CAP) => {
 	let used = 0
+	let max = cap
 	const call = async (batch: string[]): Promise<unknown> => {
-		if (used >= cap) throw new ScanBudgetError(`quote request cap ${cap} reached`)
+		if (used >= max) throw new ScanBudgetError(`quote request cap ${max} reached`)
 		used++
 		return inner(batch)
 	}
-	return { call, used: () => used }
+	/** Only ever lowers the cap. */
+	const limit = (n: number) => {
+		max = Math.min(max, n)
+	}
+	return { call, used: () => used, limit }
 }
 
 /** Atomic write into a directory: temp file, then rename. */

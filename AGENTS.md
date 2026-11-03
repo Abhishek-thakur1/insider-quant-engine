@@ -1931,7 +1931,7 @@ No hand-picked names, and none of RULE-85's extra 33.
 
 `docs/studies/daily-watchlist/PREREGISTRATION_dw2.md`. Three differences from dw-1:
 - **As-of rule:** the IST date of `tt` equals the as-of day, and volume > 0. `tt` is a date stamp, so there is no time-of-day check.
-- **Request cap:** 48 in total (1 master + 47 quote requests, retries counted).
+- **Request cap:** 55 in total (amended 3 Nov for the 4 Nov scan): 1 master + at most 48 quote batches + at most 6 retries. The batch count is checked first, before any quote call; quote attempts are capped at batches + 6 (every attempt counts). The 3 Nov scan (cap 48) stopped there: 48 batches needed > 47.
 - **Raw sample:** every raw quote response is saved to `raw_quotes/<session>.jsonl`, and the run reports how many quotes pass each step (`eligibilityFunnel`).
 
 The daily file's `rulesVersion` must be `dw-2`, so a dw-1 file is rejected at boot. **One scan is authorized** (owner): Tue 3 Nov at about 16:10 IST, before the 17:15 token purge. Its output goes to a host evidence directory via `SCREENER_DATA_DIR`, not to the `screener_data` volume.

@@ -5,7 +5,7 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 ## `feat/daily-watchlist-dw2`: rules dw-2 (owner, 2 Nov; not merged)
 
 - **As-of rule:** `tt`'s IST date equals the as-of day and volume > 0. dw-1 read `tt` as a trade time.
-- **Cap:** 48 requests in total.
+- **Cap:** 55 requests in total (1 master + ≤ 48 batches + ≤ 6 retries; amended for the 4 Nov scan). The 3 Nov scan with cap 48 stopped before any quote call (48 batches needed > 47).
 - **Diagnostics:** raw quote responses saved per batch, plus per-step counts.
 - **Rules:** `PREREGISTRATION_dw2.md`, committed before the code (`5082c6c`).
 - **Tests:** 14.

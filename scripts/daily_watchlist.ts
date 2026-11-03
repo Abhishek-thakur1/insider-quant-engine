@@ -2,7 +2,7 @@
 // scripts/daily_watchlist.ts — the evening daily-watchlist scan (rules dw-2)
 //
 // docs/studies/daily-watchlist/PREREGISTRATION_dw2.md. One scan: the public NSE_CM master
-// (1 download) + batched quotes (≤ 50 symbols each, ≤ 47 requests, retries counted; 48 in all),
+// (1 download) + batched quotes (≤ 50 symbols each, ≤ 48 batches + ≤ 6 retries, every attempt counted; 55 in all),
 // through the shared quota gate and Redis ledger. No other Fyers call.
 // Writes <SCREENER_DATA_DIR or /app/data>/watchlist_daily.json (+ watchlist_daily_history/<session>.json
 // and the raw quote responses in raw_quotes/<session>.jsonl);
@@ -78,6 +78,7 @@ const main = async (): Promise<number> => {
 		downloadMaster: async () => parseCashUniverse((await axios.get<string>(CM_URL, { responseType: 'text', timeout: 60_000 })).data),
 		getQuotes,
 		quoteRequestsUsed: raw.used,
+		limitQuoteRequests: raw.limit,
 		writeFile: atomicWriter(dataDir),
 		saveRaw: (line) => {
 			fs.mkdirSync(path.join(dataDir, 'raw_quotes'), { recursive: true })

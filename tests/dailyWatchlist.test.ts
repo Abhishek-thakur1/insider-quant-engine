@@ -16,8 +16,11 @@ import {
 	inSessionWindow,
 	MAX_STOCKS,
 	percentiles,
+	QUOTE_BATCH_CAP,
 	QUOTE_REQUEST_CAP,
+	QUOTE_RETRY_CAP,
 	rankRotating,
+	SCAN_REQUEST_CAP,
 	runDailyScan,
 	screenerEnabled,
 	validateList,
@@ -158,6 +161,7 @@ const fakeScan = (o: { n?: number; quote?: (s: string, i: number) => DailyQuote 
 		downloadMaster: o.master ?? (async () => universe),
 		getQuotes: raw.call,
 		quoteRequestsUsed: raw.used,
+		limitQuoteRequests: raw.limit,
 		writeFile: (name, content) => writes.set(name, content),
 		saveRaw: (line) => rawLines.push(line),
 		notify: async (t) => alerts.push(t),
@@ -194,7 +198,7 @@ test('failures keep the previous list and alert the owner', async () => {
 		['quotes from the target session only', { quote: () => q({ tt: TT + 86_400 }) }, /validation/],
 		['>10% batches failed', { failBatch: (i) => i % 5 === 0 }, /quote batches failed/],
 		['request cap', { cap: 10 }, /quota stop: quote request cap 10/],
-		['more batches than the cap allows', { n: 50 * QUOTE_REQUEST_CAP + 26 }, /> cap 47/],
+		['more batches than the cap allows', { n: 50 * QUOTE_BATCH_CAP + 26 }, /49 quote batches needed > cap 48/],
 		['not traded (volume 0)', { quote: () => q({ volume: 0 }) }, /as-of day 0/],
 	]
 	for (const [name, opts, re] of cases) {
@@ -205,18 +209,35 @@ test('failures keep the previous list and alert the owner', async () => {
 		assert.equal(alerts.length, 1, `${name}: one alert`)
 		assert.match(alerts[0]!, /NOT updated/)
 		assert.match(alerts[0]!, re, name)
-		assert.ok((r as { requests: number }).requests <= 48, `${name}: within 48 requests`)
+		assert.ok((r as { requests: number }).requests <= 55, `${name}: within 55 requests`)
 	}
 })
 
-test('the request cap counts every attempt, retries included, and never exceeds 47 quote calls', async () => {
+test('the request cap counts every attempt, retries included: 55 = 1 master + 48 batches + 6 retries', async () => {
 	let calls = 0
 	const raw = budgeted(async () => { calls++; return { s: 'ok', d: [] } }, 3)
 	await raw.call([]); await raw.call([]); await raw.call([]) // e.g. one batch tried 3 times by the gate
 	await assert.rejects(raw.call([]), /cap 3 reached/)
 	assert.equal(calls, 3)
 	assert.equal(raw.used(), 3)
-	assert.equal(QUOTE_REQUEST_CAP, 47)
+	assert.deepEqual([SCAN_REQUEST_CAP, QUOTE_BATCH_CAP, QUOTE_RETRY_CAP, QUOTE_REQUEST_CAP], [55, 48, 6, 54])
+	raw.limit(10)
+	await assert.rejects(raw.call([]), /cap 3 reached/, 'limit never raises the cap')
+})
+
+test('48 batches (the 3 Nov universe size) are allowed; quote attempts are capped at batches + 6', async () => {
+	const n = 25 + 50 * QUOTE_BATCH_CAP // exactly 48 batches
+	const ok = fakeScan({ n })
+	const r = await runDailyScan(ok.deps)
+	assert.equal(r.ok, true)
+	assert.equal(ok.raw.used(), 48)
+	assert.equal((r as { file: { requests: number } }).file.requests, 49)
+	// a small universe: 24 batches → at most 30 attempts, even though 54 would fit the scan cap
+	const small = fakeScan({ failBatch: () => false })
+	await runDailyScan(small.deps)
+	small.raw.limit(Infinity)
+	for (let i = small.raw.used(); i < 30; i++) await small.raw.call([])
+	await assert.rejects(small.raw.call([]), /cap 30 reached/)
 })
 
 test('atomic writer: temp file then rename, subdirectories created', () => {
