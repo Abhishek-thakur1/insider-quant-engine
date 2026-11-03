@@ -20,7 +20,7 @@ import { loadHolidays, tradingDayVerdict } from '../src/core/sessionGuard.js'
 import { getISTDateString, getISTMinutes } from '../src/utils/marketHours.js'
 import { notifyAdmin } from '../src/utils/adminNotify.js'
 import { screenerDataDir } from '../src/screener/paths.js'
-import { atomicWriter, HISTORY_DIR, RULES_VERSION } from '../src/screener/dailyWatchlist.js'
+import { atomicWriter, DAILY_FILE, HISTORY_DIR, RULES_VERSION } from '../src/screener/dailyWatchlist.js'
 import { bhavcopyUrl, runBhavScan } from '../src/screener/bhavcopy.js'
 
 const FINAL_MIN = 22 * 60 // the 22:00 run is the last of the evening
@@ -40,7 +40,9 @@ const main = async (): Promise<number> => {
 	const now = Date.now()
 	const holidays = loadHolidays()
 	if (!holidays) {
-		await notifyAdmin('⚠️ Daily watchlist NOT updated (holiday file unreadable); the static list will be used.')
+		// Alert once per evening: the 19:00 run (or a manual run); the later half-hourly runs only log.
+		console.error('[DailyWatchlist] ❌ holiday file unreadable')
+		if (getISTMinutes(now) < 19 * 60 + 30) await notifyAdmin('⚠️ Daily watchlist NOT updated (holiday file unreadable); the static list will be used.')
 		return 2
 	}
 	const asOf = getISTDateString(now)
@@ -59,8 +61,11 @@ const main = async (): Promise<number> => {
 	console.log(`[DailyWatchlist] 🔍 rules ${RULES_VERSION} · NSE bhavcopy ${local ? `(local ${local})` : ''} · as of ${asOf} → for ${forSession} · ${dataDir}${final ? ' · final run' : ''}`)
 
 	const done = path.join(dataDir, HISTORY_DIR, `${forSession}.json`)
+	const live = path.join(dataDir, DAILY_FILE)
 	try {
-		if ((JSON.parse(fs.readFileSync(done, 'utf8')) as { rulesVersion?: string }).rulesVersion === RULES_VERSION) {
+		const h = JSON.parse(fs.readFileSync(done, 'utf8')) as { rulesVersion?: string }
+		const l = JSON.parse(fs.readFileSync(live, 'utf8')) as { forSession?: string }
+		if (h.rulesVersion === RULES_VERSION && l.forSession === forSession) {
 			console.log(`[DailyWatchlist] already written for ${forSession} — nothing to do`)
 			return 0
 		}

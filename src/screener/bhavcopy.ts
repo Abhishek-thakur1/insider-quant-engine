@@ -155,8 +155,14 @@ export const runBhavScan = async (d: BhavScanDeps): Promise<BhavScanResult> => {
 
 	let bhav: Bhavcopy
 	let entry: string
+	let z: { name: string; data: Buffer }
 	try {
-		const z = unzipFirst(zip)
+		z = unzipFirst(zip)
+	} catch (err) {
+		// Not a zip (an error or block page served as 200, a cut-off body): transient, retried.
+		return { kind: 'not-yet', reason: `download was not a zip (${(err as Error).message}; ${zip.length} bytes)` }
+	}
+	try {
 		entry = z.name
 		bhav = parseBhavcopy(z.data.toString('utf8'))
 	} catch (err) {
@@ -166,7 +172,6 @@ export const runBhavScan = async (d: BhavScanDeps): Promise<BhavScanResult> => {
 		return { kind: 'failed', reason: `file trade date ${[...bhav.tradeDates].join('/')} ≠ as-of ${d.asOf}` }
 	if (bhav.mainBoard.size < 1000) return { kind: 'failed', reason: `only ${bhav.mainBoard.size} Main Board EQ rows` }
 	if (bhav.duplicates.length) return { kind: 'failed', reason: `${bhav.duplicates.length} duplicate symbol(s): ${bhav.duplicates.slice(0, 3).join(', ')}` }
-	d.writeFile(`bhavcopy/${d.asOf}.csv.zip`, zip)
 
 	const funnel = eligibilityFunnel(bhav.mainBoard, d.core, d.asOf)
 	const funnelText = `Main Board EQ ${funnel.quoted} → as-of day ${funnel.asOfDay} → price ${funnel.price} → turnover ${funnel.turnover} → eligible ${funnel.eligible}`
@@ -188,8 +193,10 @@ export const runBhavScan = async (d: BhavScanDeps): Promise<BhavScanResult> => {
 		entries: [...d.core.map((symbol) => ({ symbol, group: 'core' as const })), ...rotating],
 	}
 	const text = JSON.stringify(file, null, 1)
-	d.writeFile(`${HISTORY_DIR}/${d.forSession}.json`, text)
+	// Live file first: the history copy is the "already written" mark, so it must never exist without it.
+	d.writeFile(`bhavcopy/${d.asOf}.csv.zip`, zip)
 	d.writeFile(DAILY_FILE, text)
+	d.writeFile(`${HISTORY_DIR}/${d.forSession}.json`, text)
 	log.log(`[DailyWatchlist] ✅ ${symbols.length} stocks + Nifty for ${d.forSession} (core ${d.core.length} + rotating ${rotating.length}; rules ${RULES_VERSION})`)
 	return { kind: 'written', file, text }
 }

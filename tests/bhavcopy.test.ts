@@ -123,9 +123,52 @@ test('not published yet / network error → not-yet (retried); nothing written',
 	}
 })
 
+test('a 200 that is not a zip (block page, cut-off body) is transient: retried, nothing written', async () => {
+	const { d, writes } = deps(Buffer.from('<html>Access Denied</html>'))
+	const r = await runBhavScan(d)
+	assert.equal(r.kind, 'not-yet')
+	assert.match((r as { reason: string }).reason, /not a zip/)
+	assert.equal(writes.size, 0)
+})
+
+test('on success the live file is written before the history copy (the "already written" mark)', async () => {
+	const order: string[] = []
+	const { d } = deps(zipOf('f.csv', day(120)), { writeFile: (name) => void order.push(name) })
+	await runBhavScan(d)
+	assert.deepEqual(order, ['bhavcopy/2026-11-03.csv.zip', DAILY_FILE, 'watchlist_daily_history/2026-11-04.json'])
+})
+
+test('engine side: a daily list that does not fit the subscription cap falls back to the static list', async () => {
+	const fs = await import('node:fs')
+	const os = await import('node:os')
+	const path = await import('node:path')
+	const { resolveWatchlist } = await import('../src/screener/paths.js')
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dw3-'))
+	const sym = (i: number) => `NSE:S${String(i).padStart(4, '0')}-EQ`
+	fs.writeFileSync(path.join(dir, 'watchlist.json'), JSON.stringify(Array.from({ length: 52 }, (_, i) => sym(i))))
+	fs.writeFileSync(path.join(dir, DAILY_FILE), JSON.stringify({ rulesVersion: 'dw-3', asOf: '2026-11-03', forSession: '2026-11-04', generatedAt: 'x', requests: 0, symbols: Array.from({ length: 79 }, (_, i) => sym(i + 100)), entries: [] }))
+	const prev = { d: process.env.SCREENER_DATA_DIR, e: process.env.SCREENER_ENABLED }
+	process.env.SCREENER_DATA_DIR = dir
+	process.env.SCREENER_ENABLED = 'true'
+	try {
+		const at = Date.parse('2026-11-04T03:30:00Z')
+		assert.equal(resolveWatchlist(at).source, 'daily', '79 + Nifty fits 100')
+		fs.writeFileSync(path.join(dir, 'anomaly_universe.json'), JSON.stringify(Object.fromEntries(Array.from({ length: 30 }, (_, i) => [sym(i + 500), {}]))))
+		const c = resolveWatchlist(at)
+		assert.equal(c.source, 'static')
+		assert.equal(c.fellBack, true)
+		assert.match(c.reason, /doesn't fit the subscription cap \(room 69\)/)
+	} finally {
+		if (prev.d === undefined) delete process.env.SCREENER_DATA_DIR
+		else process.env.SCREENER_DATA_DIR = prev.d
+		if (prev.e === undefined) delete process.env.SCREENER_ENABLED
+		else process.env.SCREENER_ENABLED = prev.e
+		fs.rmSync(dir, { recursive: true, force: true })
+	}
+})
+
 test('bad files fail (alerted, not retried) and write no list', async () => {
 	const cases: [string, Buffer, RegExp][] = [
-		['an HTML block page', Buffer.from('<html>Access Denied</html>'), /bad file: not a zip/],
 		["yesterday's file", zipOf('f.csv', day(120, { day: '2026-11-02' })), /trade date .*2026-11-02.* ≠ as-of 2026-11-03/],
 		['too few rows', zipOf('f.csv', [HEADER, ...REAL].join('\n')), /only 3 Main Board EQ rows/],
 		['too few eligible', zipOf('f.csv', day(20)), /validation: .*stocks, need 60/],
@@ -136,6 +179,6 @@ test('bad files fail (alerted, not retried) and write no list', async () => {
 		const r = await runBhavScan(d)
 		assert.equal(r.kind, 'failed', name)
 		assert.match((r as { reason: string }).reason, re, name)
-		assert.equal(writes.has(DAILY_FILE), false, `${name}: no list written`)
+		assert.equal(writes.size, 0, `${name}: nothing written (list or zip)`)
 	}
 })
