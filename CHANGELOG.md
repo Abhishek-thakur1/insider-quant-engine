@@ -2,6 +2,14 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## `feat/daily-watchlist-dw3-1b`: dw-3 amendment 1b, list builder only (owner, 3 Nov; for coverage)
+
+- **Refill:** after the Fyers check the walk continues until 27 rotating names are filled (79 stocks + Nifty = 80).
+- **Groups:** 22 by score + 5 by turnover (the highest-turnover eligible names not already in), tagged `pick` in the list file.
+- **M&M** maps to `NSE:M&M-EQ` and passes the check (tested).
+- **`quant_watchlist` gets its own image** (`insider-quant-engine-quant_watchlist`). **No engine change:** the engine image stays `b9f892b05e53`.
+- `WATCHLIST_FORCE=true` for manual rebuilds. Tests: `tests/bhavcopy.test.ts` (15).
+
 ## `feat/daily-watchlist-dw3` (PR #69): automated daily watchlist from the NSE bhavcopy, rules dw-3: merged and deployed 3 Nov evening with #68 and #65 (owner OK; image `deployed-f34ced9`, `SCREENER_ENABLED=true`); first session Wed 4 Nov
 
 - **Source:** NSE's official UDiFF bhavcopy from its archive. **No Fyers calls**, no scraping. Main Board EQ only. dw-2's filters and ranking. **Amendment 1 (owner, for continuity):** the core is the owner's 52-stock watchlist, 27 rotating names, and every rotating name is checked against `fyersUniverse.json` (dropped if not found; rejected below 60). Amendment 1a: the core is exempt. **80 symbols including Nifty.** AGENTS.md §11.31.2. Pre-registered in `PREREGISTRATION_dw3.md` (`cb9d91e`).

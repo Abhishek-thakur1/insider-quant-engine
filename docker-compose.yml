@@ -127,10 +127,14 @@ services:
   # ── Daily watchlist (job, rules dw-3) ─────────────────────────────────────
   # Not a service: created once (`docker compose --profile jobs create quant_watchlist`), started by
   # the scheduler 19:00–22:00 IST on trading days (lifecycle.sh run_watchlist). Today's NSE bhavcopy →
-  # the next session's watchlist_daily.json in screener_data. No token, no Fyers call. It runs the
-  # engine's image, so recreate it after every engine deploy (RUNBOOK).
+  # the next session's watchlist_daily.json in screener_data. No token, no Fyers call. Its own image
+  # (built from the same Dockerfile), so the list builder can change without touching the engine:
+  # `docker compose --profile jobs build quant_watchlist && docker compose --profile jobs create --force-recreate quant_watchlist`.
   quant_watchlist:
-    image: insider-quant-engine-quant_engine:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: insider-quant-engine-quant_watchlist:latest
     container_name: quant_watchlist
     profiles: ['jobs']
     command: node --import tsx scripts/daily_watchlist_bhav.ts

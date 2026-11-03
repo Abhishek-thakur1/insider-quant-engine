@@ -77,7 +77,7 @@ Do this outside market hours (09:00–15:30 IST).
    - **Never `up -d` the engine off-hours.** The token volume still holds today's token, so it would run the screener and open the live socket.
    - A plain rebuild isn't enough: `docker start` keeps using the old container.
    - Add `--renew-anon-volumes` when dependencies change (`/app/node_modules` is an anonymous volume).
-   - **Daily watchlist job (dw-3):** `quant_watchlist` runs the engine image it was created from, so after every engine image change run `docker compose --profile jobs create --force-recreate quant_watchlist`. Check it: `docker inspect -f '{{.Image}}' quant_watchlist` should match the engine's image. Logs: `docker exec quant_scheduler cat /var/log/watchlist_last.log`.
+   - **Daily watchlist job (dw-3):** `quant_watchlist` has its own image (since amendment 1b). Build and recreate it with `docker compose --profile jobs build quant_watchlist && docker compose --profile jobs create --force-recreate quant_watchlist`; the engine is untouched. Logs: `docker exec quant_scheduler cat /var/log/watchlist_last.log`.
 6. The next morning, check `docker logs quant_engine 2>&1 | grep -E "PositionTracker|schema"`.
 
 ## Planned deploy: `signals` table (migration 0004) — NOT DEPLOYED
