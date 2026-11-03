@@ -1,6 +1,6 @@
 import { redisClient } from '../config/redis.js'
 import type { MarketBias, VwapState } from '../core/types.js'
-import { getISTMinutes } from './marketHours.js'
+import { getISTDateString, getISTMinutes } from './marketHours.js'
 
 const NIFTY_BIAS_KEY = 'market:nifty:bias'
 
@@ -64,9 +64,45 @@ export const vwapSessionGateEnabled = (): boolean => process.env.VWAP_SESSION_GA
 export const inVwapSession = (ms: number): boolean =>
 	!vwapSessionGateEnabled() || getISTMinutes(ms) >= VWAP_SESSION_START_MIN
 
-/** The live equity tick path: updateVwap, but only for ticks from 09:15 IST. Returns null when skipped. */
-export const updateSessionVwap = async (symbol: string, price: number, volume: number, ms: number): Promise<number | null> =>
-	inVwapSession(ms) ? updateVwap(symbol, price, volume) : null
+// ── Auction volume (2026-11-03) ─────────────────────────────────────────────
+// The pre-open auction volume does NOT arrive before 09:15: on 3 Nov the feed was silent from 09:09:18 to
+// 09:15:00, and the first ticks after the open carried the auction (TATASTEEL: received 09:15:00, last trade
+// 09:08:53, vol_traded_today 136,578). Pre-open ticks carry no volume field, so the volume baseline was 0 and
+// the whole auction became the first in-session delta, which a receive-time gate let through. The gate now
+// uses the tick's exchange last-trade time when there is one: an auction-only tick (last trade before 09:15)
+// stays out, and its volume becomes the baseline for the next delta (tickVolumeDelta always updates it).
+
+/**
+ * The time that decides whether an equity tick enters the VWAP: its last-trade time (epoch seconds) when
+ * valid and on the receive day (IST); the receive time when the field is missing; null (left out) when the
+ * last trade is on another day.
+ */
+export const vwapStampMs = (lastTradedSec: unknown, receivedMs: number): number | null => {
+	const s = Number(lastTradedSec)
+	if (lastTradedSec == null || !Number.isFinite(s) || s <= 0) return receivedMs
+	const ms = s * 1000
+	return getISTDateString(ms) === getISTDateString(receivedMs) ? ms : null
+}
+
+/** Volume traded since this symbol's previous tick; the first tick only sets the baseline. Updates `tracker`. */
+export const tickVolumeDelta = (tracker: Map<string, number>, symbol: string, volTradedToday: number | undefined): number => {
+	const cumulativeVol = volTradedToday || 0
+	// ?? so a recorded 0 stays the baseline (not replaced by this tick's total)
+	const previousVol = tracker.get(symbol) ?? cumulativeVol
+	tracker.set(symbol, cumulativeVol) // always, so the next delta is right even when this tick is gated out
+	return Math.max(0, cumulativeVol - previousVol)
+}
+
+/**
+ * The live equity tick path: updateVwap for ticks from 09:15 IST. Returns null when skipped.
+ * `lastTradedSec` (the feed's last_traded_time) decides when present; else the receive time `ms`.
+ * VWAP_SESSION_GATE=false admits every tick, as before.
+ */
+export const updateSessionVwap = async (symbol: string, price: number, volume: number, ms: number, lastTradedSec?: unknown): Promise<number | null> => {
+	if (!vwapSessionGateEnabled()) return updateVwap(symbol, price, volume)
+	const stamp = lastTradedSec === undefined ? ms : vwapStampMs(lastTradedSec, ms)
+	return stamp !== null && inVwapSession(stamp) ? updateVwap(symbol, price, volume) : null
+}
 
 // [FIX: SILENT FAILURE] The original getVwap returned null when no VWAP key existed.
 // Detectors treated null as "no filter — allow the alert through", which means a
