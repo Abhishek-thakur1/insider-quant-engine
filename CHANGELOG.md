@@ -2,6 +2,12 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## `fix/vwap-auction-volume`: the auction volume stays out of the equity VWAP (found 3 Nov; NOT merged)
+
+- **Gap in #40:** the auction arrives on the first ticks after 09:15 (TATASTEEL on 3 Nov: received 09:15:00, last trade 09:08:53, 136,578 shares). The receive-time gate let it into the VWAP.
+- **Fix:** gate equity ticks on their `last_traded_time`, falling back to the receive time. The volume diff moved unchanged into `tickVolumeDelta`. Kill switch `VWAP_SESSION_GATE=false` unchanged. AGENTS.md §11.25.1.
+- **Tests:** `tests/vwapAuctionVolume.test.ts` (6).
+
 ## `feat/timer-square-off-exit` (PR #45): merged and deployed 31 Oct evening with #40 as ONE series break; first session Mon 2 Nov
 
 - **The 15:15 TIME exit no longer waits for a traded tick** (AGENTS.md §11.30). A timer closes open INTRADAY positions at the last known price, which is noted from every feed message. On 28 Oct, 6 exits waited until about 15:28.

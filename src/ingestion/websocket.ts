@@ -4,7 +4,7 @@ import path from 'path'
 import { EventEmitter } from 'events'
 import { ENV } from '../config/env.js'
 import { bootRedis, redisClient } from '../config/redis.js'
-import { updateSessionVwap, getVwap, updateNiftyBias, warnIfVwapMissing } from '../utils/vwapUtils.js'
+import { updateSessionVwap, getVwap, tickVolumeDelta, updateNiftyBias, warnIfVwapMissing } from '../utils/vwapUtils.js'
 import { buildOptionUniverse, updateOptionTick, hasATMShifted, OPTION_STRIKE_COUNT } from '../utils/optionUtils.js'
 import { seedHistoricalVwap, fetchAndSeedSymbol, getTodayString } from './vwapSeeder.js'
 import { feedTick } from '../utils/candleAggregator.js'
@@ -352,8 +352,9 @@ export const startLiveEngine = async () => {
 
 			// 3. Route Equities
 			if (activeUniverseSet.has(rawTick.symbol)) {
-				// Session-gated (09:15 IST): the pre-open auction print no longer enters the VWAP.
-				await updateSessionVwap(rawTick.symbol, liveTick.price, liveTick.volume, liveTick.timestamp)
+				// Session-gated (09:15 IST) on the tick's last-trade time: the auction volume, which arrives on the
+				// first ticks after 09:15 with a last trade before it, stays out of the VWAP (vwapUtils).
+				await updateSessionVwap(rawTick.symbol, liveTick.price, liveTick.volume, liveTick.timestamp, rawTick.last_traded_time)
 				feedTick(rawTick.symbol, liveTick.price, liveTick.volume)
 				getEvShadow()?.onTick(rawTick.symbol, liveTick.price, liveTick.timestamp).catch(() => {}) // observation only, never awaited
 				const strategies = strategyRouter.get(rawTick.symbol)
@@ -495,13 +496,9 @@ export const startLiveEngine = async () => {
 
 			// Last price for the 15:15 timer square-off: every message, before the zero-volume filter (sync Map.set).
 			positionTracker.notePrice(tick.symbol, tick.ltp, Date.now())
-			const cumulativeVol = tick.vol_traded_today || 0
-			// Use ?? so we don't accidentally fallback to cumulativeVol if it was recorded as 0
-			const previousVol = previousVolumeTracker.get(tick.symbol) ?? cumulativeVol
-			const actualTickVol = Math.max(0, cumulativeVol - previousVol)
-
-			// FIX: ALWAYS track the volume regardless of asset class so the *next* tick diff is correct
-			previousVolumeTracker.set(tick.symbol, cumulativeVol)
+			// Volume since this symbol's previous tick; the tracker is ALWAYS updated, regardless of asset
+			// class, so the *next* tick's diff is correct (vwapUtils.tickVolumeDelta).
+			const actualTickVol = tickVolumeDelta(previousVolumeTracker, tick.symbol, tick.vol_traded_today)
 
 			const isIndexOrOption =
 				tick.symbol === NIFTY_SYMBOL || tick.symbol.endsWith('CE') || tick.symbol.endsWith('PE')
