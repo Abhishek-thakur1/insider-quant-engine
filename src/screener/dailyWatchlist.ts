@@ -1,11 +1,11 @@
 // ============================================================
-// screener/dailyWatchlist.ts — the daily watchlist (rules dw-2, pre-registered)
+// screener/dailyWatchlist.ts — the daily watchlist (filters and ranking: dw-2; list: dw-3)
 //
-// docs/studies/daily-watchlist/PREREGISTRATION_dw2.md is the rule book (dw-1 in PREREGISTRATION.md,
-// kept as the record of the 2 Nov scan); this file implements dw-2.
-// Pure functions (ranking, validation, which file the engine boots from) plus the scan
-// runner, whose Fyers access, file writes and alerts are injected so tests make no calls.
-// One scan = 1 master download + at most 48 quote batches + at most 6 retries (hard cap 55, 4 Nov amendment).
+// Rules: docs/studies/daily-watchlist/PREREGISTRATION_dw3.md (dw-3 = dw-2's filters and ranking on the
+// NSE bhavcopy, 80 symbols incl. Nifty; the source runner is screener/bhavcopy.ts). dw-2 and dw-1 are
+// kept as records. Pure functions (ranking, validation, which file the engine boots from) plus the
+// legacy Fyers-quote scan runner (runDailyScan, scripts/daily_watchlist.ts; not scheduled).
+// The Fyers scan = 1 master download + at most 48 quote batches + at most 6 retries (hard cap 55).
 // ============================================================
 
 import fs from 'node:fs'
@@ -13,11 +13,11 @@ import path from 'node:path'
 import { QuotaStopError } from '../fyers/quota.js'
 import { batches, QUOTE_BATCH } from './prefilter.js'
 
-export const RULES_VERSION = 'dw-2'
+export const RULES_VERSION = 'dw-3'
 export const CORE_SIZE = 25
-export const ROTATING_SLOTS = 69 // 25 core + 69 = 94 stocks + Nifty = 95 symbols
+export const ROTATING_SLOTS = 54 // 25 core + 54 = 79 stocks + Nifty = 80 symbols (owner, 3 Nov)
 export const MIN_STOCKS = 60
-export const MAX_STOCKS = 94
+export const MAX_STOCKS = 79
 export const SCAN_REQUEST_CAP = 55 // master download + quote requests (owner, 4 Nov scan)
 export const QUOTE_BATCH_CAP = 48 // more batches needed → fail before any quote call
 export const QUOTE_RETRY_CAP = 6 // attempts beyond the batch count
@@ -55,6 +55,7 @@ export interface DailyWatchlistFile {
 	forSession: string
 	generatedAt: string
 	requests: number
+	source?: string // dw-3: 'nse-bhavcopy <file name>'
 	funnel?: ReturnType<typeof eligibilityFunnel>
 	symbols: string[]
 	entries: RankedEntry[]
@@ -323,7 +324,7 @@ export const budgeted = (inner: (batch: string[]) => Promise<unknown>, cap = QUO
 }
 
 /** Atomic write into a directory: temp file, then rename. */
-export const atomicWriter = (dir: string) => (name: string, content: string) => {
+export const atomicWriter = (dir: string) => (name: string, content: string | Buffer) => {
 	const target = path.join(dir, name)
 	fs.mkdirSync(path.dirname(target), { recursive: true })
 	const tmp = `${target}.tmp-${process.pid}`
