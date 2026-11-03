@@ -1936,15 +1936,42 @@ No hand-picked names, and none of RULE-85's extra 33.
 | Engine boot and VWAP seeder read the same choice | `resolveWatchlist()` in `src/screener/paths.ts`; `websocket.ts` boot, `vwapSeeder.ts` |
 
 - **Outputs** (volume `screener_data`): `/app/data/watchlist_daily.json` and a copy per day in `/app/data/watchlist_daily_history/<session>.json`. Each holds the as-of day, target session, rules version, request count, list, and for every rotating name its rank, score and measures (the reasons). Written atomically. **The static `watchlist.json` is never written by the scan.**
-- **Choice at boot:** the daily file if `SCREENER_ENABLED` isn't `false`, it validates (60–94 unique well-formed stocks, rules `dw-1`) and its `forSession` is today (IST). Otherwise the static `watchlist.json`, with the reason in the boot line `[Engine] 🗂️ Watchlist source: …`, plus a Telegram warning when the flag is on.
-- **Kill switch:** `SCREENER_ENABLED=false` in `.env`, then recreate the engine (outside 09:00–15:30). It returns to the static file with no scan and no rebuild.
+- **Choice at boot:** the daily file if `SCREENER_ENABLED=true` (**default off** since `feat/screener-default-off`, owner 2 Nov), it validates (dw-3: 60–79 unique well-formed stocks, rules `dw-3`; see 11.31.2) and its `forSession` is today (IST). Otherwise the static `watchlist.json`, with the reason in the boot line `[Engine] 🗂️ Watchlist source: …`, plus a Telegram warning when the flag is on.
+- **Switch:** the daily list is off unless `.env` has `SCREENER_ENABLED=true` (then recreate the engine, outside 09:00–15:30). Removing it, or any other value, returns to the static file with no scan and no rebuild.
 - **On a failed scan** (master unreadable, request cap, > 10% of quote batches failed, validation): nothing is written, the previous file stays, and the owner gets a Telegram alert. A previous file for an older session then fails the `forSession` check at boot, and the engine uses the static file.
-- **Schedule:** **not scheduled.** Each scan is a set of Fyers calls and needs the owner's OK (2 Nov: one scan only). It runs by hand: `docker compose run --rm --no-deps --entrypoint "" quant_engine node --import tsx scripts/daily_watchlist.ts`. The old 16:30 `quant_screener` job is unchanged and still absent.
+- **Schedule (dw-1/dw-2, superseded):** **scheduled since dw-3 (11.31.2), from the NSE bhavcopy, no Fyers calls.** The old Fyers scan below is not scheduled and needs the owner's OK. It runs by hand: `docker compose run --rm --no-deps --entrypoint "" quant_engine node --import tsx scripts/daily_watchlist.ts`. The old 16:30 `quant_screener` job is unchanged and still absent.
 - **Side effects to know:**
   - **A population change** from Tue 3 Nov, so the stock groups of §11.27 and §11.27.1 stop being the live list. Report daily-list days as their own group (`daily_dw1`).
   - `NSE:JPL-EQ` is in the list only if it ranks.
   - **A restart during the session** now seeds up to 94 stocks + Nifty from Fyers history (was 53), paced at 4/s and 40/min. That's within the seeder's 300/day allocation for up to 3 restarts.
   - **Load:** with about 95 symbols, ticks per 5 minutes and engine CPU should roughly double (52 stocks: about 7% CPU, 127 MiB on 2 Nov).
+
+### 11.31.1 Rules dw-2 (`feat/daily-watchlist-dw2`, pre-registered 2 Nov `5082c6c`; NOT merged, NOT deployed)
+
+`docs/studies/daily-watchlist/PREREGISTRATION_dw2.md`. Three differences from dw-1:
+- **As-of rule:** the IST date of `tt` equals the as-of day, and volume > 0. `tt` is a date stamp, so there is no time-of-day check.
+- **Request cap:** 55 in total (amended 3 Nov for the 4 Nov scan): 1 master + at most 48 quote batches + at most 6 retries. The batch count is checked first, before any quote call; quote attempts are capped at batches + 6 (every attempt counts). The 3 Nov scan (cap 48) stopped there: 48 batches needed > 47.
+- **Raw sample:** every raw quote response is saved to `raw_quotes/<session>.jsonl`, and the run reports how many quotes pass each step (`eligibilityFunnel`).
+
+The 3 Nov dw-2 Fyers scan stopped before any quote call (48 batches > 47). dw-2 is superseded by dw-3; the Fyers scan (`scripts/daily_watchlist.ts`) stays in the repo, unscheduled.
+
+### 11.31.2 Rules dw-3: automated, from the NSE bhavcopy (`feat/daily-watchlist-dw3`, PR #69; pre-registered 3 Nov `cb9d91e`)
+
+`docs/studies/daily-watchlist/PREREGISTRATION_dw3.md`. **This section supersedes 11.31's schedule, validation and rules-version lines.**
+- **Source:** NSE's UDiFF common bhavcopy from its archive, `https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_<YYYYMMDD>_F_0000.csv.zip`. That is one zip a day, published about 16:30 IST. **There is no Fyers call and no token.**
+  - Universe: Main Board EQ, meaning `Sgmt CM`, `SctySrs EQ` and an `INE` ISIN, mapped to `NSE:<TckrSymb>-EQ`.
+  - Field map: `LastPric`→lp, `PrvsClsgPric`→prev close, `HghPric`/`LwPric`, `TtlTradgVol`→volume, `TradDt`→as-of day.
+  - dw-2's filters, score and order are unchanged, and the core 25 are unchanged.
+- **Size:** 52 core (the owner's 3 Nov watchlist, `config/daily_watchlist_core.json`; **amendment 1**, was the 20 Oct 25) + 27 rotating = 79 stocks + Nifty = **80** (owner).
+- **Fyers check (amendment 1, 1a):** every **rotating** name must be in the image's `fyersUniverse.json` (2,158 NSE EQ symbols, last changed 2026-04-28, `ac7e962`; no date inside the file, so the date is a constant in `scripts/daily_watchlist_bhav.ts`). Names not found are dropped, not replaced, and listed in the file's `fyersCheck` and the Telegram. Below 60 stocks the list is rejected. **The 52 core names are exempt** (1a), since they are the live watchlist; the file predates some of them (JPL is not in it). Validation: 60–79 unique, well-formed stocks, every rotating name in that day's EQ rows, and the file's only trade date must be the as-of day. `rulesVersion` must be `dw-3`.
+- **Engine guard:** `resolveWatchlist` also falls back to the static list, with the alert, when the daily list doesn't fit `SUBSCRIPTION_CAP − bench − Nifty − option strikes` (`watchlistRoom`). The engine therefore never refuses to boot over the daily list. It reads the list once, at boot, and the seeder reads it at its start. Nothing reads it mid-session.
+- **Code:** `src/screener/bhavcopy.ts` (zip and CSV parsing, `runBhavScan`; tests in `tests/bhavcopy.test.ts`, no network) and `scripts/daily_watchlist_bhav.ts` (the job). `BHAVCOPY_FILE=<zip>` reads a local file instead of downloading.
+- **Schedule:** `scheduler/crontab`, at 19:00, 19:30 … 22:00 IST Mon–Fri. `lifecycle.sh run_watchlist` skips weekends and holidays (`trading_day.sh`), then runs `docker start -a quant_watchlist`. That is a compose job (profile `jobs`) on the engine image, mounting `screener_data` only.
+  - **Exit codes:** 0 written or already done · 5 not published yet, a network error or a non-zip response (retried at the next half hour; alerted after the 22:00 run) · 2 bad file or validation (alerted at once; a `watchlist_daily_history/<session>.failed.txt` marker skips the rest of the evening) · 3 refused before 15:30 · 1 crash (alerted).
+  - **Success** sends one Telegram with the rotating names.
+- **Outputs:** `watchlist_daily.json` (written first), then `watchlist_daily_history/<session>.json`, and `bhavcopy/<asOf>.csv.zip`, the source kept for audit and saved only for a list that passed.
+- **Deploy notes:** `quant_watchlist` runs the image it was created from. After every engine image change, run `docker compose --profile jobs create --force-recreate quant_watchlist`. The scheduler image must be rebuilt for crontab or lifecycle changes.
+- **Restart cost:** a restart after 09:15 seeds up to 80 symbols from Fyers history (was 53). That allows 3 restarts within the seeder's 300/day allocation.
 
 ## 12. AWS Deployment (EC2 + Docker Compose)
 

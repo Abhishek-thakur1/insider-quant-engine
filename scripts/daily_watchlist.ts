@@ -1,10 +1,11 @@
 // ============================================================
-// scripts/daily_watchlist.ts — the evening daily-watchlist scan (rules dw-1)
+// scripts/daily_watchlist.ts — the evening daily-watchlist scan (rules dw-2)
 //
-// docs/studies/daily-watchlist/PREREGISTRATION.md. One scan: the public NSE_CM master
-// (1 download) + batched quotes (≤ 50 symbols each, ≤ 59 requests, retries counted),
+// docs/studies/daily-watchlist/PREREGISTRATION_dw2.md. One scan: the public NSE_CM master
+// (1 download) + batched quotes (≤ 50 symbols each, ≤ 48 batches + ≤ 6 retries, every attempt counted; 55 in all),
 // through the shared quota gate and Redis ledger. No other Fyers call.
-// Writes /app/data/watchlist_daily.json (+ watchlist_daily_history/<session>.json);
+// Writes <SCREENER_DATA_DIR or /app/data>/watchlist_daily.json (+ watchlist_daily_history/<session>.json
+// and the raw quote responses in raw_quotes/<session>.jsonl);
 // never touches the static watchlist.json. On any failure the previous list stays
 // and the owner gets a Telegram alert.
 // Exit: 0 = written; 2 = not written (alerted); 3 = refused (session hours / no token); 1 = crash.
@@ -49,7 +50,7 @@ const main = async (): Promise<number> => {
 	const asOf = lastCompletedSession(now, holidays)
 	const forSession = nextTradingDay(asOf, holidays)
 	const dataDir = screenerDataDir()
-	console.log(`[DailyWatchlist] 🔍 rules dw-1 · as of ${asOf} → for ${forSession} · ${dataDir}`)
+	console.log(`[DailyWatchlist] 🔍 rules dw-2 · as of ${asOf} → for ${forSession} · ${dataDir}`)
 	if (!fs.existsSync(TOKEN_PATH)) {
 		await notifyAdmin(`⚠️ Daily watchlist for ${forSession} NOT updated (no Fyers token); the previous list is kept.`)
 		return 3
@@ -77,7 +78,12 @@ const main = async (): Promise<number> => {
 		downloadMaster: async () => parseCashUniverse((await axios.get<string>(CM_URL, { responseType: 'text', timeout: 60_000 })).data),
 		getQuotes,
 		quoteRequestsUsed: raw.used,
+		limitQuoteRequests: raw.limit,
 		writeFile: atomicWriter(dataDir),
+		saveRaw: (line) => {
+			fs.mkdirSync(path.join(dataDir, 'raw_quotes'), { recursive: true })
+			fs.appendFileSync(path.join(dataDir, 'raw_quotes', `${forSession}.jsonl`), line + '\n')
+		},
 		notify: notifyAdmin,
 	})
 	const used = (await new RedisLedger(redisClient).state(getISTDateString())).used

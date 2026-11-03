@@ -124,6 +124,23 @@ services:
     env_file:
       - .env
 
+  # ── Daily watchlist (job, rules dw-3) ─────────────────────────────────────
+  # Not a service: created once (`docker compose --profile jobs create quant_watchlist`), started by
+  # the scheduler 19:00–22:00 IST on trading days (lifecycle.sh run_watchlist). Today's NSE bhavcopy →
+  # the next session's watchlist_daily.json in screener_data. No token, no Fyers call. It runs the
+  # engine's image, so recreate it after every engine deploy (RUNBOOK).
+  quant_watchlist:
+    image: insider-quant-engine-quant_engine:latest
+    container_name: quant_watchlist
+    profiles: ['jobs']
+    command: node --import tsx scripts/daily_watchlist_bhav.ts
+    restart: 'no'
+    volumes:
+      - screener_data:/app/data
+      - /app/node_modules
+    env_file:
+      - .env
+
   # ── API Server (Dashboard Backend) ────────────────────────────────────────
   quant_api:
     build:

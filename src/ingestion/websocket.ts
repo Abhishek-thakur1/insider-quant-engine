@@ -93,8 +93,9 @@ export const startLiveEngine = async () => {
 	if (calendarWarning) void notifyAdmin(`⚠️ quant_engine: ${calendarWarning}`)
 
 	const TOKEN_PATH = path.resolve('/app/token', 'access_token.txt')
-	// Daily list (scripts/daily_watchlist.ts → /app/data/watchlist_daily.json) when SCREENER_ENABLED
-	// isn't 'false' and it is valid and for today; else the static watchlist.json (screener/paths.ts).
+	// Daily list (dw-3: scripts/daily_watchlist_bhav.ts → /app/data/watchlist_daily.json) when SCREENER_ENABLED
+	// is 'true', it is valid and for today and it fits the cap; else the static watchlist.json (screener/paths.ts).
+	// Read once, here at boot (and by the seeder at its start); never mid-session.
 	let choice: ReturnType<typeof resolveWatchlist> | null = null
 	try {
 		choice = resolveWatchlist()

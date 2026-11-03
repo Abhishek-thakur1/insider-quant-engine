@@ -1,10 +1,11 @@
 // ============================================================
-// screener/dailyWatchlist.ts — the daily watchlist (rules dw-1, pre-registered)
+// screener/dailyWatchlist.ts — the daily watchlist (filters and ranking: dw-2; list: dw-3)
 //
-// docs/studies/daily-watchlist/PREREGISTRATION.md is the rule book; this file implements it.
-// Pure functions (ranking, validation, which file the engine boots from) plus the scan
-// runner, whose Fyers access, file writes and alerts are injected so tests make no calls.
-// One scan = 1 master download + at most 59 quote requests (hard cap, retries included).
+// Rules: docs/studies/daily-watchlist/PREREGISTRATION_dw3.md (dw-3 = dw-2's filters and ranking on the
+// NSE bhavcopy, 80 symbols incl. Nifty; the source runner is screener/bhavcopy.ts). dw-2 and dw-1 are
+// kept as records. Pure functions (ranking, validation, which file the engine boots from) plus the
+// legacy Fyers-quote scan runner (runDailyScan, scripts/daily_watchlist.ts; not scheduled).
+// The Fyers scan = 1 master download + at most 48 quote batches + at most 6 retries (hard cap 55).
 // ============================================================
 
 import fs from 'node:fs'
@@ -12,13 +13,15 @@ import path from 'node:path'
 import { QuotaStopError } from '../fyers/quota.js'
 import { batches, QUOTE_BATCH } from './prefilter.js'
 
-export const RULES_VERSION = 'dw-1'
-export const CORE_SIZE = 25
-export const ROTATING_SLOTS = 69 // 25 core + 69 = 94 stocks + Nifty = 95 symbols
+export const RULES_VERSION = 'dw-3'
+export const CORE_SIZE = 52 // the owner's 3 Nov watchlist (dw-3 amendment 1; was the 20 Oct 25)
 export const MIN_STOCKS = 60
-export const MAX_STOCKS = 94
-export const SCAN_REQUEST_CAP = 60 // master download + quote requests
-export const QUOTE_REQUEST_CAP = SCAN_REQUEST_CAP - 1
+export const MAX_STOCKS = 79
+export const ROTATING_SLOTS = MAX_STOCKS - CORE_SIZE // 52 core + 27 = 79 stocks + Nifty = 80 symbols (owner, 3 Nov)
+export const SCAN_REQUEST_CAP = 55 // master download + quote requests (owner, 4 Nov scan)
+export const QUOTE_BATCH_CAP = 48 // more batches needed → fail before any quote call
+export const QUOTE_RETRY_CAP = 6 // attempts beyond the batch count
+export const QUOTE_REQUEST_CAP = SCAN_REQUEST_CAP - 1 // 54 = 48 + 6
 export const MIN_PRICE = 50
 export const MIN_TURNOVER_RUPEES = 50 * 1e7 // ₹50 crore
 export const MAX_FAILED_BATCH_SHARE = 0.1
@@ -33,7 +36,7 @@ export interface DailyQuote {
 	high: number
 	low: number
 	volume: number
-	tt: number // last-trade time, epoch seconds
+	tt: number // Fyers "Today's time": a date stamp (00:00 UTC of the day), epoch seconds — not a trade time
 }
 
 export interface RankedEntry {
@@ -52,6 +55,9 @@ export interface DailyWatchlistFile {
 	forSession: string
 	generatedAt: string
 	requests: number
+	source?: string // dw-3: 'nse-bhavcopy <file name>'
+	fyersCheck?: { file: string; asOf: string; symbols: number; dropped: string[] } // dw-3 amendment 1
+	funnel?: ReturnType<typeof eligibilityFunnel>
 	symbols: string[]
 	entries: RankedEntry[]
 }
@@ -101,17 +107,24 @@ export const percentiles = (xs: number[]): number[] => {
 	return out
 }
 
-/** As-of rule: last trade on the as-of day, inside 09:15–15:30 IST. */
-export const quoteOnAsOf = (q: DailyQuote, asOf: string): boolean => {
-	const ms = q.tt * 1000
-	const m = istMinutes(ms)
-	return istDay(ms) === asOf && m >= 9 * 60 + 15 && m <= 15 * 60 + 30
+/** As-of rule (dw-2): the IST date of `tt` is the as-of day and the stock traded (volume > 0). */
+export const quoteOnAsOf = (q: DailyQuote, asOf: string): boolean => istDay(q.tt * 1000) === asOf && q.volume > 0
+
+/** How many quotes pass each eligibility step, in order (diagnostics for the log and the owner). */
+export const eligibilityFunnel = (quotes: Map<string, DailyQuote>, core: string[], asOf: string) => {
+	const coreSet = new Set(core)
+	const qs = [...quotes].filter(([s]) => !coreSet.has(s)).map(([, q]) => q)
+	const a = qs.filter((q) => quoteOnAsOf(q, asOf))
+	const p = a.filter((q) => q.lp >= MIN_PRICE)
+	const t = p.filter((q) => q.lp * q.volume >= MIN_TURNOVER_RUPEES)
+	const r = t.filter((q) => q.prevClose > 0 && q.high > q.low)
+	return { quoted: qs.length, asOfDay: a.length, price: p.length, turnover: t.length, eligible: r.length }
 }
 
 export const eligible = (q: DailyQuote, asOf: string): boolean =>
 	quoteOnAsOf(q, asOf) && q.lp >= MIN_PRICE && q.lp * q.volume >= MIN_TURNOVER_RUPEES && q.prevClose > 0 && q.high > q.low
 
-/** Rank the rotating candidates (rules dw-1). Core symbols are never ranked. */
+/** Rank the rotating candidates (rules dw-2). Core symbols are never ranked. */
 export const rankRotating = (quotes: Map<string, DailyQuote>, core: string[], asOf: string, slots = ROTATING_SLOTS): RankedEntry[] => {
 	const coreSet = new Set(core)
 	const rows = [...quotes]
@@ -155,8 +168,8 @@ export const validateDailyFile = (f: unknown): string[] => {
 	return [...errs, ...validateList(x.symbols)]
 }
 
-/** SCREENER_ENABLED: on unless exactly 'false'. */
-export const screenerEnabled = (env: NodeJS.ProcessEnv = process.env): boolean => env.SCREENER_ENABLED !== 'false'
+/** SCREENER_ENABLED: off unless exactly 'true' (owner, 2 Nov: default off until a scan has been reviewed). */
+export const screenerEnabled = (env: NodeJS.ProcessEnv = process.env): boolean => env.SCREENER_ENABLED === 'true'
 
 export interface WatchlistChoice {
 	path: string
@@ -177,7 +190,7 @@ export const chooseWatchlist = (opts: { enabled: boolean; dailyPath: string; sta
 		reason,
 		fellBack,
 	})
-	if (!opts.enabled) return fromStatic('SCREENER_ENABLED=false', false)
+	if (!opts.enabled) return fromStatic('SCREENER_ENABLED is not true', false)
 	let f: DailyWatchlistFile
 	try {
 		f = JSON.parse(read(opts.dailyPath)) as DailyWatchlistFile
@@ -201,7 +214,9 @@ export interface ScanDeps {
 	downloadMaster: () => Promise<string[]> // the universe from NSE_CM.csv
 	getQuotes: (batch: string[]) => Promise<unknown> // production: gate.call(() => budgeted api.getQuotes)
 	quoteRequestsUsed: () => number // attempts made by getQuotes so far (gate retries included)
+	limitQuoteRequests?: (n: number) => void // lowers the attempt cap to batches + QUOTE_RETRY_CAP, once the batch count is known
 	writeFile: (name: string, content: string) => void // atomic, relative to the data dir
+	saveRaw?: (line: string) => void // one JSON line per quote batch, written as it returns (dw-2 raw sample)
 	notify: (text: string) => Promise<unknown>
 	log?: Pick<Console, 'log' | 'warn'>
 }
@@ -227,7 +242,7 @@ export const runDailyScan = async (d: ScanDeps): Promise<ScanResult> => {
 		return fail(`core list must be ${CORE_SIZE} unique well-formed symbols`)
 
 	let universe: string[]
-	requests++ // the master download counts as 1 of the 60
+	requests++ // the master download counts as 1 of the cap
 	try {
 		universe = await d.downloadMaster()
 		if (universe.length < 1000) throw new Error(`only ${universe.length} symbols in the master`)
@@ -237,15 +252,25 @@ export const runDailyScan = async (d: ScanDeps): Promise<ScanResult> => {
 	const universeSet = new Set(universe)
 	const toQuote = universe.filter((s) => !d.core.includes(s))
 	const groups = batches(toQuote, QUOTE_BATCH)
-	if (groups.length > QUOTE_REQUEST_CAP) return fail(`${groups.length} quote batches needed > cap ${QUOTE_REQUEST_CAP}`)
+	if (groups.length > QUOTE_BATCH_CAP) return fail(`${groups.length} quote batches needed > cap ${QUOTE_BATCH_CAP}`)
+	const attemptCap = Math.min(QUOTE_REQUEST_CAP, groups.length + QUOTE_RETRY_CAP)
+	d.limitQuoteRequests?.(attemptCap)
+	log.log(`[DailyWatchlist] universe ${universe.length} · ${groups.length} quote batches (cap ${QUOTE_BATCH_CAP}) · at most ${attemptCap} quote attempts`)
 
 	const quotes = new Map<string, DailyQuote>()
 	let failed = 0
-	for (const g of groups) {
+	const raw = (line: object) => {
+		try {
+			d.saveRaw?.(JSON.stringify(line))
+		} catch {}
+	}
+	for (const [i, g] of groups.entries()) {
 		try {
 			const resp = await d.getQuotes(g)
+			raw({ batch: i, at: new Date().toISOString(), resp })
 			for (const [s, q] of parseDailyQuotes(resp)) quotes.set(s, q)
 		} catch (err) {
+			raw({ batch: i, at: new Date().toISOString(), error: (err as Error)?.message ?? err })
 			if (err instanceof QuotaStopError) {
 				requests = 1 + d.quoteRequestsUsed()
 				return fail(`quota stop: ${err.message}`)
@@ -258,10 +283,13 @@ export const runDailyScan = async (d: ScanDeps): Promise<ScanResult> => {
 	if (requests > SCAN_REQUEST_CAP) return fail(`${requests} requests > ${SCAN_REQUEST_CAP}`)
 	if (failed / Math.max(1, groups.length) > MAX_FAILED_BATCH_SHARE) return fail(`${failed}/${groups.length} quote batches failed`)
 
+	const funnel = eligibilityFunnel(quotes, d.core, d.asOf)
+	const funnelText = `quoted ${funnel.quoted} → as-of day ${funnel.asOfDay} → price ${funnel.price} → turnover ${funnel.turnover} → eligible ${funnel.eligible}`
+	log.log(`[DailyWatchlist] ${funnelText}`)
 	const rotating = rankRotating(quotes, d.core, d.asOf)
 	const symbols = [...d.core, ...rotating.map((r) => r.symbol)]
 	const errs = validateList(symbols, { rotating: rotating.map((r) => r.symbol), universe: universeSet })
-	if (errs.length) return fail(`validation: ${errs.join('; ')}`)
+	if (errs.length) return fail(`validation: ${errs.join('; ')}; ${funnelText}`)
 
 	const file: DailyWatchlistFile = {
 		rulesVersion: RULES_VERSION,
@@ -269,6 +297,7 @@ export const runDailyScan = async (d: ScanDeps): Promise<ScanResult> => {
 		forSession: d.forSession,
 		generatedAt: new Date(d.nowMs).toISOString(),
 		requests,
+		funnel,
 		symbols,
 		entries: [...d.core.map((symbol) => ({ symbol, group: 'core' as const })), ...rotating],
 	}
@@ -282,16 +311,21 @@ export const runDailyScan = async (d: ScanDeps): Promise<ScanResult> => {
 /** The hard request cap around the raw API call. Put it INSIDE gate.call so every attempt (retries too) counts. */
 export const budgeted = (inner: (batch: string[]) => Promise<unknown>, cap = QUOTE_REQUEST_CAP) => {
 	let used = 0
+	let max = cap
 	const call = async (batch: string[]): Promise<unknown> => {
-		if (used >= cap) throw new ScanBudgetError(`quote request cap ${cap} reached`)
+		if (used >= max) throw new ScanBudgetError(`quote request cap ${max} reached`)
 		used++
 		return inner(batch)
 	}
-	return { call, used: () => used }
+	/** Only ever lowers the cap. */
+	const limit = (n: number) => {
+		max = Math.min(max, n)
+	}
+	return { call, used: () => used, limit }
 }
 
 /** Atomic write into a directory: temp file, then rename. */
-export const atomicWriter = (dir: string) => (name: string, content: string) => {
+export const atomicWriter = (dir: string) => (name: string, content: string | Buffer) => {
 	const target = path.join(dir, name)
 	fs.mkdirSync(path.dirname(target), { recursive: true })
 	const tmp = `${target}.tmp-${process.pid}`

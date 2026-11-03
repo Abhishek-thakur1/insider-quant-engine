@@ -12,6 +12,8 @@ import path from 'node:path'
 import type { PromotionSource } from '../core/symbolSource.js'
 import { loadHolidays, tradingDayVerdict } from '../core/sessionGuard.js'
 import { getISTDateString } from '../utils/marketHours.js'
+import { OPTION_STRIKE_COUNT } from '../utils/optionUtils.js'
+import { subscriptionCapFromEnv } from '../core/subscriptionPlan.js'
 import { chooseWatchlist, DAILY_FILE, screenerEnabled, type WatchlistChoice } from './dailyWatchlist.js'
 
 export const screenerDataDir = (): string => process.env.SCREENER_DATA_DIR || '/app/data'
@@ -76,14 +78,32 @@ export const screenerStaleness = (nowMs = Date.now()): string | null => {
 }
 
 /**
- * The watchlist the engine and the VWAP seeder use today (rules dw-1): the daily scan's
- * watchlist_daily.json when SCREENER_ENABLED isn't 'false' and the file is valid and for
- * today (IST); otherwise the static watchlist.json (resolveScreenerFile), unchanged.
+ * Symbols the watchlist may use under the Fyers subscription cap: the cap minus the bench (Layer B
+ * scan set), the Nifty index and the option strikes, counted as websocket.ts plans them.
  */
-export const resolveWatchlist = (nowMs = Date.now()): WatchlistChoice =>
-	chooseWatchlist({
+export const watchlistRoom = (env: NodeJS.ProcessEnv = process.env): number => {
+	const scanSet = resolveAnomalyUniverseFile()
+	const bench = scanSet ? Object.keys(JSON.parse(fs.readFileSync(scanSet, 'utf8'))).length : 0
+	const options = env.NIFTY_OPTIONS_ENABLED === 'true' ? OPTION_STRIKE_COUNT : 0
+	return subscriptionCapFromEnv(env.SUBSCRIPTION_CAP) - bench - 1 - options
+}
+
+/**
+ * The watchlist the engine and the VWAP seeder use today (dw-3): the daily
+ * watchlist_daily.json when SCREENER_ENABLED is 'true', the file is valid and for today (IST)
+ * and it fits the subscription cap; otherwise the static watchlist.json (resolveScreenerFile).
+ * A daily list that doesn't fit falls back (with the alert) instead of the engine refusing to boot.
+ */
+export const resolveWatchlist = (nowMs = Date.now()): WatchlistChoice => {
+	const opts = {
 		enabled: screenerEnabled(),
 		dailyPath: path.join(screenerDataDir(), DAILY_FILE),
 		staticPath: resolveScreenerFile('watchlist.json'),
 		today: getISTDateString(nowMs),
-	})
+	}
+	const c = chooseWatchlist(opts)
+	if (c.source !== 'daily') return c
+	const room = watchlistRoom()
+	if (c.symbols.length <= room) return c
+	return { ...chooseWatchlist({ ...opts, enabled: false }), reason: `daily list of ${c.symbols.length} doesn't fit the subscription cap (room ${room})`, fellBack: true }
+}

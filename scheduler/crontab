@@ -24,3 +24,7 @@
 
 # ── Token purge — 5:15 PM Mon-Fri (after the screener; moved from 3:30 PM)
 15 17 * * 1-5 /usr/local/bin/lifecycle.sh purge_token >> /var/log/scheduler.log 2>&1
+
+# ── Daily watchlist (rules dw-3, NSE bhavcopy) — 19:00 to 22:00 every 30 min Mon-Fri (trading days only; no Fyers call)
+0,30 19-21 * * 1-5 /usr/local/bin/lifecycle.sh run_watchlist >> /var/log/scheduler.log 2>&1
+0 22 * * 1-5 /usr/local/bin/lifecycle.sh run_watchlist >> /var/log/scheduler.log 2>&1
