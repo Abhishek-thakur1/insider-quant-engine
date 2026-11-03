@@ -1,4 +1,4 @@
-// Daily watchlist (rules dw-2, docs/studies/daily-watchlist/PREREGISTRATION_dw2.md). No Fyers calls:
+// Daily watchlist (filters and ranking dw-2, list dw-3: PREREGISTRATION_dw3.md). No Fyers calls:
 // the master, quotes, file writes and alerts are all fakes.
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -83,12 +83,12 @@ test('ranking: core excluded, 0.4 move + 0.3 range + 0.3 turnover, ties → turn
 	assert.equal(rankRotating(quotes, core, AS_OF, 1).length, 1)
 })
 
-test('validation: 60–94 unique well-formed stocks', () => {
+test('validation: 60–79 unique well-formed stocks', () => {
 	const list = (n: number) => Array.from({ length: n }, (_, i) => sym(i))
 	assert.deepEqual(validateList(list(60)), [])
 	assert.deepEqual(validateList(list(MAX_STOCKS)), [])
 	assert.match(validateList(list(59)).join(), /59 stocks/)
-	assert.match(validateList(list(95)).join(), /95 stocks/)
+	assert.match(validateList(list(80)).join(), /80 stocks/)
 	assert.match(validateList([...list(70), sym(1)]).join(), /duplicate/)
 	assert.match(validateList([...list(70), 'NSE:NIFTY50-INDEX', 'nse:x-eq']).join(), /malformed/)
 	assert.match(validateList(list(70), { rotating: ['NSE:GONE-EQ'], universe: new Set(list(70)) }).join(), /not in the master/)
@@ -96,7 +96,7 @@ test('validation: 60–94 unique well-formed stocks', () => {
 })
 
 const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'dw-'))
-const daily = (o: Record<string, unknown> = {}) => JSON.stringify({ rulesVersion: 'dw-2', asOf: AS_OF, forSession: FOR, generatedAt: 'x', requests: 49, symbols: Array.from({ length: 94 }, (_, i) => sym(i)), entries: [], ...o })
+const daily = (o: Record<string, unknown> = {}) => JSON.stringify({ rulesVersion: 'dw-3', asOf: AS_OF, forSession: FOR, generatedAt: 'x', requests: 49, symbols: Array.from({ length: 79 }, (_, i) => sym(i)), entries: [], ...o })
 
 test('the engine uses the daily list only when enabled, valid and for today; otherwise the static file', () => {
 	const dir = tmpDir()
@@ -109,7 +109,7 @@ test('the engine uses the daily list only when enabled, valid and for today; oth
 	assert.equal(c.source, 'static'); assert.equal(c.fellBack, true); assert.match(c.reason, /no readable/)
 	fs.writeFileSync(dailyPath, daily())
 	c = pick(true)
-	assert.equal(c.source, 'daily'); assert.equal(c.symbols.length, 94); assert.equal(c.fellBack, false); assert.equal(c.path, dailyPath)
+	assert.equal(c.source, 'daily'); assert.equal(c.symbols.length, 79); assert.equal(c.fellBack, false); assert.equal(c.path, dailyPath)
 	c = pick(false)
 	assert.equal(c.source, 'static'); assert.equal(c.fellBack, false); assert.equal(c.reason, 'SCREENER_ENABLED is not true'); assert.deepEqual(c.symbols, core)
 	c = pick(true, '2026-11-04')
@@ -171,7 +171,7 @@ const fakeScan = (o: { n?: number; quote?: (s: string, i: number) => DailyQuote 
 	return { deps, writes, alerts, raw, rawLines }
 }
 
-test('a good scan writes the list and the day log: 25 core + 69 ranked, with reasons and the request count', async () => {
+test('a good scan writes the list and the day log: 25 core + 54 ranked, with reasons and the request count', async () => {
 	const { deps, writes, alerts, raw, rawLines } = fakeScan()
 	const r = await runDailyScan(deps)
 	assert.equal(rawLines.length, 24, 'one raw line per quote batch')
@@ -181,13 +181,13 @@ test('a good scan writes the list and the day log: 25 core + 69 ranked, with rea
 	assert.equal(raw.used(), Math.ceil((1200 - 25) / 50)) // core isn't quoted: 24 batches
 	const f = JSON.parse(writes.get(DAILY_FILE)!)
 	assert.equal(writes.get(`watchlist_daily_history/${FOR}.json`), writes.get(DAILY_FILE))
-	assert.equal(f.symbols.length, 94)
+	assert.equal(f.symbols.length, 79)
 	assert.deepEqual(f.symbols.slice(0, 25), core)
 	assert.equal(f.requests, 1 + 24)
-	assert.equal(f.asOf, AS_OF); assert.equal(f.forSession, FOR); assert.equal(f.rulesVersion, 'dw-2')
+	assert.equal(f.asOf, AS_OF); assert.equal(f.forSession, FOR); assert.equal(f.rulesVersion, 'dw-3')
 	assert.deepEqual(f.funnel, { quoted: 1175, asOfDay: 1175, price: 1175, turnover: 1175, eligible: 1175 })
 	const rot = f.entries.filter((e: { group: string }) => e.group === 'rotating')
-	assert.equal(rot.length, 69)
+	assert.equal(rot.length, 54)
 	assert.ok(rot.every((e: { rank: number; score: number; move: number; range: number; turnover: number }) => e.rank > 0 && e.score >= 0 && e.move >= 0 && e.range > 0 && e.turnover > 0))
 })
 

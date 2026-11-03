@@ -8,6 +8,7 @@
 #   stop_engine   → 3:30 PM  — graceful shutdown of quant_engine
 #   run_screener  → 4:30 PM  — EOD screener job (writes tomorrow's watchlist)
 #   purge_token   → 5:15 PM  — delete today's Fyers token (after the screener used it)
+#   run_watchlist → 19:00–22:00 every 30 min — daily watchlist from the NSE bhavcopy (dw-3)
 #
 # Docker socket is mounted from the host, so `docker` commands here control
 # real sibling containers — not children of this container.
@@ -101,8 +102,32 @@ case "$ACTION" in
     fi
     ;;
 
+  # ── 19:00–22:00, every 30 min ────────────────────────────────────────────
+  # Daily watchlist, rules dw-3 (docs/studies/daily-watchlist/PREREGISTRATION_dw3.md): today's NSE
+  # bhavcopy → the next session's watchlist_daily.json in screener_data. No Fyers call. Exit codes from
+  # scripts/daily_watchlist_bhav.ts: 0 written or already done · 5 not published yet (retried at the
+  # next half hour; alerted after 22:00) · 2 failed (owner alerted, static list used) · 3 refused · 1 crash.
+  # The engine reads the list only at its 09:00 boot, and only when SCREENER_ENABLED=true.
+  run_watchlist)
+    if ! VERDICT=$(/usr/local/bin/trading_day.sh); then
+        log "🏖️  Not a trading day ($VERDICT). Skipping the daily watchlist."
+        exit 0
+    fi
+    docker start -a quant_watchlist > /var/log/watchlist_last.log 2>&1
+    CODE=$?
+    tail -5 /var/log/watchlist_last.log
+    log "quant_watchlist exited $CODE (0 written or done · 5 not published yet, retried · 2 failed, alerted · 3 refused · 1 crash)."
+    # The job alerts on its own failures; this covers the container itself missing or not starting.
+    if [ "$CODE" != 0 ] && [ "$CODE" != 2 ] && [ "$CODE" != 5 ] && [ "$(date '+%H')" -ge 22 ] \
+        && [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_ADMIN_ID" ]; then
+        curl -s --max-time 20 -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_ADMIN_ID}" \
+            --data-urlencode text="⚠️ Daily watchlist job exited $CODE at the last run; the static list will be used. See /var/log/watchlist_last.log in quant_scheduler." > /dev/null
+    fi
+    ;;
+
   *)
-    log "❌ Unknown action: $ACTION. Valid: start_auth | start_engine | stop_engine | run_screener | purge_token"
+    log "❌ Unknown action: $ACTION. Valid: start_auth | start_engine | stop_engine | run_screener | purge_token | run_watchlist"
     exit 1
     ;;
 

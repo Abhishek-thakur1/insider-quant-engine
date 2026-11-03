@@ -1,0 +1,141 @@
+// Daily watchlist from the NSE bhavcopy (rules dw-3, docs/studies/daily-watchlist/PREREGISTRATION_dw3.md).
+// No network: the zip is built in memory. Rows below are real 3 Nov 2026 values (RELIANCE, TATASTEEL, JPL)
+// in the real UDiFF column order; the rest are synthetic.
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import zlib from 'node:zlib'
+import { bhavcopyUrl, parseBhavcopy, parseCsv, runBhavScan, unzipFirst, type BhavScanDeps } from '../src/screener/bhavcopy.js'
+import { DAILY_FILE, MAX_STOCKS, ROTATING_SLOTS } from '../src/screener/dailyWatchlist.js'
+
+const HEADER =
+	'TradDt,BizDt,Sgmt,Src,FinInstrmTp,FinInstrmId,ISIN,TckrSymb,SctySrs,XpryDt,FininstrmActlXpryDt,StrkPric,OptnTp,FinInstrmNm,OpnPric,HghPric,LwPric,ClsPric,LastPric,PrvsClsgPric,UndrlygPric,SttlmPric,OpnIntrst,ChngInOpnIntrst,TtlTradgVol,TtlTrfVal,TtlNbOfTxsExctd,SsnId,NewBrdLotQty,Rmks,Rsvd1,Rsvd2,Rsvd3,Rsvd4'
+type Row = { day?: string; sym: string; series?: string; isin?: string; name?: string; high: number; low: number; last: number; prev: number; vol: number; sgmt?: string }
+const row = (r: Row) =>
+	[r.day ?? '2026-11-03', r.day ?? '2026-11-03', r.sgmt ?? 'CM', 'NSE', 'STK', '1', r.isin ?? `INE${r.sym.slice(0, 6).padEnd(6, '0')}01010`, r.sym, r.series ?? 'EQ', '', '', '', '', r.name ?? `${r.sym} LIMITED`, r.prev, r.high, r.low, r.last, r.last, r.prev, '', r.last, '', '', r.vol, (r.last * r.vol).toFixed(2), 100, 'F1', 1, '', '', '', '', ''].join(',')
+const REAL = [
+	row({ sym: 'RELIANCE', isin: 'INE002A01018', high: 1307.9, low: 1282, last: 1307.9, prev: 1300, vol: 42_319_913 }),
+	row({ sym: 'TATASTEEL', isin: 'INE081A01020', high: 179, low: 175.05, last: 176.5, prev: 177.37, vol: 17_823_743 }),
+	row({ sym: 'JPL', isin: 'INE0BJO01010', high: 1442, low: 1405, last: 1437.4, prev: 1420.7, vol: 10_314_943 }),
+]
+
+/** A one-entry zip (deflate), as NSE serves it; CRC left 0 (unzipFirst doesn't check it). */
+const zipOf = (name: string, text: string, method: 0 | 8 = 8): Buffer => {
+	const raw = Buffer.from(text, 'utf8')
+	const data = method === 8 ? zlib.deflateRawSync(raw) : raw
+	const n = Buffer.from(name)
+	const local = Buffer.alloc(30)
+	local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(8, 6) // flag 8: sizes in a data descriptor
+	local.writeUInt16LE(method, 8); local.writeUInt16LE(n.length, 26)
+	const cd = Buffer.alloc(46)
+	cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt16LE(method, 10); cd.writeUInt32LE(data.length, 20); cd.writeUInt32LE(raw.length, 24)
+	cd.writeUInt16LE(n.length, 28); cd.writeUInt32LE(0, 42)
+	const cdOffset = local.length + n.length + data.length
+	const eocd = Buffer.alloc(22)
+	eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(1, 8); eocd.writeUInt16LE(1, 10); eocd.writeUInt32LE(cd.length + n.length, 12); eocd.writeUInt32LE(cdOffset, 16)
+	return Buffer.concat([local, n, data, cd, n, eocd])
+}
+
+const core = Array.from({ length: 25 }, (_, i) => `NSE:CORE${String.fromCharCode(65 + i)}-EQ`)
+/** A synthetic day: n eligible Main Board names plus the noise the filters must drop. */
+const day = (n: number, o: { day?: string } = {}) => {
+	const lines = [HEADER, ...REAL]
+	for (let i = 0; i < n; i++) lines.push(row({ day: o.day, sym: `S${String(i).padStart(4, '0')}`, high: 110 + (i % 7), low: 100, last: 105 + (i % 11), prev: 100, vol: 6_000_000 + i * 1000 }))
+	for (let i = 0; i < 1000; i++) lines.push(row({ day: o.day, sym: `THIN${i}`, high: 101, low: 99, last: 100, prev: 100, vol: 1000 })) // below ₹50 cr
+	lines.push(row({ day: o.day, sym: 'SMEX', series: 'SM', high: 200, low: 100, last: 190, prev: 100, vol: 9e7 })) // SME: out
+	lines.push(row({ day: o.day, sym: 'BEX', series: 'BE', high: 200, low: 100, last: 190, prev: 100, vol: 9e7 })) // trade-for-trade: out
+	lines.push(row({ day: o.day, sym: 'NIFTYBEES', isin: 'INF204KB14I2', high: 300, low: 200, last: 290, prev: 200, vol: 9e7 })) // ETF: out
+	lines.push(row({ day: o.day, sym: 'CHEAP', high: 49, low: 30, last: 45, prev: 30, vol: 9e8 })) // under ₹50: out
+	lines.push(row({ day: o.day, sym: 'ANDCO', name: '"A, B AND CO LIMITED"', high: 300, low: 200, last: 290, prev: 200, vol: 9e7 })) // quoted comma
+	return lines.join('\n') + '\n'
+}
+
+const deps = (zip: Buffer | null | Error, o: Partial<BhavScanDeps> = {}) => {
+	const writes = new Map<string, string | Buffer>()
+	const d: BhavScanDeps = {
+		asOf: '2026-11-03',
+		forSession: '2026-11-04',
+		nowMs: Date.parse('2026-11-03T13:30:00Z'),
+		core,
+		fetchZip: async () => {
+			if (zip instanceof Error) throw zip
+			return zip
+		},
+		writeFile: (name, content) => writes.set(name, content),
+		log: { log: () => {}, warn: () => {} },
+		...o,
+	}
+	return { d, writes }
+}
+
+test('archive URL: the UDiFF common bhavcopy for the day', () => {
+	assert.equal(bhavcopyUrl('2026-11-03'), 'https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_20261103_F_0000.csv.zip')
+})
+
+test('unzip: deflate and stored entries; garbage is rejected', () => {
+	for (const m of [0, 8] as const) {
+		const z = unzipFirst(zipOf('BhavCopy_NSE_CM_0_0_0_20261103_F_0000.csv', 'a,b\n1,2\n', m))
+		assert.equal(z.name, 'BhavCopy_NSE_CM_0_0_0_20261103_F_0000.csv')
+		assert.equal(z.data.toString(), 'a,b\n1,2\n')
+	}
+	assert.throws(() => unzipFirst(Buffer.from('<html>blocked</html>')), /not a zip/)
+	assert.throws(() => unzipFirst(Buffer.alloc(0)), /not a zip/)
+})
+
+test('CSV: quoted commas, doubled quotes, CRLF, no trailing newline', () => {
+	assert.deepEqual(parseCsv('a,"b, c","d ""e"""\r\n1,2,3'), [['a', 'b, c', 'd "e"'], ['1', '2', '3']])
+})
+
+test('Main Board EQ only (Sgmt CM, series EQ, INE ISIN), in the dw-2 quote shape; real 3 Nov rows', () => {
+	const b = parseBhavcopy(day(5))
+	assert.equal(b.mainBoard.has('NSE:SMEX-EQ'), false, 'SME series SM is out')
+	assert.equal(b.mainBoard.has('NSE:BEX-EQ'), false, 'BE is out')
+	assert.equal(b.mainBoard.has('NSE:NIFTYBEES-EQ'), false, 'ETFs (INF ISIN) are out')
+	assert.equal(b.mainBoard.has('NSE:ANDCO-EQ'), true, 'a quoted comma in the name does not shift columns')
+	assert.deepEqual(b.mainBoard.get('NSE:RELIANCE-EQ'), { lp: 1307.9, prevClose: 1300, high: 1307.9, low: 1282, volume: 42_319_913, tt: Date.parse('2026-11-03T00:00:00Z') / 1000 })
+	assert.deepEqual([...b.tradeDates], ['2026-11-03'])
+	assert.throws(() => parseBhavcopy('TradDt,TckrSymb\n2026-11-03,X\n'), /columns missing: Sgmt/)
+})
+
+test('a good day: core 25 + top 54 = 79 stocks + Nifty = 80; the zip is kept; nothing from Fyers', async () => {
+	const { d, writes } = deps(zipOf('f.csv', day(120)))
+	const r = await runBhavScan(d)
+	assert.equal(r.kind, 'written')
+	const f = JSON.parse(writes.get(DAILY_FILE) as string)
+	assert.equal(ROTATING_SLOTS, 54); assert.equal(MAX_STOCKS, 79)
+	assert.equal(f.symbols.length, 79)
+	assert.deepEqual(f.symbols.slice(0, 25), core)
+	assert.equal(f.rulesVersion, 'dw-3'); assert.equal(f.requests, 0); assert.match(f.source, /^nse-bhavcopy f\.csv$/)
+	assert.equal(f.asOf, '2026-11-03'); assert.equal(f.forSession, '2026-11-04')
+	assert.equal(writes.get('watchlist_daily_history/2026-11-04.json'), writes.get(DAILY_FILE))
+	assert.ok(Buffer.isBuffer(writes.get('bhavcopy/2026-11-03.csv.zip')))
+	const rot = f.symbols.slice(25) as string[]
+	for (const out of ['NSE:SMEX-EQ', 'NSE:BEX-EQ', 'NSE:NIFTYBEES-EQ', 'NSE:CHEAP-EQ']) assert.ok(!rot.includes(out), out)
+	assert.ok(!rot.some((s) => s.startsWith('NSE:THIN')), 'below ₹50 crore turnover never ranks')
+	assert.equal(new Set(f.symbols).size, 79)
+})
+
+test('not published yet / network error → not-yet (retried); nothing written', async () => {
+	for (const z of [null, new Error('ETIMEDOUT')]) {
+		const { d, writes } = deps(z)
+		const r = await runBhavScan(d)
+		assert.equal(r.kind, 'not-yet')
+		assert.equal(writes.size, 0)
+	}
+})
+
+test('bad files fail (alerted, not retried) and write no list', async () => {
+	const cases: [string, Buffer, RegExp][] = [
+		['an HTML block page', Buffer.from('<html>Access Denied</html>'), /bad file: not a zip/],
+		["yesterday's file", zipOf('f.csv', day(120, { day: '2026-11-02' })), /trade date .*2026-11-02.* ≠ as-of 2026-11-03/],
+		['too few rows', zipOf('f.csv', [HEADER, ...REAL].join('\n')), /only 3 Main Board EQ rows/],
+		['too few eligible', zipOf('f.csv', day(20)), /validation: .*stocks, need 60/],
+		['duplicate symbol', zipOf('f.csv', day(120) + REAL[0] + '\n'), /duplicate symbol/],
+	]
+	for (const [name, zip, re] of cases) {
+		const { d, writes } = deps(zip)
+		const r = await runBhavScan(d)
+		assert.equal(r.kind, 'failed', name)
+		assert.match((r as { reason: string }).reason, re, name)
+		assert.equal(writes.has(DAILY_FILE), false, `${name}: no list written`)
+	}
+})
