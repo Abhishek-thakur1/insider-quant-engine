@@ -21,6 +21,12 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 - **Test:** `tests/composeExposure.test.ts` (Redis loopback-only; Postgres never published). It fails on the old line.
 - **Apply:** recreate `quant_redis` only, outside market hours; data stays in the `redis_data` volume (AOF + RDB). Steps and rollback in the PR.
 
+## `fix/vwap-auction-volume`: the auction volume stays out of the equity VWAP (found 3 Nov; NOT merged)
+
+- **Gap in #40:** the auction arrives on the first ticks after 09:15 (TATASTEEL on 3 Nov: received 09:15:00, last trade 09:08:53, 136,578 shares). The receive-time gate let it into the VWAP.
+- **Fix:** gate equity ticks on their `last_traded_time`, falling back to the receive time. The volume diff moved unchanged into `tickVolumeDelta`. Kill switch `VWAP_SESSION_GATE=false` unchanged. AGENTS.md §11.25.1.
+- **Tests:** `tests/vwapAuctionVolume.test.ts` (6).
+
 ## `feat/daily-watchlist`: daily watchlist, rules dw-1 (owner, 2 Nov): merged `db42dea`, NOT deployed
 
 - **Not deployed:** the one authorized scan wrote nothing. The as-of rule misread the quote field `tt` (a date stamp, not a last-trade time), so 0 names were eligible. The engine is unchanged (`afe0c959e652`, static list). Details in AGENTS.md §11.31.
