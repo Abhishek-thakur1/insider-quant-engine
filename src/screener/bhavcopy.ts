@@ -134,6 +134,8 @@ export interface BhavScanDeps {
 	forSession: string
 	nowMs: number
 	core: string[]
+	/** The Fyers NSE EQ symbol list (amendment 1): the image's fyersUniverse.json and the date it was last changed. */
+	fyers: { file: string; asOf: string; symbols: Set<string> }
 	/** The zip, or null when NSE hasn't published it yet (HTTP 404). Throws on other errors. */
 	fetchZip: () => Promise<Buffer | null>
 	writeFile: (name: string, content: string | Buffer) => void // atomic, relative to the data dir
@@ -176,10 +178,17 @@ export const runBhavScan = async (d: BhavScanDeps): Promise<BhavScanResult> => {
 	const funnel = eligibilityFunnel(bhav.mainBoard, d.core, d.asOf)
 	const funnelText = `Main Board EQ ${funnel.quoted} → as-of day ${funnel.asOfDay} → price ${funnel.price} → turnover ${funnel.turnover} → eligible ${funnel.eligible}`
 	log.log(`[DailyWatchlist] ${funnelText}`)
-	const rotating = rankRotating(bhav.mainBoard, d.core, d.asOf)
-	const symbols = [...d.core, ...rotating.map((r) => r.symbol)]
+	const ranked = rankRotating(bhav.mainBoard, d.core, d.asOf)
+	// Amendment 1: every name must be in the Fyers symbol list; names not found are dropped, not replaced.
+	const known = (s: string) => SYMBOL_RE.test(s) && d.fyers.symbols.has(s)
+	const dropped = [...d.core, ...ranked.map((r) => r.symbol)].filter((s) => !known(s))
+	const core = d.core.filter(known)
+	const rotating = ranked.filter((r) => known(r.symbol))
+	const symbols = [...core, ...rotating.map((r) => r.symbol)]
+	const fyersCheck = { file: d.fyers.file, asOf: d.fyers.asOf, symbols: d.fyers.symbols.size, dropped }
+	log.log(`[DailyWatchlist] Fyers check (${d.fyers.file}, as of ${d.fyers.asOf}): dropped ${dropped.length}${dropped.length ? ` (${dropped.join(', ')})` : ''} → ${symbols.length} stocks`)
 	const errs = validateList(symbols, { rotating: rotating.map((r) => r.symbol), universe: new Set(bhav.mainBoard.keys()) })
-	if (errs.length) return { kind: 'failed', reason: `validation: ${errs.join('; ')}; ${funnelText}` }
+	if (errs.length) return { kind: 'failed', reason: `validation: ${errs.join('; ')}; Fyers check dropped ${dropped.length}: ${dropped.join(', ') || 'none'}; ${funnelText}` }
 
 	const file: DailyWatchlistFile = {
 		rulesVersion: RULES_VERSION,
@@ -189,14 +198,15 @@ export const runBhavScan = async (d: BhavScanDeps): Promise<BhavScanResult> => {
 		requests: 0, // no Fyers requests: the source is the NSE bhavcopy
 		source: `nse-bhavcopy ${entry}`,
 		funnel,
+		fyersCheck,
 		symbols,
-		entries: [...d.core.map((symbol) => ({ symbol, group: 'core' as const })), ...rotating],
+		entries: [...core.map((symbol) => ({ symbol, group: 'core' as const })), ...rotating],
 	}
 	const text = JSON.stringify(file, null, 1)
 	// Live file first: the history copy is the "already written" mark, so it must never exist without it.
 	d.writeFile(`bhavcopy/${d.asOf}.csv.zip`, zip)
 	d.writeFile(DAILY_FILE, text)
 	d.writeFile(`${HISTORY_DIR}/${d.forSession}.json`, text)
-	log.log(`[DailyWatchlist] ✅ ${symbols.length} stocks + Nifty for ${d.forSession} (core ${d.core.length} + rotating ${rotating.length}; rules ${RULES_VERSION})`)
+	log.log(`[DailyWatchlist] ✅ ${symbols.length} stocks + Nifty for ${d.forSession} (core ${core.length} + rotating ${rotating.length}; rules ${RULES_VERSION})`)
 	return { kind: 'written', file, text }
 }

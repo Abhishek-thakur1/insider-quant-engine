@@ -14,10 +14,10 @@ import { QuotaStopError } from '../fyers/quota.js'
 import { batches, QUOTE_BATCH } from './prefilter.js'
 
 export const RULES_VERSION = 'dw-3'
-export const CORE_SIZE = 25
-export const ROTATING_SLOTS = 54 // 25 core + 54 = 79 stocks + Nifty = 80 symbols (owner, 3 Nov)
+export const CORE_SIZE = 52 // the owner's 3 Nov watchlist (dw-3 amendment 1; was the 20 Oct 25)
 export const MIN_STOCKS = 60
 export const MAX_STOCKS = 79
+export const ROTATING_SLOTS = MAX_STOCKS - CORE_SIZE // 52 core + 27 = 79 stocks + Nifty = 80 symbols (owner, 3 Nov)
 export const SCAN_REQUEST_CAP = 55 // master download + quote requests (owner, 4 Nov scan)
 export const QUOTE_BATCH_CAP = 48 // more batches needed → fail before any quote call
 export const QUOTE_RETRY_CAP = 6 // attempts beyond the batch count
@@ -56,6 +56,7 @@ export interface DailyWatchlistFile {
 	generatedAt: string
 	requests: number
 	source?: string // dw-3: 'nse-bhavcopy <file name>'
+	fyersCheck?: { file: string; asOf: string; symbols: number; dropped: string[] } // dw-3 amendment 1
 	funnel?: ReturnType<typeof eligibilityFunnel>
 	symbols: string[]
 	entries: RankedEntry[]

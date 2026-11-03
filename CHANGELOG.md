@@ -4,7 +4,7 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
 ## `feat/daily-watchlist-dw3` (PR #69): automated daily watchlist from the NSE bhavcopy, rules dw-3 (owner, 3 Nov; not merged until the owner's OK)
 
-- **Source:** NSE's official UDiFF bhavcopy from its archive. **No Fyers calls**, no scraping. Main Board EQ only. dw-2's filters, ranking and core 25. **80 symbols including Nifty.** AGENTS.md §11.31.2. Pre-registered in `PREREGISTRATION_dw3.md` (`cb9d91e`).
+- **Source:** NSE's official UDiFF bhavcopy from its archive. **No Fyers calls**, no scraping. Main Board EQ only. dw-2's filters and ranking. **Amendment 1 (owner, for continuity):** the core is the owner's 52-stock watchlist, 27 rotating names, and every name is checked against `fyersUniverse.json` (dropped if not found; rejected below 60). **80 symbols including Nifty.** AGENTS.md §11.31.2. Pre-registered in `PREREGISTRATION_dw3.md` (`cb9d91e`).
 - **Scheduled:** `lifecycle.sh run_watchlist`, 19:00–22:00 every 30 min on trading days, via the `quant_watchlist` job. Alerts go to Telegram. On failure nothing is written and the engine boots from the static list.
 - **Engine guard:** a daily list that doesn't fit the subscription cap falls back to the static list instead of blocking the boot.
 - **Off by default:** `SCREENER_ENABLED=true` turns it on (#65, included).
