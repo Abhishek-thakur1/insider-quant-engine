@@ -187,24 +187,39 @@ test('bad files fail (alerted, not retried) and write no list', async () => {
 	}
 })
 
-test('Fyers check (amendment 1): names not in fyersUniverse.json are dropped, not replaced, and reported', async () => {
+test('Fyers check (amendment 1/1a): rotating names not in fyersUniverse.json are dropped, not replaced, and reported', async () => {
 	const { d: d0, writes: w0 } = deps(zipOf('f.csv', day(120)))
 	await runBhavScan(d0)
 	const firstRot = (JSON.parse(w0.get(DAILY_FILE) as string).symbols as string[])[52]!
-	const { d, writes } = deps(zipOf('f.csv', day(120)), { fyers: fyersExcept(core[3]!, firstRot) })
+	const { d, writes } = deps(zipOf('f.csv', day(120)), { fyers: fyersExcept(firstRot) })
 	const r = await runBhavScan(d)
 	assert.equal(r.kind, 'written')
 	const f = JSON.parse(writes.get(DAILY_FILE) as string)
-	assert.deepEqual(f.fyersCheck.dropped, [core[3], firstRot])
-	assert.equal(f.symbols.length, 77, '79 − 2 dropped; no refill')
-	assert.ok(!f.symbols.includes(core[3]) && !f.symbols.includes(firstRot))
-	assert.equal(f.entries.length, 77)
+	assert.deepEqual(f.fyersCheck.dropped, [firstRot])
+	assert.equal(f.symbols.length, 78, '79 − 1 dropped; no refill')
+	assert.ok(!f.symbols.includes(firstRot))
+	assert.equal(f.entries.length, 78)
+})
+
+test('Fyers check (amendment 1a): a core name missing from fyersUniverse.json stays in the list (e.g. JPL)', async () => {
+	const jplCore = [...core.slice(0, 51), 'NSE:JPL-EQ']
+	const { d, writes } = deps(zipOf('f.csv', day(120)), { core: jplCore, fyers: fyersExcept('NSE:JPL-EQ', core[3]!) })
+	const r = await runBhavScan(d)
+	assert.equal(r.kind, 'written')
+	const f = JSON.parse(writes.get(DAILY_FILE) as string)
+	assert.deepEqual(f.symbols.slice(0, 52), jplCore, 'all 52 core names kept, JPL included')
+	assert.deepEqual(f.fyersCheck.dropped, [], 'core names are never dropped')
+	assert.equal(f.symbols.length, 79)
 })
 
 test('Fyers check: a list that falls below 60 after the drops is rejected (static fallback), nothing written', async () => {
-	const { d, writes } = deps(zipOf('f.csv', day(120)), { fyers: fyersExcept(...core.slice(0, 20)) })
+	const { d: d0, writes: w0 } = deps(zipOf('f.csv', day(120)))
+	await runBhavScan(d0)
+	const rot = (JSON.parse(w0.get(DAILY_FILE) as string).symbols as string[]).slice(52)
+	// drop every rotating name the ranking can reach: 52 core alone < 60
+	const { d, writes } = deps(zipOf('f.csv', day(120)), { fyers: fyersExcept(...rot, ...Array.from({ length: 200 }, (_, i) => `NSE:S${String(i).padStart(4, '0')}-EQ`), 'NSE:ANDCO-EQ', 'NSE:RELIANCE-EQ', 'NSE:TATASTEEL-EQ', 'NSE:JPL-EQ') })
 	const r = await runBhavScan(d)
 	assert.equal(r.kind, 'failed')
-	assert.match((r as { reason: string }).reason, /59 stocks, need 60.*Fyers check dropped 20/)
+	assert.match((r as { reason: string }).reason, /52 stocks, need 60.*Fyers check dropped 27/)
 	assert.equal(writes.size, 0)
 })

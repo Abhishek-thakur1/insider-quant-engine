@@ -64,3 +64,7 @@ It was made after the owner saw the first dry-run list. It is not based on any o
    - Names not found are dropped, not replaced. The dropped names and the final count go into the list file and the Telegram message.
    - If the list falls below the 60-stock minimum, it is rejected and the engine uses the static list.
    - Note: a list older than the stock (JPL is not in the 28 Apr file) drops it even when Fyers streams it.
+
+## Amendment 1a (owner, 3 Nov ~21:30 IST, before any deploy): the core is exempt from the Fyers check
+
+The 52 core names come from the live watchlist the engine subscribed to on 3 Nov. JPL streamed and alerted that day, but it is missing from `fyersUniverse.json`, which dates from 28 Apr. **Only the rotating names are checked against `fyersUniverse.json`.** Core names still must match the Fyers format. Nothing else changes.
