@@ -2,11 +2,17 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## `fix/vwap-auction-volume`: the auction volume stays out of the equity VWAP (found 3 Nov; NOT merged)
+## `fix/vwap-auction-volume` (PR #68): the auction volume stays out of the equity VWAP: merged and deployed 3 Nov evening (with dw-3, one image `deployed-f34ced9`); SERIES BREAK for equity VWAP from Wed 4 Nov
 
 - **Gap in #40:** the auction arrives on the first ticks after 09:15 (TATASTEEL on 3 Nov: received 09:15:00, last trade 09:08:53, 136,578 shares). The receive-time gate let it into the VWAP.
 - **Fix:** gate equity ticks on their `last_traded_time`, falling back to the receive time. The volume diff moved unchanged into `tickVolumeDelta`. Kill switch `VWAP_SESSION_GATE=false` unchanged. AGENTS.md §11.25.1.
 - **Tests:** `tests/vwapAuctionVolume.test.ts` (6).
+
+## `ops/redis-bind-localhost` (PR #58): merged and applied 3 Nov evening (owner's OK; `quant_redis` recreated with `--no-deps`)
+
+- **Redis's host port is bound to 127.0.0.1** instead of every interface (audit of 31 Oct, D2). Redis runs with no password and protected mode off; until now only the cloud firewall kept it private. No user of the host port was found: every container uses the service name on the compose network, and the host monitor uses `docker exec quant_redis redis-cli`.
+- **Test:** `tests/composeExposure.test.ts` (Redis loopback-only; Postgres never published). It fails on the old line.
+- **Apply:** recreate `quant_redis` only, outside market hours; data stays in the `redis_data` volume (AOF + RDB). Steps and rollback in the PR.
 
 ## `feat/daily-watchlist`: daily watchlist, rules dw-1 (owner, 2 Nov): merged `db42dea`, NOT deployed
 
