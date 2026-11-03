@@ -1213,8 +1213,8 @@ FYERS_PIN=                  # read into ENV, never used
 TELEGRAM_BOT_TOKEN=...      # required
 TELEGRAM_CHANNEL_ID=-100... # required — public alert channel
 TELEGRAM_ADMIN_ID=...       # private control DM (NOT in the fail-fast check)
-REDIS_HOST=redis_cache
-REDIS_PORT=6379
+REDIS_HOST=redis_cache       # the compose service name: containers never use the host port
+REDIS_PORT=6379             # host port is bound to 127.0.0.1 only (branch ops/redis-bind-localhost); Redis has no password
 SHADOW_MODE=false           # read directly via process.env in janeStreetFilter + telegramWorker
 CONFIRMATION_THRESHOLD=78   # read directly via process.env in janeStreetFilter
 SUBSCRIPTION_CAP=100        # data-socket symbol cap checked at engine boot (Fyers Standard = 100); invalid → 100
@@ -1810,6 +1810,25 @@ before costs. One SELECT, read-only, sends nothing itself; lists the top `MAX_RO
 **Side effect:** on a 09:00 boot the Nifty bias is unset until about 09:16.
 
 **Deploy (owner, 28 Oct): Sat 31 Oct, together with #45 (timer square-off) as ONE series break; first session Mon 2 Nov.** Note (review of 28 Oct): live Nifty minutes start at their first tick, not on the clock, so the first in-session minute begins at about 09:15:xx rather than exactly 09:15:00. The effect is about one minute in 375. The deploy date is a **series break**: before it, live VWAP, VWAP stops, the Nifty reference and the bias included pre-open data; after it they don't. Values from the first hour (about 09:15–10:15) are not comparable across the break. At deploy, record the date here, in the CHANGELOG, and as a deviation-log entry in `docs/studies/edge-map/PREREGISTRATION.md`. Deploy date: _not yet deployed_.
+
+### 11.25.1 Auction volume gap in the equity gate (found 3 Nov; fix `fix/vwap-auction-volume`, NOT merged, NOT deployed)
+
+**Finding (3 Nov engine log):** the auction print does **not** arrive at about 09:08. It arrives on the first ticks after the open, so the receive-time gate let it through.
+- **Pre-open ticks:** 09:00–09:05, 9,839 of 9,839 equity ticks had no volume field, so each symbol's volume baseline was 0.
+- **The open:** the feed was silent from 09:09:18 to 09:15:00. The first tick after that, TATASTEEL received 09:15:00, had last trade 09:08:53 and `vol_traded_today` 136,578, which is the auction alone.
+- **Result:** for every stock whose first volume tick arrives after 09:15:00, the whole auction became VWAP volume. Only the few stocks with a volume tick between 09:05 and 09:09 (56 ticks) were protected.
+- **Why the test missed it:** the §11.25 parity test models the auction print at 09:08 receive time.
+
+**Fix:**
+- `updateSessionVwap(…, lastTradedSec)` gates on the tick's exchange `last_traded_time` when present (`vwapStampMs`):
+  - a last trade before 09:15, or on another day, stays out;
+  - a missing field falls back to the receive time.
+- The volume diff moved unchanged into `vwapUtils.tickVolumeDelta`, so the auction tick still sets the baseline for the next delta.
+- `VWAP_SESSION_GATE=false` still admits every tick.
+- **Tests:** `tests/vwapAuctionVolume.test.ts`, which uses the real TATASTEEL tick.
+
+**Known limit:** if a stock's first tick after the open already includes a continuous trade, so its last trade is at or after 09:15, its auction volume still counts. Separating the two would need the auction volume itself, which the feed doesn't provide.
+
 
 ## 11.26 EV-reject shadow outcomes (2026-10-27, PR #41; deployed 29 Oct evening with migration 0007, **shadow ON** from the 30 Oct boot)
 
