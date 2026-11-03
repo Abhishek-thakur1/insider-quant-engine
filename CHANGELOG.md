@@ -2,6 +2,14 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## `feat/daily-watchlist-dw3` (PR #69): automated daily watchlist from the NSE bhavcopy, rules dw-3 (owner, 3 Nov; not merged until the owner's OK)
+
+- **Source:** NSE's official UDiFF bhavcopy from its archive. **No Fyers calls**, no scraping. Main Board EQ only. dw-2's filters, ranking and core 25. **80 symbols including Nifty.** AGENTS.md §11.31.2. Pre-registered in `PREREGISTRATION_dw3.md` (`cb9d91e`).
+- **Scheduled:** `lifecycle.sh run_watchlist`, 19:00–22:00 every 30 min on trading days, via the `quant_watchlist` job. Alerts go to Telegram. On failure nothing is written and the engine boots from the static list.
+- **Engine guard:** a daily list that doesn't fit the subscription cap falls back to the static list instead of blocking the boot.
+- **Off by default:** `SCREENER_ENABLED=true` turns it on (#65, included).
+- **Tests:** `tests/bhavcopy.test.ts` (10). Independent review: PASS WITH FIXES, fixes applied (non-zip response is retried; live file written first; zip saved only for a list that passed; cap fallback; docs).
+
 ## `feat/daily-watchlist-dw2`: rules dw-2 (owner, 2 Nov; not merged)
 
 - **As-of rule:** `tt`'s IST date equals the as-of day and volume > 0. dw-1 read `tt` as a trade time.
