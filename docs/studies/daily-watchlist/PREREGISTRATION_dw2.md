@@ -24,3 +24,16 @@
 - **One scan**, at about 16:10 IST on Tue 3 Nov, while the day's token exists (it's deleted at 17:15). No other Fyers call.
 - **Read-only for the live system:** the output goes to an evidence directory on the host (`SCREENER_DATA_DIR`), not the `screener_data` volume. The running engine doesn't read the daily list in any case.
 - The owner reviews the list before anything uses it.
+
+## The 3 Nov scan: result
+
+Exit 2, nothing written. The universe needed 48 quote batches, more than the 47 allowed, so the scan stopped after the master download, before any quote call (1/48 requests used, 0 quote requests). The ranking rules were not exercised.
+
+## Amendment for the 4 Nov scan: request cap 55 (owner, 3 Nov evening; committed before the code change and the scan)
+
+The ranking rules above are unchanged, so the version stays **`dw-2`**. Only the request budget changes:
+
+- **55 Fyers requests in total:** 1 symbol-master download + at most **48** quote batches of 50 + at most **6** retries.
+- **The batch count is computed first,** from the master. If it is above 48, the scan fails before any quote call.
+- **Retries:** quote attempts are capped at the batch count + 6, and never above 54. Every attempt counts, retries included. If the cap is reached, the scan fails.
+- **One scan,** Wed 4 Nov, 16:05–17:00 IST only, started by checking the clock directly. The output goes to the evidence folder only. #65 and #66 stay unmerged until the owner has seen the list.
