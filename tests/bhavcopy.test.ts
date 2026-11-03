@@ -9,7 +9,7 @@ import { DAILY_FILE, MAX_STOCKS, ROTATING_SLOTS } from '../src/screener/dailyWat
 
 const HEADER =
 	'TradDt,BizDt,Sgmt,Src,FinInstrmTp,FinInstrmId,ISIN,TckrSymb,SctySrs,XpryDt,FininstrmActlXpryDt,StrkPric,OptnTp,FinInstrmNm,OpnPric,HghPric,LwPric,ClsPric,LastPric,PrvsClsgPric,UndrlygPric,SttlmPric,OpnIntrst,ChngInOpnIntrst,TtlTradgVol,TtlTrfVal,TtlNbOfTxsExctd,SsnId,NewBrdLotQty,Rmks,Rsvd1,Rsvd2,Rsvd3,Rsvd4'
-type Row = { day?: string; sym: string; series?: string; isin?: string; name?: string; high: number; low: number; last: number; prev: number; vol: number; sgmt?: string }
+type Row = { day?: string | undefined; sym: string; series?: string; isin?: string; name?: string; high: number; low: number; last: number; prev: number; vol: number; sgmt?: string }
 const row = (r: Row) =>
 	[r.day ?? '2026-11-03', r.day ?? '2026-11-03', r.sgmt ?? 'CM', 'NSE', 'STK', '1', r.isin ?? `INE${r.sym.slice(0, 6).padEnd(6, '0')}01010`, r.sym, r.series ?? 'EQ', '', '', '', '', r.name ?? `${r.sym} LIMITED`, r.prev, r.high, r.low, r.last, r.last, r.prev, '', r.last, '', '', r.vol, (r.last * r.vol).toFixed(2), 100, 'F1', 1, '', '', '', '', ''].join(',')
 const REAL = [
@@ -37,7 +37,7 @@ const zipOf = (name: string, text: string, method: 0 | 8 = 8): Buffer => {
 
 const core = Array.from({ length: 25 }, (_, i) => `NSE:CORE${String.fromCharCode(65 + i)}-EQ`)
 /** A synthetic day: n eligible Main Board names plus the noise the filters must drop. */
-const day = (n: number, o: { day?: string } = {}) => {
+const day = (n: number, o: { day?: string | undefined } = {}) => {
 	const lines = [HEADER, ...REAL]
 	for (let i = 0; i < n; i++) lines.push(row({ day: o.day, sym: `S${String(i).padStart(4, '0')}`, high: 110 + (i % 7), low: 100, last: 105 + (i % 11), prev: 100, vol: 6_000_000 + i * 1000 }))
 	for (let i = 0; i < 1000; i++) lines.push(row({ day: o.day, sym: `THIN${i}`, high: 101, low: 99, last: 100, prev: 100, vol: 1000 })) // below ₹50 cr
