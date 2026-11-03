@@ -24,6 +24,8 @@ import { atomicWriter, DAILY_FILE, HISTORY_DIR, RULES_VERSION } from '../src/scr
 import { bhavcopyUrl, runBhavScan } from '../src/screener/bhavcopy.js'
 
 const FINAL_MIN = 22 * 60 // the 22:00 run is the last of the evening
+// fyersUniverse.json carries no date of its own; this is when it last changed in git (ac7e962). Update with the file.
+const FYERS_UNIVERSE_AS_OF = '2026-04-28'
 const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
 
 const nextTradingDay = (day: string, holidays: Set<string>): string => {
@@ -82,6 +84,7 @@ const main = async (): Promise<number> => {
 		forSession,
 		nowMs: now,
 		core: JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'config', 'daily_watchlist_core.json'), 'utf8')),
+		fyers: { file: 'fyersUniverse.json', asOf: FYERS_UNIVERSE_AS_OF, symbols: new Set(JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'fyersUniverse.json'), 'utf8')) as string[]) },
 		fetchZip: async () => {
 			if (local) return fs.readFileSync(local)
 			const r = await axios.get<ArrayBuffer>(bhavcopyUrl(asOf), {
@@ -96,9 +99,12 @@ const main = async (): Promise<number> => {
 	})
 
 	if (result.kind === 'written') {
-		const rot = result.file.entries.filter((e) => e.group === 'rotating').map((e) => e.symbol.replace(/^NSE:|-EQ$/g, ''))
+		const short = (s: string) => s.replace(/^NSE:|-EQ$/g, '')
+		const rot = result.file.entries.filter((e) => e.group === 'rotating').map((e) => short(e.symbol))
+		const core = result.file.entries.length - rot.length
+		const dropped = result.file.fyersCheck?.dropped ?? []
 		await notifyAdmin(
-			`✅ Daily watchlist (${RULES_VERSION}, NSE bhavcopy ${asOf}) for ${forSession}: ${result.file.symbols.length} stocks + Nifty (core 25 + ${rot.length}). Used at the next 09:00 boot when SCREENER_ENABLED=true.\nRotating: ${rot.join(', ')}`,
+			`✅ Daily watchlist (${RULES_VERSION}, NSE bhavcopy ${asOf}) for ${forSession}: ${result.file.symbols.length} stocks + Nifty (core ${core} + ${rot.length}). Used at the next 09:00 boot when SCREENER_ENABLED=true.\nRotating: ${rot.join(', ')}\nDropped (not in fyersUniverse.json of ${FYERS_UNIVERSE_AS_OF}): ${dropped.map(short).join(', ') || 'none'}`,
 		)
 		return 0
 	}

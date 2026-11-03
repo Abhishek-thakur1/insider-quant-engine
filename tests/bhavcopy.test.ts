@@ -5,7 +5,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import zlib from 'node:zlib'
 import { bhavcopyUrl, parseBhavcopy, parseCsv, runBhavScan, unzipFirst, type BhavScanDeps } from '../src/screener/bhavcopy.js'
-import { DAILY_FILE, MAX_STOCKS, ROTATING_SLOTS } from '../src/screener/dailyWatchlist.js'
+import { CORE_SIZE, DAILY_FILE, MAX_STOCKS, ROTATING_SLOTS } from '../src/screener/dailyWatchlist.js'
 
 const HEADER =
 	'TradDt,BizDt,Sgmt,Src,FinInstrmTp,FinInstrmId,ISIN,TckrSymb,SctySrs,XpryDt,FininstrmActlXpryDt,StrkPric,OptnTp,FinInstrmNm,OpnPric,HghPric,LwPric,ClsPric,LastPric,PrvsClsgPric,UndrlygPric,SttlmPric,OpnIntrst,ChngInOpnIntrst,TtlTradgVol,TtlTrfVal,TtlNbOfTxsExctd,SsnId,NewBrdLotQty,Rmks,Rsvd1,Rsvd2,Rsvd3,Rsvd4'
@@ -35,7 +35,9 @@ const zipOf = (name: string, text: string, method: 0 | 8 = 8): Buffer => {
 	return Buffer.concat([local, n, data, cd, n, eocd])
 }
 
-const core = Array.from({ length: 25 }, (_, i) => `NSE:CORE${String.fromCharCode(65 + i)}-EQ`)
+const core = Array.from({ length: CORE_SIZE }, (_, i) => `NSE:CORE${String(i).padStart(2, '0')}-EQ`)
+/** The Fyers symbol list: every symbol except `missing` (a stand-in for fyersUniverse.json). */
+const fyersExcept = (...missing: string[]) => ({ file: 'fyersUniverse.json', asOf: '2026-04-28', symbols: { has: (s: string) => !missing.includes(s), size: 2158 } as unknown as Set<string> })
 /** A synthetic day: n eligible Main Board names plus the noise the filters must drop. */
 const day = (n: number, o: { day?: string | undefined } = {}) => {
 	const lines = [HEADER, ...REAL]
@@ -56,6 +58,7 @@ const deps = (zip: Buffer | null | Error, o: Partial<BhavScanDeps> = {}) => {
 		forSession: '2026-11-04',
 		nowMs: Date.parse('2026-11-03T13:30:00Z'),
 		core,
+		fyers: fyersExcept(),
 		fetchZip: async () => {
 			if (zip instanceof Error) throw zip
 			return zip
@@ -96,19 +99,20 @@ test('Main Board EQ only (Sgmt CM, series EQ, INE ISIN), in the dw-2 quote shape
 	assert.throws(() => parseBhavcopy('TradDt,TckrSymb\n2026-11-03,X\n'), /columns missing: Sgmt/)
 })
 
-test('a good day: core 25 + top 54 = 79 stocks + Nifty = 80; the zip is kept; nothing from Fyers', async () => {
+test('a good day: core 52 + top 27 = 79 stocks + Nifty = 80; the zip is kept; nothing from Fyers', async () => {
 	const { d, writes } = deps(zipOf('f.csv', day(120)))
 	const r = await runBhavScan(d)
 	assert.equal(r.kind, 'written')
 	const f = JSON.parse(writes.get(DAILY_FILE) as string)
-	assert.equal(ROTATING_SLOTS, 54); assert.equal(MAX_STOCKS, 79)
+	assert.equal(CORE_SIZE, 52); assert.equal(ROTATING_SLOTS, 27); assert.equal(MAX_STOCKS, 79)
 	assert.equal(f.symbols.length, 79)
-	assert.deepEqual(f.symbols.slice(0, 25), core)
+	assert.deepEqual(f.symbols.slice(0, 52), core)
+	assert.deepEqual(f.fyersCheck, { file: 'fyersUniverse.json', asOf: '2026-04-28', symbols: 2158, dropped: [] })
 	assert.equal(f.rulesVersion, 'dw-3'); assert.equal(f.requests, 0); assert.match(f.source, /^nse-bhavcopy f\.csv$/)
 	assert.equal(f.asOf, '2026-11-03'); assert.equal(f.forSession, '2026-11-04')
 	assert.equal(writes.get('watchlist_daily_history/2026-11-04.json'), writes.get(DAILY_FILE))
 	assert.ok(Buffer.isBuffer(writes.get('bhavcopy/2026-11-03.csv.zip')))
-	const rot = f.symbols.slice(25) as string[]
+	const rot = f.symbols.slice(52) as string[]
 	for (const out of ['NSE:SMEX-EQ', 'NSE:BEX-EQ', 'NSE:NIFTYBEES-EQ', 'NSE:CHEAP-EQ']) assert.ok(!rot.includes(out), out)
 	assert.ok(!rot.some((s) => s.startsWith('NSE:THIN')), 'below ₹50 crore turnover never ranks')
 	assert.equal(new Set(f.symbols).size, 79)
@@ -171,7 +175,7 @@ test('bad files fail (alerted, not retried) and write no list', async () => {
 	const cases: [string, Buffer, RegExp][] = [
 		["yesterday's file", zipOf('f.csv', day(120, { day: '2026-11-02' })), /trade date .*2026-11-02.* ≠ as-of 2026-11-03/],
 		['too few rows', zipOf('f.csv', [HEADER, ...REAL].join('\n')), /only 3 Main Board EQ rows/],
-		['too few eligible', zipOf('f.csv', day(20)), /validation: .*stocks, need 60/],
+		['too few eligible', zipOf('f.csv', day(0)), /validation: .*56 stocks, need 60/],
 		['duplicate symbol', zipOf('f.csv', day(120) + REAL[0] + '\n'), /duplicate symbol/],
 	]
 	for (const [name, zip, re] of cases) {
@@ -181,4 +185,26 @@ test('bad files fail (alerted, not retried) and write no list', async () => {
 		assert.match((r as { reason: string }).reason, re, name)
 		assert.equal(writes.size, 0, `${name}: nothing written (list or zip)`)
 	}
+})
+
+test('Fyers check (amendment 1): names not in fyersUniverse.json are dropped, not replaced, and reported', async () => {
+	const { d: d0, writes: w0 } = deps(zipOf('f.csv', day(120)))
+	await runBhavScan(d0)
+	const firstRot = (JSON.parse(w0.get(DAILY_FILE) as string).symbols as string[])[52]!
+	const { d, writes } = deps(zipOf('f.csv', day(120)), { fyers: fyersExcept(core[3]!, firstRot) })
+	const r = await runBhavScan(d)
+	assert.equal(r.kind, 'written')
+	const f = JSON.parse(writes.get(DAILY_FILE) as string)
+	assert.deepEqual(f.fyersCheck.dropped, [core[3], firstRot])
+	assert.equal(f.symbols.length, 77, '79 − 2 dropped; no refill')
+	assert.ok(!f.symbols.includes(core[3]) && !f.symbols.includes(firstRot))
+	assert.equal(f.entries.length, 77)
+})
+
+test('Fyers check: a list that falls below 60 after the drops is rejected (static fallback), nothing written', async () => {
+	const { d, writes } = deps(zipOf('f.csv', day(120)), { fyers: fyersExcept(...core.slice(0, 20)) })
+	const r = await runBhavScan(d)
+	assert.equal(r.kind, 'failed')
+	assert.match((r as { reason: string }).reason, /59 stocks, need 60.*Fyers check dropped 20/)
+	assert.equal(writes.size, 0)
 })
