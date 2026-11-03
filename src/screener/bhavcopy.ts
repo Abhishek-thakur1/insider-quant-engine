@@ -179,10 +179,11 @@ export const runBhavScan = async (d: BhavScanDeps): Promise<BhavScanResult> => {
 	const funnelText = `Main Board EQ ${funnel.quoted} → as-of day ${funnel.asOfDay} → price ${funnel.price} → turnover ${funnel.turnover} → eligible ${funnel.eligible}`
 	log.log(`[DailyWatchlist] ${funnelText}`)
 	const ranked = rankRotating(bhav.mainBoard, d.core, d.asOf)
-	// Amendment 1: every name must be in the Fyers symbol list; names not found are dropped, not replaced.
+	// Amendment 1/1a: rotating names must be in the Fyers symbol list (dropped, not replaced, if not found).
+	// The core is the live watchlist the engine already subscribes to, so it is exempt (its format was checked above).
 	const known = (s: string) => SYMBOL_RE.test(s) && d.fyers.symbols.has(s)
-	const dropped = [...d.core, ...ranked.map((r) => r.symbol)].filter((s) => !known(s))
-	const core = d.core.filter(known)
+	const dropped = ranked.map((r) => r.symbol).filter((s) => !known(s))
+	const core = d.core
 	const rotating = ranked.filter((r) => known(r.symbol))
 	const symbols = [...core, ...rotating.map((r) => r.symbol)]
 	const fyersCheck = { file: d.fyers.file, asOf: d.fyers.asOf, symbols: d.fyers.symbols.size, dropped }
