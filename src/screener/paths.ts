@@ -77,7 +77,7 @@ export const screenerStaleness = (nowMs = Date.now()): string | null => {
 
 /**
  * The watchlist the engine and the VWAP seeder use today (rules dw-1): the daily scan's
- * watchlist_daily.json when SCREENER_ENABLED isn't 'false' and the file is valid and for
+ * watchlist_daily.json when SCREENER_ENABLED is 'true' and the file is valid and for
  * today (IST); otherwise the static watchlist.json (resolveScreenerFile), unchanged.
  */
 export const resolveWatchlist = (nowMs = Date.now()): WatchlistChoice =>

@@ -10,6 +10,11 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 - **Rules:** `PREREGISTRATION_dw2.md`, committed before the code (`5082c6c`).
 - **Tests:** 14.
 
+## `feat/screener-default-off`: `SCREENER_ENABLED` defaults to off (owner, 2 Nov; not merged until the owner has seen a scan)
+
+- **Change:** the daily watchlist is used only when `SCREENER_ENABLED=true`. Unset or any other value means the static `watchlist.json`, with no Telegram fallback alert (the choice is deliberate).
+- **Tests:** `tests/dailyWatchlist.test.ts`.
+
 ## `feat/daily-watchlist`: daily watchlist, rules dw-1 (owner, 2 Nov): merged `db42dea`, NOT deployed
 
 - **Not deployed:** the one authorized scan wrote nothing. The as-of rule misread the quote field `tt` (a date stamp, not a last-trade time), so 0 names were eligible. The engine is unchanged (`afe0c959e652`, static list). Details in AGENTS.md §11.31.
