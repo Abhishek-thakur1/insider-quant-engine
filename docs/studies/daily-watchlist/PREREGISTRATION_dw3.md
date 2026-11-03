@@ -52,3 +52,15 @@ Main Board equities only: rows with `Sgmt = CM`, `SctySrs = EQ` and an `INE` ISI
 ## First list (3 Nov, operational)
 
 Built from the file of the one test download (no second download), as of 3 Nov for Wed 4 Nov. The output goes to the evidence folder first. The owner sees the dry-run list before the screener is deployed or enabled.
+
+## Amendment 1 (owner, 3 Nov ~21:15 IST, before any deploy): for continuity, not for results
+
+It was made after the owner saw the first dry-run list. It is not based on any outcome: no session has used a dw-3 list. The version stays **`dw-3`**, and the filters, measures, score and order are unchanged.
+
+1. **Core = the owner's current 52-stock watchlist,** the static `watchlist.json` on the server as of 3 Nov (including JPL, ATHERENERG, BEL, SBIN and HAL). It replaces the 20 Oct core 25 in `config/daily_watchlist_core.json`. The core is always in, unranked.
+2. **Rotating** names fill the remaining slots up to 79 stocks: 79 − 52 = **27**. Core names are never ranked, so there are no duplicates. The total stays 79 stocks + Nifty = **80**.
+3. **Fyers validation:** every symbol in the list must be in `fyersUniverse.json`, the image's Fyers NSE EQ symbol list, and match `^NSE:[A-Z0-9&_.-]+-EQ$`.
+   - The file has no date of its own. It was last changed on 2026-04-28 (git `ac7e962`, 2,158 symbols), and that date is recorded in each list.
+   - Names not found are dropped, not replaced. The dropped names and the final count go into the list file and the Telegram message.
+   - If the list falls below the 60-stock minimum, it is rejected and the engine uses the static list.
+   - Note: a list older than the stock (JPL is not in the 28 Apr file) drops it even when Fyers streams it.
