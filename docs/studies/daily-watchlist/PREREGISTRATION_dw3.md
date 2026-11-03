@@ -68,3 +68,14 @@ It was made after the owner saw the first dry-run list. It is not based on any o
 ## Amendment 1a (owner, 3 Nov ~21:30 IST, before any deploy): the core is exempt from the Fyers check
 
 The 52 core names come from the live watchlist the engine subscribed to on 3 Nov. JPL streamed and alerted that day, but it is missing from `fyersUniverse.json`, which dates from 28 Apr. **Only the rotating names are checked against `fyersUniverse.json`.** Core names still must match the Fyers format. Nothing else changes.
+
+## Amendment 1b (owner, 3 Nov ~21:45 IST): for coverage, not for results; committed before the code
+
+No session has used a dw-3 list yet. The version stays **`dw-3`**. The filters, measures and score are unchanged, and so is the core 52 (exempt from the Fyers check).
+
+1. **Refill:** after the `fyersUniverse.json` check, the rotating picks continue down the order until **27** rotating names are filled. The total is 79 stocks + Nifty = **80**. It is shorter only if too few eligible names pass the check.
+2. **Two rotating groups,** tagged `pick` in the list file:
+   - **`score` (22):** the top 22 eligible, Fyers-checked names by the dw-2 score and order.
+   - **`turnover` (5):** the 5 highest-turnover (`LastPric × TtlTradgVol`) eligible, Fyers-checked names not already in the core or the score group. Ties go to the symbol, alphabetically.
+   - The engine reads only `symbols`, so the tag is for evidence and analysis. The groups are a population label for any later per-group table.
+3. **Symbol mapping:** NSE `TckrSymb` maps to Fyers `NSE:<TckrSymb>-EQ` unchanged, `&` included. M&M → `NSE:M&M-EQ`, which is in `fyersUniverse.json` (it is checked in the tests and the dry run).
