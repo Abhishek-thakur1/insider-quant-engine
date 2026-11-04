@@ -64,7 +64,10 @@ const main = async (): Promise<number> => {
 
 	const done = path.join(dataDir, HISTORY_DIR, `${forSession}.json`)
 	const live = path.join(dataDir, DAILY_FILE)
-	try {
+	// WATCHLIST_FORCE=true rebuilds even when that session's list exists (manual runs only; the job is idempotent).
+	const force = process.env.WATCHLIST_FORCE === 'true'
+	if (force) console.log(`[DailyWatchlist] WATCHLIST_FORCE=true — rebuilding ${forSession} even if already written`)
+	else try {
 		const h = JSON.parse(fs.readFileSync(done, 'utf8')) as { rulesVersion?: string }
 		const l = JSON.parse(fs.readFileSync(live, 'utf8')) as { forSession?: string }
 		if (h.rulesVersion === RULES_VERSION && l.forSession === forSession) {
@@ -73,7 +76,7 @@ const main = async (): Promise<number> => {
 		}
 	} catch {}
 	const marker = path.join(dataDir, HISTORY_DIR, `${forSession}.failed.txt`)
-	if (fs.existsSync(marker)) {
+	if (!force && fs.existsSync(marker)) {
 		console.log(`[DailyWatchlist] failed earlier this evening (${marker}) — not retried`)
 		return 2
 	}
@@ -100,11 +103,13 @@ const main = async (): Promise<number> => {
 
 	if (result.kind === 'written') {
 		const short = (s: string) => s.replace(/^NSE:|-EQ$/g, '')
-		const rot = result.file.entries.filter((e) => e.group === 'rotating').map((e) => short(e.symbol))
+		const rot = result.file.entries.filter((e) => e.group === 'rotating')
+		const byScore = rot.filter((e) => e.pick === 'score').map((e) => short(e.symbol))
+		const byTurnover = rot.filter((e) => e.pick === 'turnover').map((e) => short(e.symbol))
 		const core = result.file.entries.length - rot.length
 		const dropped = result.file.fyersCheck?.dropped ?? []
 		await notifyAdmin(
-			`✅ Daily watchlist (${RULES_VERSION}, NSE bhavcopy ${asOf}) for ${forSession}: ${result.file.symbols.length} stocks + Nifty (core ${core} + ${rot.length}). Used at the next 09:00 boot when SCREENER_ENABLED=true.\nRotating: ${rot.join(', ')}\nDropped (not in fyersUniverse.json of ${FYERS_UNIVERSE_AS_OF}): ${dropped.map(short).join(', ') || 'none'}`,
+			`✅ Daily watchlist (${RULES_VERSION}, NSE bhavcopy ${asOf}) for ${forSession}: ${result.file.symbols.length} stocks + Nifty (core ${core} + ${rot.length} rotating). Used at the next 09:00 boot when SCREENER_ENABLED=true.\nBy score (${byScore.length}): ${byScore.join(', ')}\nBy turnover (${byTurnover.length}): ${byTurnover.join(', ')}\nSkipped (not in fyersUniverse.json of ${FYERS_UNIVERSE_AS_OF}): ${dropped.map(short).join(', ') || 'none'}`,
 		)
 		return 0
 	}

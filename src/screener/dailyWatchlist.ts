@@ -42,6 +42,7 @@ export interface DailyQuote {
 export interface RankedEntry {
 	symbol: string
 	group: 'core' | 'rotating'
+	pick?: 'score' | 'turnover' // dw-3 amendment 1b: which rotating group (evidence only; the engine reads `symbols`)
 	rank?: number
 	score?: number
 	move?: number

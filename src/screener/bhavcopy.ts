@@ -18,9 +18,15 @@ import {
 	RULES_VERSION,
 	SYMBOL_RE,
 	validateList,
+	ROTATING_SLOTS,
 	type DailyQuote,
 	type DailyWatchlistFile,
+	type RankedEntry,
 } from './dailyWatchlist.js'
+
+/** Amendment 1b: of the 27 rotating slots, 5 go to the highest-turnover eligible names not already in. */
+export const TURNOVER_SLOTS = 5
+export const SCORE_SLOTS = ROTATING_SLOTS - TURNOVER_SLOTS // 22
 
 /** The archive URL for one trading day (YYYY-MM-DD, IST). */
 export const bhavcopyUrl = (day: string): string =>
@@ -178,18 +184,37 @@ export const runBhavScan = async (d: BhavScanDeps): Promise<BhavScanResult> => {
 	const funnel = eligibilityFunnel(bhav.mainBoard, d.core, d.asOf)
 	const funnelText = `Main Board EQ ${funnel.quoted} → as-of day ${funnel.asOfDay} → price ${funnel.price} → turnover ${funnel.turnover} → eligible ${funnel.eligible}`
 	log.log(`[DailyWatchlist] ${funnelText}`)
-	const ranked = rankRotating(bhav.mainBoard, d.core, d.asOf)
-	// Amendment 1/1a: rotating names must be in the Fyers symbol list (dropped, not replaced, if not found).
-	// The core is the live watchlist the engine already subscribes to, so it is exempt (its format was checked above).
+	// Every eligible non-core name, in dw-2 score order (rank = score rank).
+	const ranked = rankRotating(bhav.mainBoard, d.core, d.asOf, Number.POSITIVE_INFINITY)
+	// Amendment 1/1a: rotating names must be in the Fyers symbol list; the core (the live watchlist the engine
+	// already subscribes to) is exempt; its format was checked above.
+	// Amendment 1b: names not found are skipped and the walk continues down the order (refill), in two groups:
+	// SCORE_SLOTS by score, then TURNOVER_SLOTS by turnover among the eligible names not already in.
 	const known = (s: string) => SYMBOL_RE.test(s) && d.fyers.symbols.has(s)
-	const dropped = ranked.map((r) => r.symbol).filter((s) => !known(s))
+	const dropped: string[] = []
+	const take = (order: RankedEntry[], n: number, taken: Set<string>): RankedEntry[] => {
+		const out: RankedEntry[] = []
+		for (const r of order) {
+			if (out.length >= n) break
+			if (taken.has(r.symbol)) continue
+			if (!known(r.symbol)) {
+				if (!dropped.includes(r.symbol)) dropped.push(r.symbol)
+				continue
+			}
+			out.push(r)
+		}
+		return out
+	}
+	const byScore = take(ranked, SCORE_SLOTS, new Set())
+	const byTurnoverOrder = [...ranked].sort((a, b) => b.turnover! - a.turnover! || (a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : 0))
+	const byTurnover = take(byTurnoverOrder, TURNOVER_SLOTS, new Set(byScore.map((r) => r.symbol)))
 	const core = d.core
-	const rotating = ranked.filter((r) => known(r.symbol))
+	const rotating: RankedEntry[] = [...byScore.map((r) => ({ ...r, pick: 'score' as const })), ...byTurnover.map((r) => ({ ...r, pick: 'turnover' as const }))]
 	const symbols = [...core, ...rotating.map((r) => r.symbol)]
 	const fyersCheck = { file: d.fyers.file, asOf: d.fyers.asOf, symbols: d.fyers.symbols.size, dropped }
 	log.log(`[DailyWatchlist] Fyers check (${d.fyers.file}, as of ${d.fyers.asOf}): dropped ${dropped.length}${dropped.length ? ` (${dropped.join(', ')})` : ''} → ${symbols.length} stocks`)
 	const errs = validateList(symbols, { rotating: rotating.map((r) => r.symbol), universe: new Set(bhav.mainBoard.keys()) })
-	if (errs.length) return { kind: 'failed', reason: `validation: ${errs.join('; ')}; Fyers check dropped ${dropped.length}: ${dropped.join(', ') || 'none'}; ${funnelText}` }
+	if (errs.length) return { kind: 'failed', reason: `validation: ${errs.join('; ')}; Fyers check dropped ${dropped.length}: ${dropped.slice(0, 10).join(', ') || 'none'}${dropped.length > 10 ? ', …' : ''}; ${funnelText}` }
 
 	const file: DailyWatchlistFile = {
 		rulesVersion: RULES_VERSION,
@@ -208,6 +233,6 @@ export const runBhavScan = async (d: BhavScanDeps): Promise<BhavScanResult> => {
 	d.writeFile(`bhavcopy/${d.asOf}.csv.zip`, zip)
 	d.writeFile(DAILY_FILE, text)
 	d.writeFile(`${HISTORY_DIR}/${d.forSession}.json`, text)
-	log.log(`[DailyWatchlist] ✅ ${symbols.length} stocks + Nifty for ${d.forSession} (core ${core.length} + rotating ${rotating.length}; rules ${RULES_VERSION})`)
+	log.log(`[DailyWatchlist] ✅ ${symbols.length} stocks + Nifty for ${d.forSession} (core ${core.length} + rotating ${rotating.length}: ${byScore.length} by score + ${byTurnover.length} by turnover; rules ${RULES_VERSION})`)
 	return { kind: 'written', file, text }
 }

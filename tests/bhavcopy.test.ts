@@ -4,7 +4,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import zlib from 'node:zlib'
-import { bhavcopyUrl, parseBhavcopy, parseCsv, runBhavScan, unzipFirst, type BhavScanDeps } from '../src/screener/bhavcopy.js'
+import { bhavcopyUrl, parseBhavcopy, parseCsv, runBhavScan, SCORE_SLOTS, TURNOVER_SLOTS, unzipFirst, type BhavScanDeps } from '../src/screener/bhavcopy.js'
 import { CORE_SIZE, DAILY_FILE, MAX_STOCKS, ROTATING_SLOTS } from '../src/screener/dailyWatchlist.js'
 
 const HEADER =
@@ -187,18 +187,53 @@ test('bad files fail (alerted, not retried) and write no list', async () => {
 	}
 })
 
-test('Fyers check (amendment 1/1a): rotating names not in fyersUniverse.json are dropped, not replaced, and reported', async () => {
+test('Fyers check (amendment 1/1a/1b): a rotating name not in fyersUniverse.json is skipped and the next one refills the slot', async () => {
 	const { d: d0, writes: w0 } = deps(zipOf('f.csv', day(120)))
 	await runBhavScan(d0)
-	const firstRot = (JSON.parse(w0.get(DAILY_FILE) as string).symbols as string[])[52]!
+	const first = JSON.parse(w0.get(DAILY_FILE) as string) as { symbols: string[] }
+	const firstRot = first.symbols[52]!
 	const { d, writes } = deps(zipOf('f.csv', day(120)), { fyers: fyersExcept(firstRot) })
 	const r = await runBhavScan(d)
 	assert.equal(r.kind, 'written')
 	const f = JSON.parse(writes.get(DAILY_FILE) as string)
 	assert.deepEqual(f.fyersCheck.dropped, [firstRot])
-	assert.equal(f.symbols.length, 78, '79 − 1 dropped; no refill')
+	assert.equal(f.symbols.length, 79, 'refilled to 27 rotating: 79 stocks + Nifty = 80')
 	assert.ok(!f.symbols.includes(firstRot))
-	assert.equal(f.entries.length, 78)
+	assert.equal(new Set(f.symbols).size, 79)
+})
+
+test('amendment 1b: 22 rotating by score + 5 by turnover (highest turnover not already in), tagged', async () => {
+	const { d, writes } = deps(zipOf('f.csv', day(120)))
+	await runBhavScan(d)
+	const f = JSON.parse(writes.get(DAILY_FILE) as string)
+	const rot = f.entries.filter((e: { group: string }) => e.group === 'rotating') as { symbol: string; pick: string; rank: number; turnover: number }[]
+	assert.equal(SCORE_SLOTS, 22); assert.equal(TURNOVER_SLOTS, 5)
+	const byScore = rot.filter((e) => e.pick === 'score')
+	const byTurnover = rot.filter((e) => e.pick === 'turnover')
+	assert.equal(byScore.length, 22); assert.equal(byTurnover.length, 5); assert.equal(rot.length, 27)
+	assert.deepEqual(byScore.map((e) => e.rank), Array.from({ length: 22 }, (_, i) => i + 1), 'score group = the top 22 by score')
+	// every turnover pick out-trades every eligible name left out
+	const b = parseBhavcopy(day(120))
+	const inList = new Set(f.symbols as string[])
+	const left = [...b.mainBoard].filter(([s, q]) => !inList.has(s) && q.lp >= 50 && q.lp * q.volume >= 50e7 && q.high > q.low).map(([, q]) => q.lp * q.volume)
+	const minPick = Math.min(...byTurnover.map((e) => e.turnover))
+	assert.ok(left.every((t) => t <= minPick), 'turnover picks are the highest-turnover eligible names not already in')
+	for (let i = 1; i < byTurnover.length; i++) assert.ok(byTurnover[i - 1]!.turnover >= byTurnover[i]!.turnover, 'turnover order')
+	assert.deepEqual(f.symbols.slice(52), rot.map((e) => e.symbol))
+})
+
+test('M&M: NSE TckrSymb "M&M" maps to Fyers NSE:M&M-EQ, passes the check and can be picked', async () => {
+	const mm = row({ sym: 'M&M', isin: 'INE101A01026', high: 2930, low: 2850, last: 2908, prev: 2880, vol: 3_056_541 })
+	const csv = `${day(120)}${mm}\n`
+	const b = parseBhavcopy(csv)
+	assert.ok(b.mainBoard.has('NSE:M&M-EQ'))
+	const { d, writes } = deps(zipOf('f.csv', csv), { fyers: fyersExcept('NSE:NOTHING-EQ') })
+	await runBhavScan(d)
+	const f = JSON.parse(writes.get(DAILY_FILE) as string)
+	assert.ok(f.symbols.includes('NSE:M&M-EQ'), 'M&M (₹889 cr) is among the 5 highest-turnover names not already in')
+	assert.equal(f.entries.find((e: { symbol: string }) => e.symbol === 'NSE:M&M-EQ').pick, 'turnover')
+	const real = JSON.parse((await import('node:fs')).readFileSync('fyersUniverse.json', 'utf8')) as string[]
+	assert.ok(real.includes('NSE:M&M-EQ'), 'the real fyersUniverse.json has NSE:M&M-EQ')
 })
 
 test('Fyers check (amendment 1a): a core name missing from fyersUniverse.json stays in the list (e.g. JPL)', async () => {
@@ -220,6 +255,6 @@ test('Fyers check: a list that falls below 60 after the drops is rejected (stati
 	const { d, writes } = deps(zipOf('f.csv', day(120)), { fyers: fyersExcept(...rot, ...Array.from({ length: 200 }, (_, i) => `NSE:S${String(i).padStart(4, '0')}-EQ`), 'NSE:ANDCO-EQ', 'NSE:RELIANCE-EQ', 'NSE:TATASTEEL-EQ', 'NSE:JPL-EQ') })
 	const r = await runBhavScan(d)
 	assert.equal(r.kind, 'failed')
-	assert.match((r as { reason: string }).reason, /52 stocks, need 60.*Fyers check dropped 27/)
+	assert.match((r as { reason: string }).reason, /52 stocks, need 60.*Fyers check dropped [0-9]+/)
 	assert.equal(writes.size, 0)
 })
