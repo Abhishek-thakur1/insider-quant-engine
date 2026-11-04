@@ -162,6 +162,35 @@ SELECT 'signals', count(*) FROM signals WHERE 'invalid_geometry' = ANY(data_qual
 - The migration files live in `db/migrations/NNNN_name.sql`. The runner is `src/db/migrate.ts` (see AGENTS.md §11.8 and §14).
 - **Never edit an applied migration.** The runner refuses to run on a checksum mismatch. Add a new file instead.
 - To check state, run `docker exec quant_postgres psql -U postgres -d insider_quant -c "SELECT * FROM schema_migrations;"`.
+- **0008 (daily-list sources, AGENTS §11.31.3)** runs from the engine image (the API image predates it): `docker compose run --rm --no-deps quant_engine npm run migrate -- --dry-run` should list only `0008_daily_list_sources`; then run it without `--dry-run`, before the engine's next boot.
+
+## Swapfile (owner, 4 Nov)
+
+The host has 1.9 GB of RAM and no swap. A swapfile is overflow protection against the kernel killing a process when memory runs out; with swappiness 10 it is not extra working memory. Run after 15:30 on a trading day. Disk cost: the file's size on the root volume (the monitor alerts above 80% disk).
+
+Set up (size as approved, e.g. `1G`):
+
+```bash
+sudo cp /etc/fstab /etc/fstab.bak-pre-swap
+sudo fallocate -l 1G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swappiness.conf && sudo sysctl -p /etc/sysctl.d/99-swappiness.conf
+swapon --show; free -m; df -h /; cat /proc/sys/vm/swappiness
+```
+
+Undo (no reboot needed):
+
+```bash
+sudo swapoff /swapfile
+sudo cp /etc/fstab.bak-pre-swap /etc/fstab
+sudo rm /swapfile /etc/sysctl.d/99-swappiness.conf
+sudo sysctl vm.swappiness=60
+swapon --show; free -m; df -h /
+```
+
+## Image cleanup (4 Nov, owner-approved exact tags)
+
+`docker rmi <exact tag>`, one at a time, no `-f`, each tag's image ID checked first and no container using it; never a prune command. Removed on 4 Nov: `quant_engine:rollback-0845761` (`bbfe21291ad4`), `quant_scheduler:rollback-pre46` (`48ed31bfd5fb`), and the test images `quant_engine:candidate-83ab781` / `candidate-c9ac3fd` / `candidate-d726989` / `dw2-scan-0277fa5` / `dw2-scan-8115808` / `dw3-6a4c0cc`. **Disk freed was 123 MB, not the ~1.25 GB `docker system df -v` "unique size" suggested:** most of those layers are shared with images that were kept, or are still held by the build cache (3.5 GB, freed only by a prune); not verified layer by layer. Use `df` before and after, not `docker system df -v`, to judge a cleanup. Evidence: `~/evidence/2026-11-04/cleanup/`.
 
 ## Backup
 

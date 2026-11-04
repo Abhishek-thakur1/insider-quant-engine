@@ -59,15 +59,21 @@ export const tradingDaysBetween = (fromDay: string, toDay: string, holidays: Set
 
 export const MAX_STALE_TRADING_DAYS = 3
 
-/** A warning when the watchlist is older than 3 trading days or the job never ran; else null. */
-export const screenerStaleness = (nowMs = Date.now()): string | null => {
+/**
+ * A warning when the static watchlist is older than 3 trading days or its age is unknown; else null.
+ * For the static list only: the daily list (dw-3) is used only when it is for today, so it has no
+ * age to check, and watchlist_meta.json was written only by the retired quant_screener.
+ * `usingPath`: the file the engine actually loaded (default: the volume's watchlist.json).
+ */
+export const screenerStaleness = (nowMs = Date.now(), usingPath?: string): string | null => {
 	const meta = readMeta()
 	if (!meta?.asOf) {
 		// Without the meta file the watchlist's age is unknown. Name the file actually in use: the
 		// volume's watchlist.json when it exists (resolveScreenerFile), else the image's baked-in copy.
 		const fromJob = path.join(screenerDataDir(), 'watchlist.json')
-		return fs.existsSync(fromJob)
-			? `watchlist_meta.json missing or unreadable in ${screenerDataDir()} — using ${fromJob}; its age can't be checked`
+		const using = usingPath ?? fromJob
+		return fs.existsSync(using)
+			? `watchlist_meta.json missing or unreadable in ${screenerDataDir()} — using the static list ${using}; its age can't be checked`
 			: `screener output not found in ${screenerDataDir()} — using the baked-in watchlist.json`
 	}
 	const today = getISTDateString(nowMs)

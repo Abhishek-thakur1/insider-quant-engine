@@ -3,7 +3,9 @@
 //
 // Filled by websocket.ts (boot watchlist + anomaly promotions), read when a
 // signal is logged. Observation only: nothing in the trading path reads it.
-//   CORE             core_watchlist.json
+//   CORE             core_watchlist.json, or the daily list's core group (dw-3)
+//   DAILY_SCORE      daily list (dw-3), rotating, picked by score
+//   DAILY_TURNOVER   daily list (dw-3), rotating, picked by turnover
 //   SCREENER_LEADER  screener v2 Tier 1 (trend + RS leader) — watchlist_meta.json
 //   SCREENER_SETUP   screener v2 Tier 2 (leader in a tight consolidation)
 //   SCREENER         legacy: a watchlist.json with no meta (old Layer A / baked file)
@@ -11,7 +13,16 @@
 //   INDEX            Nifty index / option-routed symbols (not in any watchlist)
 // ============================================================
 
-export type PromotionSource = 'CORE' | 'SCREENER' | 'SCREENER_LEADER' | 'SCREENER_SETUP' | 'ANOMALY' | 'INDEX' | 'UNKNOWN'
+export type PromotionSource =
+	| 'CORE'
+	| 'DAILY_SCORE'
+	| 'DAILY_TURNOVER'
+	| 'SCREENER'
+	| 'SCREENER_LEADER'
+	| 'SCREENER_SETUP'
+	| 'ANOMALY'
+	| 'INDEX'
+	| 'UNKNOWN'
 
 const sources = new Map<string, PromotionSource>()
 
@@ -31,6 +42,23 @@ export const registerWatchlistSources = (
 	const coreSet = new Set(core)
 	for (const s of watchlist) sources.set(s, coreSet.has(s) ? 'CORE' : (meta?.get(s) ?? 'SCREENER'))
 }
+
+/**
+ * Sources from the daily list's entries (dw-3): core group → CORE, rotating → DAILY_SCORE or
+ * DAILY_TURNOVER by `pick` (a rotating entry without one is a score pick, as in dw-3 before 1b).
+ * `legacy` (migration 0008 not applied) maps both rotating groups to SCREENER, which the signals
+ * CHECK already accepts, so a missing migration can't make signal inserts fail.
+ */
+export const dailyListSources = (
+	entries: { symbol: string; group: 'core' | 'rotating'; pick?: 'score' | 'turnover' }[],
+	opts: { legacy?: boolean } = {},
+): Map<string, PromotionSource> =>
+	new Map(
+		entries.map((e) => [
+			e.symbol,
+			e.group === 'core' ? 'CORE' : opts.legacy ? 'SCREENER' : e.pick === 'turnover' ? 'DAILY_TURNOVER' : 'DAILY_SCORE',
+		]),
+	)
 
 export const getSymbolSource = (symbol: string): PromotionSource =>
 	sources.get(symbol) ?? (/NIFTY/i.test(symbol) ? 'INDEX' : 'UNKNOWN')

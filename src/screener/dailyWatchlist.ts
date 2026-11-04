@@ -176,6 +176,8 @@ export interface WatchlistChoice {
 	path: string
 	symbols: string[]
 	source: 'daily' | 'static'
+	/** The daily file's entries (group core/rotating, pick score/turnover); daily source only. */
+	entries?: RankedEntry[]
 	reason: string
 	/** True when the daily list was wanted but couldn't be used (alert the owner). */
 	fellBack: boolean
@@ -201,7 +203,7 @@ export const chooseWatchlist = (opts: { enabled: boolean; dailyPath: string; sta
 	const errs = validateDailyFile(f)
 	if (errs.length) return fromStatic(`daily list invalid: ${errs.join('; ')}`, true)
 	if (f.forSession !== opts.today) return fromStatic(`daily list is for ${f.forSession}, not ${opts.today}`, true)
-	return { path: opts.dailyPath, symbols: f.symbols, source: 'daily', reason: `rules ${f.rulesVersion}, as of ${f.asOf}`, fellBack: false }
+	return { path: opts.dailyPath, symbols: f.symbols, source: 'daily', entries: Array.isArray(f.entries) ? f.entries : [], reason: `rules ${f.rulesVersion}, as of ${f.asOf}`, fellBack: false }
 }
 
 /** Raised by the request budget; a QuotaStopError, so the batched fetch stops at once. */

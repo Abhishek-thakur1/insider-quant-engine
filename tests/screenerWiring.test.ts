@@ -13,7 +13,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 import { readMetaSources, resolveScreenerFile, screenerStaleness, tradingDaysBetween } from '../src/screener/paths.js'
-import { clearSymbolSources, getSymbolSource, registerWatchlistSources } from '../src/core/symbolSource.js'
+import { clearSymbolSources, dailyListSources, getSymbolSource, registerWatchlistSources } from '../src/core/symbolSource.js'
 
 const withDataDir = <T>(fn: (dir: string) => T): T => {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iqe-wiring-'))
@@ -52,6 +52,87 @@ test('promotion source: per-symbol from watchlist_meta.json; CORE wins; legacy l
 		assert.equal(getSymbolSource('NSE:SETUP-EQ'), 'SCREENER_SETUP')
 		assert.equal(getSymbolSource('NSE:OLD-EQ'), 'SCREENER')
 		clearSymbolSources()
+	})
+})
+
+test('daily list sources: core group CORE, rotating DAILY_SCORE / DAILY_TURNOVER by pick; legacy → SCREENER', () => {
+	const entries = [
+		{ symbol: 'NSE:RELIANCE-EQ', group: 'core' as const },
+		{ symbol: 'NSE:JPL-EQ', group: 'core' as const },
+		{ symbol: 'NSE:FUSION-EQ', group: 'rotating' as const, pick: 'score' as const },
+		{ symbol: 'NSE:M&M-EQ', group: 'rotating' as const, pick: 'turnover' as const },
+		{ symbol: 'NSE:OLDPICK-EQ', group: 'rotating' as const }, // dw-3 before 1b: no pick → score
+	]
+	const daily = dailyListSources(entries)
+	clearSymbolSources()
+	// what websocket.ts does on the daily path: core = the CORE entries, meta = the daily map
+	registerWatchlistSources(
+		[...entries.map((e) => e.symbol), 'NSE:NOTINENTRIES-EQ'],
+		[...daily].filter(([, s]) => s === 'CORE').map(([s]) => s),
+		daily,
+	)
+	assert.equal(getSymbolSource('NSE:RELIANCE-EQ'), 'CORE')
+	assert.equal(getSymbolSource('NSE:JPL-EQ'), 'CORE') // a daily core name, not in core_watchlist.json
+	assert.equal(getSymbolSource('NSE:FUSION-EQ'), 'DAILY_SCORE')
+	assert.equal(getSymbolSource('NSE:M&M-EQ'), 'DAILY_TURNOVER')
+	assert.equal(getSymbolSource('NSE:OLDPICK-EQ'), 'DAILY_SCORE')
+	assert.equal(getSymbolSource('NSE:NOTINENTRIES-EQ'), 'SCREENER')
+	const legacy = dailyListSources(entries, { legacy: true })
+	assert.deepEqual([...new Set(legacy.values())].sort(), ['CORE', 'SCREENER'])
+	clearSymbolSources()
+})
+
+test('every PromotionSource is allowed by the latest signals CHECK (no insert can fail it)', () => {
+	const ts = fs.readFileSync('src/core/symbolSource.ts', 'utf8')
+	const union = ts.slice(ts.indexOf('export type PromotionSource'), ts.indexOf('const sources'))
+	const values = [...union.matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]!)
+	assert.ok(values.includes('DAILY_SCORE') && values.includes('DAILY_TURNOVER'))
+	const dir = 'db/migrations'
+	const last = fs.readdirSync(dir).filter((f) => /^\d{4}_.*\.sql$/.test(f) && /signals_promotion_source_check/.test(fs.readFileSync(path.join(dir, f), 'utf8'))).sort().at(-1)!
+	const sql = fs.readFileSync(path.join(dir, last), 'utf8').replace(/--.*$/gm, '')
+	const check = /CHECK \(promotion_source IN \(([^)]*)\)\)/.exec(sql)![1]!
+	const allowed = new Set([...check.matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]!))
+	assert.equal(last, '0008_daily_list_sources.sql')
+	for (const v of values) assert.ok(allowed.has(v), `${v} not allowed by ${last}`)
+})
+
+test('engine: the meta-file age check runs only for the static list; the daily path sets daily sources', () => {
+	const ws = fs.readFileSync('src/ingestion/websocket.ts', 'utf8').replace(/\r\n/g, '\n')
+	const i = ws.indexOf("if (choice.source === 'daily') {")
+	assert.ok(i > 0)
+	const elseAt = ws.indexOf('} else {', i)
+	const dailyBranch = ws.slice(i, elseAt)
+	assert.match(dailyBranch, /dailyListSources\(choice\.entries/)
+	assert.doesNotMatch(dailyBranch, /screenerStaleness/)
+	assert.equal(ws.match(/screenerStaleness\(/g)?.length, 1)
+	assert.ok(ws.indexOf('screenerStaleness(') > elseAt)
+	// the schema check that decides `legacy` runs before the sources are registered
+	assert.ok(ws.indexOf('const schemaIssue = await schemaProblem') < i)
+})
+
+test('chooseWatchlist: the daily choice carries its entries; the static choice has none', async () => {
+	const { chooseWatchlist, RULES_VERSION } = await import('../src/screener/dailyWatchlist.js')
+	const symbols = Array.from({ length: 60 }, (_, k) => `NSE:S${String(k).padStart(3, '0')}-EQ`)
+	const entries = symbols.map((symbol, k) => ({ symbol, group: k < 52 ? 'core' : 'rotating', ...(k >= 52 ? { pick: k < 57 ? 'score' : 'turnover' } : {}) }))
+	const files: Record<string, string> = {
+		daily: JSON.stringify({ rulesVersion: RULES_VERSION, asOf: '2026-11-04', forSession: '2026-11-05', symbols, entries }),
+		static: JSON.stringify(['NSE:RELIANCE-EQ']),
+	}
+	const read = (p: string) => files[p]!
+	const d = chooseWatchlist({ enabled: true, dailyPath: 'daily', staticPath: 'static', today: '2026-11-05', readFile: read })
+	assert.equal(d.source, 'daily')
+	assert.equal(d.entries?.length, 60)
+	assert.equal(d.entries?.filter((e) => e.pick === 'turnover').length, 3)
+	const s = chooseWatchlist({ enabled: false, dailyPath: 'daily', staticPath: 'static', today: '2026-11-05', readFile: read })
+	assert.equal(s.source, 'static')
+	assert.equal(s.entries, undefined)
+})
+
+test('staleness message names the static file actually loaded', () => {
+	withDataDir((dir) => {
+		const used = path.join(dir, 'watchlist.json')
+		fs.writeFileSync(used, '[]')
+		assert.match(screenerStaleness(istNoon('2026-11-05'), used)!, new RegExp(`using the static list ${used.replace(/[\\.]/g, '\\$&')}; its age can't be checked`))
 	})
 })
 
