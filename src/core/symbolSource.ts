@@ -80,7 +80,7 @@ export const registerDailySources = (
 	return counts
 }
 
-export const getSymbolSource =(symbol: string): PromotionSource =>
+export const getSymbolSource = (symbol: string): PromotionSource =>
 	sources.get(symbol) ?? (/NIFTY/i.test(symbol) ? 'INDEX' : 'UNKNOWN')
 
 /** Test hook. */
