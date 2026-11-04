@@ -2,7 +2,7 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
-## `fix/daily-list-sources`: no meta-file warning on the daily list; daily-list promotion sources + migration 0008 (owner, 4 Nov)
+## `fix/daily-list-sources`: no meta-file warning on the daily list; daily-list promotion sources + migration 0008 (owner, 4 Nov): deployed 4 Nov ~20:20 IST (engine `01274fe52b94`, 0008 applied; first boot Thu 5 Nov)
 
 - **Warning:** the `watchlist_meta.json` age check (and its Telegram) runs only when the static list is in use. Its message names the static file actually loaded. On the daily list there is nothing to check: it is used only when it is for today.
 - **Sources:** on the daily list, `signals.promotion_source` comes from the list's entries: `CORE`, `DAILY_SCORE`, `DAILY_TURNOVER` (52 / 22 / 5 on the 5 Nov list). Before, 74 of 79 names were labelled `SCREENER` (observed 4 Nov). One boot line counts them.
