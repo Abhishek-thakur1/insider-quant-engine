@@ -2,6 +2,16 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## `fix/daily-list-sources`: no meta-file warning on the daily list; daily-list promotion sources + migration 0008 (owner, 4 Nov): deployed 4 Nov ~20:20 IST (engine `01274fe52b94`, 0008 applied; first boot Thu 5 Nov)
+
+- **Warning:** the `watchlist_meta.json` age check (and its Telegram) runs only when the static list is in use. Its message names the static file actually loaded. On the daily list there is nothing to check: it is used only when it is for today.
+- **Sources:** on the daily list, `signals.promotion_source` comes from the list's entries: `CORE`, `DAILY_SCORE`, `DAILY_TURNOVER` (52 / 22 / 5 on the 5 Nov list). Before, 74 of 79 names were labelled `SCREENER` (observed 4 Nov). One boot line counts them.
+- **Migration 0008** adds `DAILY_SCORE` / `DAILY_TURNOVER` to the CHECK. While any schema problem is found at boot the rotating names log `SCREENER` (so inserts can't fail) and a "sources degraded" Telegram goes out. Build the image, migrate from it, then recreate the engine.
+- **Static list:** the stale-age message no longer points at the retired 16:30 job; a baked-in fallback is named as such.
+- **Series note:** `promotion_source` values change from the first boot on this build. AGENTS.md §11.31.3.
+- **Tests:** 6 new in `tests/screenerWiring.test.ts` (both paths, the CHECK-vs-type check, the message), `tests/migrate.test.ts` lists 0008. Engine only; list job and scheduler unchanged.
+- **Also:** BACKLOG items 13–15 (owner, 4 Nov); RUNBOOK: the swapfile and its undo, and the 4 Nov image cleanup.
+
 ## `feat/daily-watchlist-dw3-1b`: dw-3 amendment 1b, list builder only (owner, 3 Nov; for coverage)
 
 - **Refill:** after the Fyers check the walk continues until 27 rotating names are filled (79 stocks + Nifty = 80).

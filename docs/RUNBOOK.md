@@ -33,6 +33,8 @@ From 20 Oct the per-deploy evidence (logs, dumps, tags) lives in `HANDOFF.md`, `
 | 2026-10-31 21:42 | host only | `chmod 600` on `.env` and `.env.bak-20261029-pre41` (audit D4, owner OK; was 664). No restart; content hashes unchanged; the monitor's `.env` read and `docker compose config` checked OK | host only | `chmod 664` on the same two files |
 | 2026-11-03 21:30 | `f34ced9` (deploy/v2-dw3-vwap = v2 + #68 + #65 + #69) | VWAP last-trade-time gate (#68) and the automated daily watchlist dw-3 (#69, #65) as ONE image (owner relaxed one-change-per-evening for this night only). `SCREENER_ENABLED=true` in `.env` (backup `.env.bak-20261103-pre-dw3`). First list (for 4 Nov): 72 stocks + Nifty, written from the 3 Nov bhavcopy. Scheduler rebuilt (run_watchlist 19:00–22:00); `quant_watchlist` created. **Series break for equity VWAP from Wed 4 Nov; population change from 4 Nov** (daily list) | engine **`b9f892b05e53`** (`latest`, `deployed-f34ced9`), Created; scheduler `aea6b12fe3b5`; boot check: daily, 72 symbols, 73/100 | engine `rollback-696ad65` → `afe0c959e652` (or `SCREENER_ENABLED` removed, then recreate the engine; `VWAP_SESSION_GATE=false` for #68); scheduler `rollback-pre-dw3` → `48819ab8155f`; dump `~/evidence/2026-11-03/deploy/pre_f34ced9.dump` (4 TABLE DATA) |
 
+| 2026-11-04 ~20:20 | `18e4852` (PR #71) | Meta-file check only on the static list; daily-list promotion sources `CORE` / `DAILY_SCORE` / `DAILY_TURNOVER`; **migration 0008 applied** (from the new image, dry run first). Engine only; list job and scheduler unchanged. Boot check for 5 Nov: daily, 79 symbols, 80/100, sources CORE 52 · DAILY_SCORE 22 · DAILY_TURNOVER 5, `schemaProblem` none. **`promotion_source` values change from 5 Nov** | engine **`01274fe52b94`** (`latest`, `deployed-18e4852`), Created | engine `rollback-f34ced9` → `b9f892b05e53` (0008 can stay: the old engine never writes the new values); dump `~/evidence/2026-11-04/deploy-71/pre_71.dump` (4 TABLE DATA) |
+
 Image tags are cumulative: each `rollback-*` tag is the image from before that change, so it also removes every later one. See the rollback card in `HANDOFF.md`.
 
 ### Container restart counts
@@ -162,6 +164,37 @@ SELECT 'signals', count(*) FROM signals WHERE 'invalid_geometry' = ANY(data_qual
 - The migration files live in `db/migrations/NNNN_name.sql`. The runner is `src/db/migrate.ts` (see AGENTS.md §11.8 and §14).
 - **Never edit an applied migration.** The runner refuses to run on a checksum mismatch. Add a new file instead.
 - To check state, run `docker exec quant_postgres psql -U postgres -d insider_quant -c "SELECT * FROM schema_migrations;"`.
+- **0008 (daily-list sources, AGENTS §11.31.3)** runs from the **new** engine image (the API image predates it), so build first: `docker compose build quant_engine` (does not touch the existing container), then `docker compose run --rm --no-deps quant_engine npm run migrate -- --dry-run`, which must list only `0008_daily_list_sources` ("nothing pending" means the old image was used: stop), then the same without `--dry-run`, then recreate the engine.
+
+## Swapfile (owner, 4 Nov)
+
+The host has 1.9 GB of RAM and no swap. A swapfile is overflow protection against the kernel killing a process when memory runs out; with swappiness 10 it is not extra working memory. Run after 15:30 on a trading day. Disk cost: the file's size on the root volume (the monitor alerts above 80% disk).
+
+**Applied 4 Nov 20:11 IST: `512M`** (the owner chose 512 MB over the proposed 1 GB once the image cleanup had freed only 123 MB; 1 GB would have put the disk over the 80% alert). After: swap 511 MB, swappiness 10, disk 74% → 78%. Evidence: `~/evidence/2026-11-04/swap/`.
+
+Set up (size as approved; 4 Nov: `512M`):
+
+```bash
+sudo cp /etc/fstab /etc/fstab.bak-pre-swap
+sudo fallocate -l 512M /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swappiness.conf && sudo sysctl -p /etc/sysctl.d/99-swappiness.conf
+swapon --show; free -m; df -h /; cat /proc/sys/vm/swappiness
+```
+
+Undo (no reboot needed):
+
+```bash
+sudo swapoff /swapfile
+sudo cp /etc/fstab.bak-pre-swap /etc/fstab
+sudo rm /swapfile /etc/sysctl.d/99-swappiness.conf
+sudo sysctl vm.swappiness=60
+swapon --show; free -m; df -h /
+```
+
+## Image cleanup (4 Nov, owner-approved exact tags)
+
+`docker rmi <exact tag>`, one at a time, no `-f`, each tag's image ID checked first and no container using it; never a prune command. Removed on 4 Nov: `quant_engine:rollback-0845761` (`bbfe21291ad4`), `quant_scheduler:rollback-pre46` (`48ed31bfd5fb`), and the test images `quant_engine:candidate-83ab781` / `candidate-c9ac3fd` / `candidate-d726989` / `dw2-scan-0277fa5` / `dw2-scan-8115808` / `dw3-6a4c0cc`. **Disk freed was 123 MB, not the ~1.25 GB `docker system df -v` "unique size" suggested:** most of those layers are shared with images that were kept, or are still held by the build cache (3.5 GB, freed only by a prune); not verified layer by layer. Use `df` before and after, not `docker system df -v`, to judge a cleanup. Evidence: `~/evidence/2026-11-04/cleanup/`.
 
 ## Backup
 

@@ -1974,6 +1974,14 @@ The 3 Nov dw-2 Fyers scan stopped before any quote call (48 batches > 47). dw-2 
 - **Deploy notes:** `quant_watchlist` runs its own image: `docker compose --profile jobs build quant_watchlist && docker compose --profile jobs create --force-recreate quant_watchlist`. The engine image is separate. The scheduler image must be rebuilt for crontab or lifecycle changes.
 - **Restart cost:** a restart after 09:15 seeds up to 80 symbols from Fyers history (was 53). That allows 3 restarts within the seeder's 300/day allocation.
 
+### 11.31.3 Daily-list sources and the meta-file check (`fix/daily-list-sources`, owner 4 Nov)
+
+- **The bug:** every boot ran `screenerStaleness()`, which reads `watchlist_meta.json`. Only the retired `quant_screener` wrote that file, so on the daily list each boot warned (and sent Telegram) "watchlist_meta.json missing … using /app/data/watchlist.json", naming a file the engine had not loaded. `promotion_source` came from `core_watchlist.json` (5 names), so on 4 Nov (observed: the list file against `core_watchlist.json`) 74 of the 79 daily-list names were labelled `SCREENER`, 47 of the 52 core among them.
+- **Now (`websocket.ts`):** on the **daily list**, no age check (it is used only when it is for today) and the sources come from its entries: core group → `CORE`, rotating → `DAILY_SCORE` / `DAILY_TURNOVER` by `pick` (`dailyListSources`, `src/core/symbolSource.ts`). A boot line counts them (`🏷️ Sources (daily list): …`). On the **static list**, unchanged: `core_watchlist.json` + `watchlist_meta.json`, and the age check, whose message now names the static file actually loaded.
+- **Migration 0008** (`0008_daily_list_sources.sql`) adds the two values to the `signals.promotion_source` CHECK. **While a migration is pending** (`schemaProblem` at boot), the rotating names log `SCREENER`, which the old CHECK accepts, so a missed migration can't make signal inserts fail. A test checks every `PromotionSource` value against the latest CHECK.
+- **Deploy order:** build the new engine image first (`docker compose build quant_engine`; this does not touch the running or Created container), then migrate from it (`docker compose run --rm --no-deps quant_engine npm run migrate -- --dry-run` must list `0008_daily_list_sources`; then without `--dry-run`), then recreate the engine. Migrating from the old image finds nothing pending. If the boot still finds a schema problem, the engine logs the rotating names `SCREENER` and sends a "daily-list sources degraded" Telegram. `quant_api`'s image predates 0008: its boot-only schema check will report 0008 as unknown until the API is next rebuilt; it reads the column only.
+- **Series note:** `promotion_source` values change from the first boot on this build. Daily-list rows from 4 Nov until then carry `CORE` for the 5 `core_watchlist.json` names and `SCREENER` for the rest; group membership for those days is in `watchlist_daily_history/<session>.json`.
+
 ## 12. AWS Deployment (EC2 + Docker Compose)
 
 The engine is deployed on AWS **strictly for alerting and out-of-sample data accumulation**. It is NOT an automated execution environment. 
@@ -2078,7 +2086,7 @@ Written by `src/db/signalLog.ts` from the draft `alertPipeline.ts` fills (§11.9
 | `score`, `score_threshold`, `score_result` | `score_threshold` = `CONFIRMATION_THRESHOLD` in force when the signal fired. |
 | `filter_result` (PASSED/REJECTED/ERROR), `rejected_at` (REGIME/EV/SCORE), `shadow_mode`, `breakdown` (JSONB, every component) | Filter summary. |
 | `capital_outcome` (TRADED/REDUCED/SKIPPED_CAPITAL), `qty`, `actual_size` | Sizing. NULL = never sized (rejected before sizing). |
-| `promotion_source` | CORE / SCREENER / ANOMALY / INDEX / UNKNOWN. |
+| `promotion_source` | CORE / DAILY_SCORE / DAILY_TURNOVER (migration 0008, §11.31.3) / SCREENER / SCREENER_LEADER / SCREENER_SETUP (0006) / ANOMALY / INDEX / UNKNOWN. |
 | `alert_sent`, `alert_suppressed_reason` | FILTER_REJECTED, FILTER_ERROR, NOT_GATED, CAPITAL_SKIP, ZERO_SIZE, DUPLICATE, CAP_REACHED, SEND_FAILED, WORKER_ERROR. A CHECK enforces `alert_sent ⇔ reason IS NULL`. |
 | `trade_id` | FK → `paper_trades.id`, `ON DELETE SET NULL`. Set when the signal became a paper-trade row. |
 | `data_quality` | `index_option_proxy`, `levels_default_rr`, `regime_guessed` (regime class inferred from name/trigger, not declared). |

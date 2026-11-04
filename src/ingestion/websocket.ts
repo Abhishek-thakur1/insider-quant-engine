@@ -63,7 +63,7 @@ import { pool } from '../config/db.js'
 import { EvShadowTracker, evShadowEnabled, getEvShadow, pgEvShadowStore, setEvShadow } from '../core/evShadow.js'
 import { schemaProblem } from '../db/migrate.js'
 import { signalLog } from '../db/signalLog.js'
-import { registerWatchlistSources, setSymbolSource } from '../core/symbolSource.js'
+import { registerDailySources, registerWatchlistSources, setSymbolSource } from '../core/symbolSource.js'
 import { readMetaSources, resolveAnomalyUniverseFile, resolveWatchlist, screenerStaleness } from '../screener/paths.js'
 import { engineGate } from '../fyers/engineGates.js'
 
@@ -163,21 +163,34 @@ export const startLiveEngine = async () => {
 	const activeUniverse = [...watchlist]
 	const activeUniverseSet = new Set<string>(activeUniverse)
 
-	// Promotion source for the signals log (observation only): per-symbol from the
-	// screener's watchlist_meta.json when present (SCREENER_LEADER / SCREENER_SETUP).
+	// Promotion source for the signals log (observation only). Daily list (dw-3): from its entries
+	// (CORE / DAILY_SCORE / DAILY_TURNOVER; SCREENER for the rotating names while a migration is
+	// pending, so inserts can't fail the 0008 CHECK), and no age check: it is used only when it is for
+	// today. Static list: core_watchlist.json + the screener's watchlist_meta.json when present
+	// (SCREENER_LEADER / SCREENER_SETUP), with the age check (screenerStaleness).
 	console.log(`[Engine] 📋 Watchlist: ${WATCHLIST_PATH} (${watchlist.length} symbols)`)
-	const staleMsg = screenerStaleness()
-	if (staleMsg) {
-		console.warn(`[Engine] ⚠️ ${staleMsg}`)
-		void notifyAdmin(`⚠️ quant_engine: ${staleMsg}`)
-	}
-	try {
-		const corePath = path.resolve(process.cwd(), 'core_watchlist.json')
-		const core: string[] = fs.existsSync(corePath) ? JSON.parse(fs.readFileSync(corePath, 'utf8')) : []
-		registerWatchlistSources(watchlist, core, readMetaSources())
-	} catch (err) {
-		console.warn('[Engine] ⚠️ Could not read core_watchlist.json — signals will log promotion_source SCREENER/UNKNOWN:', err)
-		registerWatchlistSources(watchlist, [])
+	if (choice.source === 'daily') {
+		const counts = registerDailySources(watchlist, choice.entries ?? [], schemaIssue)
+		console.log(`[Engine] 🏷️ Sources (daily list): ${[...counts].map(([s, k]) => `${s} ${k}`).join(' · ')}`)
+		if (schemaIssue !== null) {
+			const msg = `daily-list sources degraded: rotating names log SCREENER, not DAILY_SCORE / DAILY_TURNOVER (schema not current: ${schemaIssue})`
+			console.warn(`[Engine] ⚠️ ${msg}`)
+			void notifyAdmin(`⚠️ quant_engine: ${msg}`)
+		}
+	} else {
+		const staleMsg = screenerStaleness(Date.now(), WATCHLIST_PATH)
+		if (staleMsg) {
+			console.warn(`[Engine] ⚠️ ${staleMsg}`)
+			void notifyAdmin(`⚠️ quant_engine: ${staleMsg}`)
+		}
+		try {
+			const corePath = path.resolve(process.cwd(), 'core_watchlist.json')
+			const core: string[] = fs.existsSync(corePath) ? JSON.parse(fs.readFileSync(corePath, 'utf8')) : []
+			registerWatchlistSources(watchlist, core, readMetaSources())
+		} catch (err) {
+			console.warn('[Engine] ⚠️ Could not read core_watchlist.json — signals will log promotion_source SCREENER/UNKNOWN:', err)
+			registerWatchlistSources(watchlist, [])
+		}
 	}
 
 	await warnIfVwapMissing(activeUniverse)
