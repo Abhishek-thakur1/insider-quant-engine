@@ -63,7 +63,7 @@ import { pool } from '../config/db.js'
 import { EvShadowTracker, evShadowEnabled, getEvShadow, pgEvShadowStore, setEvShadow } from '../core/evShadow.js'
 import { schemaProblem } from '../db/migrate.js'
 import { signalLog } from '../db/signalLog.js'
-import { dailyListSources, registerWatchlistSources, setSymbolSource, type PromotionSource } from '../core/symbolSource.js'
+import { registerDailySources, registerWatchlistSources, setSymbolSource } from '../core/symbolSource.js'
 import { readMetaSources, resolveAnomalyUniverseFile, resolveWatchlist, screenerStaleness } from '../screener/paths.js'
 import { engineGate } from '../fyers/engineGates.js'
 
@@ -170,14 +170,13 @@ export const startLiveEngine = async () => {
 	// (SCREENER_LEADER / SCREENER_SETUP), with the age check (screenerStaleness).
 	console.log(`[Engine] 📋 Watchlist: ${WATCHLIST_PATH} (${watchlist.length} symbols)`)
 	if (choice.source === 'daily') {
-		const legacy = schemaIssue !== null
-		const daily = dailyListSources(choice.entries ?? [], { legacy })
-		registerWatchlistSources(watchlist, [...daily].filter(([, s]) => s === 'CORE').map(([s]) => s), daily)
-		const n = (src: PromotionSource) => [...daily.values()].filter((s) => s === src).length
-		console.log(
-			`[Engine] 🏷️ Sources (daily list): CORE ${n('CORE')} · DAILY_SCORE ${n('DAILY_SCORE')} · DAILY_TURNOVER ${n('DAILY_TURNOVER')}` +
-				(legacy ? ` · SCREENER ${n('SCREENER')} (schema not current: ${schemaIssue})` : ''),
-		)
+		const counts = registerDailySources(watchlist, choice.entries ?? [], schemaIssue)
+		console.log(`[Engine] 🏷️ Sources (daily list): ${[...counts].map(([s, k]) => `${s} ${k}`).join(' · ')}`)
+		if (schemaIssue !== null) {
+			const msg = `daily-list sources degraded: rotating names log SCREENER, not DAILY_SCORE / DAILY_TURNOVER (schema not current: ${schemaIssue})`
+			console.warn(`[Engine] ⚠️ ${msg}`)
+			void notifyAdmin(`⚠️ quant_engine: ${msg}`)
+		}
 	} else {
 		const staleMsg = screenerStaleness(Date.now(), WATCHLIST_PATH)
 		if (staleMsg) {

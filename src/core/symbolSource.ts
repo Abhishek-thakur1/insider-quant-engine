@@ -60,7 +60,27 @@ export const dailyListSources = (
 		]),
 	)
 
-export const getSymbolSource = (symbol: string): PromotionSource =>
+/**
+ * Boot, daily list: register the sources from its entries. `schemaIssue` is websocket.ts's boot
+ * schemaProblem(): any problem (pending migration, failed check) means legacy (rotating → SCREENER).
+ * Returns the count per source, for the boot line.
+ */
+export const registerDailySources = (
+	watchlist: string[],
+	entries: Parameters<typeof dailyListSources>[0],
+	schemaIssue: string | null,
+): Map<PromotionSource, number> => {
+	const daily = dailyListSources(entries, { legacy: schemaIssue !== null })
+	registerWatchlistSources(watchlist, [...daily].filter(([, s]) => s === 'CORE').map(([s]) => s), daily)
+	const counts = new Map<PromotionSource, number>()
+	for (const s of watchlist) {
+		const src = sources.get(s)!
+		counts.set(src, (counts.get(src) ?? 0) + 1)
+	}
+	return counts
+}
+
+export const getSymbolSource =(symbol: string): PromotionSource =>
 	sources.get(symbol) ?? (/NIFTY/i.test(symbol) ? 'INDEX' : 'UNKNOWN')
 
 /** Test hook. */

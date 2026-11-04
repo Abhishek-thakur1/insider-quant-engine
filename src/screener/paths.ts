@@ -72,14 +72,15 @@ export const screenerStaleness = (nowMs = Date.now(), usingPath?: string): strin
 		// volume's watchlist.json when it exists (resolveScreenerFile), else the image's baked-in copy.
 		const fromJob = path.join(screenerDataDir(), 'watchlist.json')
 		const using = usingPath ?? fromJob
-		return fs.existsSync(using)
+		const inVolume = path.resolve(using).startsWith(path.resolve(screenerDataDir()) + path.sep)
+		return inVolume && fs.existsSync(using)
 			? `watchlist_meta.json missing or unreadable in ${screenerDataDir()} — using the static list ${using}; its age can't be checked`
 			: `screener output not found in ${screenerDataDir()} — using the baked-in watchlist.json`
 	}
 	const today = getISTDateString(nowMs)
 	const missed = tradingDaysBetween(meta.asOf, today, loadHolidays() ?? new Set())
 	return missed > MAX_STALE_TRADING_DAYS
-		? `screener watchlist is from ${meta.asOf} — ${missed} trading days old (> ${MAX_STALE_TRADING_DAYS}); check the 16:30 quant_screener job`
+		? `static watchlist is from ${meta.asOf} — ${missed} trading days old (> ${MAX_STALE_TRADING_DAYS}); its writer (quant_screener) is retired: refresh it by hand or use the daily list`
 		: null
 }
 

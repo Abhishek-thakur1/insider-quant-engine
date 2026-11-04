@@ -13,7 +13,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 import { readMetaSources, resolveScreenerFile, screenerStaleness, tradingDaysBetween } from '../src/screener/paths.js'
-import { clearSymbolSources, dailyListSources, getSymbolSource, registerWatchlistSources } from '../src/core/symbolSource.js'
+import { clearSymbolSources, dailyListSources, getSymbolSource, registerDailySources, registerWatchlistSources } from '../src/core/symbolSource.js'
 
 const withDataDir = <T>(fn: (dir: string) => T): T => {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iqe-wiring-'))
@@ -63,14 +63,11 @@ test('daily list sources: core group CORE, rotating DAILY_SCORE / DAILY_TURNOVER
 		{ symbol: 'NSE:M&M-EQ', group: 'rotating' as const, pick: 'turnover' as const },
 		{ symbol: 'NSE:OLDPICK-EQ', group: 'rotating' as const }, // dw-3 before 1b: no pick → score
 	]
-	const daily = dailyListSources(entries)
+	const watchlist = [...entries.map((e) => e.symbol), 'NSE:NOTINENTRIES-EQ']
 	clearSymbolSources()
-	// what websocket.ts does on the daily path: core = the CORE entries, meta = the daily map
-	registerWatchlistSources(
-		[...entries.map((e) => e.symbol), 'NSE:NOTINENTRIES-EQ'],
-		[...daily].filter(([, s]) => s === 'CORE').map(([s]) => s),
-		daily,
-	)
+	// what websocket.ts calls on the daily path, schema current
+	const counts = registerDailySources(watchlist, entries, null)
+	assert.deepEqual(Object.fromEntries(counts), { CORE: 2, DAILY_SCORE: 2, DAILY_TURNOVER: 1, SCREENER: 1 })
 	assert.equal(getSymbolSource('NSE:RELIANCE-EQ'), 'CORE')
 	assert.equal(getSymbolSource('NSE:JPL-EQ'), 'CORE') // a daily core name, not in core_watchlist.json
 	assert.equal(getSymbolSource('NSE:FUSION-EQ'), 'DAILY_SCORE')
@@ -79,6 +76,12 @@ test('daily list sources: core group CORE, rotating DAILY_SCORE / DAILY_TURNOVER
 	assert.equal(getSymbolSource('NSE:NOTINENTRIES-EQ'), 'SCREENER')
 	const legacy = dailyListSources(entries, { legacy: true })
 	assert.deepEqual([...new Set(legacy.values())].sort(), ['CORE', 'SCREENER'])
+	// schema not current (e.g. 0008 pending) → no DAILY_* value can reach an insert
+	clearSymbolSources()
+	const degraded = registerDailySources(watchlist, entries, '1 pending migration(s): 0008_daily_list_sources')
+	assert.deepEqual(Object.fromEntries(degraded), { CORE: 2, SCREENER: 4 })
+	assert.equal(getSymbolSource('NSE:M&M-EQ'), 'SCREENER')
+	assert.equal(getSymbolSource('NSE:JPL-EQ'), 'CORE')
 	clearSymbolSources()
 })
 
@@ -102,7 +105,7 @@ test('engine: the meta-file age check runs only for the static list; the daily p
 	assert.ok(i > 0)
 	const elseAt = ws.indexOf('} else {', i)
 	const dailyBranch = ws.slice(i, elseAt)
-	assert.match(dailyBranch, /dailyListSources\(choice\.entries/)
+	assert.match(dailyBranch, /registerDailySources\(watchlist, choice\.entries \?\? \[\], schemaIssue\)/)
 	assert.doesNotMatch(dailyBranch, /screenerStaleness/)
 	assert.equal(ws.match(/screenerStaleness\(/g)?.length, 1)
 	assert.ok(ws.indexOf('screenerStaleness(') > elseAt)
@@ -133,6 +136,8 @@ test('staleness message names the static file actually loaded', () => {
 		const used = path.join(dir, 'watchlist.json')
 		fs.writeFileSync(used, '[]')
 		assert.match(screenerStaleness(istNoon('2026-11-05'), used)!, new RegExp(`using the static list ${used.replace(/[\\.]/g, '\\$&')}; its age can't be checked`))
+		// the image's baked-in copy (outside the volume) is named as such, even when it exists
+		assert.match(screenerStaleness(istNoon('2026-11-05'), path.resolve(process.cwd(), 'package.json'))!, /using the baked-in watchlist\.json/)
 	})
 })
 

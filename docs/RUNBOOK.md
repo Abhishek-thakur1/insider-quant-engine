@@ -162,17 +162,19 @@ SELECT 'signals', count(*) FROM signals WHERE 'invalid_geometry' = ANY(data_qual
 - The migration files live in `db/migrations/NNNN_name.sql`. The runner is `src/db/migrate.ts` (see AGENTS.md §11.8 and §14).
 - **Never edit an applied migration.** The runner refuses to run on a checksum mismatch. Add a new file instead.
 - To check state, run `docker exec quant_postgres psql -U postgres -d insider_quant -c "SELECT * FROM schema_migrations;"`.
-- **0008 (daily-list sources, AGENTS §11.31.3)** runs from the engine image (the API image predates it): `docker compose run --rm --no-deps quant_engine npm run migrate -- --dry-run` should list only `0008_daily_list_sources`; then run it without `--dry-run`, before the engine's next boot.
+- **0008 (daily-list sources, AGENTS §11.31.3)** runs from the **new** engine image (the API image predates it), so build first: `docker compose build quant_engine` (does not touch the existing container), then `docker compose run --rm --no-deps quant_engine npm run migrate -- --dry-run`, which must list only `0008_daily_list_sources` ("nothing pending" means the old image was used: stop), then the same without `--dry-run`, then recreate the engine.
 
 ## Swapfile (owner, 4 Nov)
 
 The host has 1.9 GB of RAM and no swap. A swapfile is overflow protection against the kernel killing a process when memory runs out; with swappiness 10 it is not extra working memory. Run after 15:30 on a trading day. Disk cost: the file's size on the root volume (the monitor alerts above 80% disk).
 
-Set up (size as approved, e.g. `1G`):
+**Applied 4 Nov 20:11 IST: `512M`** (the owner chose 512 MB over the proposed 1 GB once the image cleanup had freed only 123 MB; 1 GB would have put the disk over the 80% alert). After: swap 511 MB, swappiness 10, disk 74% → 78%. Evidence: `~/evidence/2026-11-04/swap/`.
+
+Set up (size as approved; 4 Nov: `512M`):
 
 ```bash
 sudo cp /etc/fstab /etc/fstab.bak-pre-swap
-sudo fallocate -l 1G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+sudo fallocate -l 512M /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swappiness.conf && sudo sysctl -p /etc/sysctl.d/99-swappiness.conf
 swapon --show; free -m; df -h /; cat /proc/sys/vm/swappiness
