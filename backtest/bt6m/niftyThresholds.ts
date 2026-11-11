@@ -101,8 +101,9 @@ const arg = (n: string): string | undefined => {
  * through `trade_id === null`).
  */
 const comparable = (s: Record<string, unknown>) => {
-	const { signal_id: _id, trade_id: tid, ...rest } = s
-	rest.has_trade = tid !== null
+	const rest: Record<string, unknown> = { ...s, has_trade: s.trade_id !== null }
+	delete rest.signal_id
+	delete rest.trade_id
 	return JSON.stringify(rest)
 }
 
