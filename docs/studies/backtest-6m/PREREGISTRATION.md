@@ -316,3 +316,85 @@ All backtest-side. Each needs its own approval and a PR; none touches anything l
 
 **Parity sessions:** 4, 5, 6 and 9 Nov (4 sessions). The "5 lists" in §5 counted the 11 Nov list, which is
 outside the window.
+
+## Amendment 2: percentage-based limits for the Nifty detectors (owner's draft, 11 Nov 2026)
+
+- **Date:** 2026-11-11, before any Stage A or Stage B request or run.
+- **Status:** declared. The text is the owner's draft. The placeholders are filled from the code and the
+  cache, as below.
+
+### Reason
+Descriptive statistics from the cached Nifty history (1,278 sessions, Jul 2021 – Sep 2026,
+`extras/nifty_history.json`) show that opening ranges of 70 points or more rose from 16% of sessions in 2021 to
+62% in 2026. Opening Range Explosion and Trend Pulse use fixed limits in points, so they get stricter as the
+index level rises. This amendment adds a second variant. It doesn't replace the original.
+
+### Variants
+- **Variant A (primary, unchanged):** every limit in points, exactly as originally pre-registered, i.e. the
+  live code.
+- **Variant B (secondary, new):** each point limit is converted to a percentage, then applied to the
+  **previous session's Nifty close**.
+
+### Conversion rule (fixed now, not tuned)
+- **Formula:** `pct_limit = point_limit / reference_close`. On session *t*, the limit is
+  `pct_limit × close(t−1)`, unrounded.
+- **Reference date: Fri 2026-06-12.** All seven point limits below were introduced together in commit `ef3af12`
+  on Sun 2026-06-14, so the reference is the last session before that: the index level the limits were written
+  for.
+- **Reference close: 23,631.75.** That's the close of the 15:29 IST 1-minute bar in the cached Fyers series.
+  `close(t−1)` is defined the same way, from the backtest's own bars. It isn't the official NSE closing value,
+  which isn't in the data.
+
+**Every point-based limit in the three Nifty detectors** (`src/detectors/v2/`):
+
+| Detector | Limit | Points (A) | % of close (B) |
+|---|---|---|---|
+| Opening Range Explosion | opening-range cap (`rangeSize > 120`) | 120 | 0.50779% |
+| Opening Range Explosion | risk cap (`risk > 80`) | 80 | 0.33853% |
+| Opening Range Explosion | break buffer (`BUFFER_PTS`) | 5 | 0.02116% |
+| Opening Range Explosion | stop offset (`orLow − 5` / `orHigh + 5`) | 5 | 0.02116% |
+| Trend Pulse | risk cap (`risk > 60`) | 60 | 0.25390% |
+| Trend Pulse | stop offset (swing low − 10 / high + 10) | 10 | 0.04232% |
+| VWAP Reclaim | risk cap (`risk > 50`) | 50 | 0.21158% |
+| VWAP Reclaim | stop offset (`vwap ∓ 8`) | 8 | 0.03385% |
+
+**Not converted, because they are already relative or aren't limits:**
+- the body thresholds `MIN_BODY_PCT` 0.06 / 0.10 and `MIN_RECLAIM_BODY_PCT` 0.12 (already % of price);
+- `VWAP_DIST_PCT` 0.2 and `MAX_EXTENSION_PCT` 0.6 (already %);
+- the target multiples 1.5R and 2.5R;
+- the windows, cooldowns, candle counts and volume multiple;
+- the option strike step (instrument structure).
+
+The filter has no Nifty point limits; its EV slippage is 5 bps of price.
+
+**No limit is optimised or adjusted after seeing results.**
+
+### Unchanged
+- Fill rules (stop first; fills at the stop or target);
+- the 15:15 exit, sizing, duplicate rules and alert cap;
+- the watchlist, the test window and the success criteria;
+- the primary endpoint (§7).
+
+### Reporting
+- **A and B are reported side by side for every metric.**
+- **Variant A remains the headline result.** B is exploratory, and results from B alone don't support a go-live
+  decision.
+- **Any conclusion that depends on B must say so explicitly.**
+- **Equity effects:** Nifty alerts share the daily alert cap and the paper capital with the equities, so B can
+  shift equity results slightly. That's why every metric is reported for both, not only the Nifty ones.
+- **The parity gate is run on Variant A only:** the live code, against live fires.
+
+### What would invalidate this amendment
+- Changing any `pct_limit`, the reference date or the reference close after the first Stage A result is seen.
+- Choosing which variant to headline after seeing results.
+
+### Notes recorded with the declaration
+- **In this window, B is close to A.** Nifty's cached closes from 8 May to 7 Sep run 23,103.70–24,774.30, and
+  it traded around 23,600–25,000 in early November. So B moves each limit by roughly −2% to +6%: the 120-point
+  range cap becomes about 117–128 points. The 2021→2026 drift that motivates B matters far more for the
+  hindsight long-window draft, where Nifty ran from about 15,800.
+- **Not yet built:** the limits are inline numbers in the live detector files, and the backtest must not change
+  live code. Variant B therefore needs backtest-only copies of the three detectors.
+  - **Equivalence test:** with `close(t−1)` equal to the reference close, each copy must reproduce the live
+    class's fires and block reasons exactly on the cached history.
+  - **Approval:** this is a separate PR, for the owner to approve. It isn't in #73.
