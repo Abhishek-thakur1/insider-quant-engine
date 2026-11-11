@@ -36,10 +36,11 @@ how would the signal count, the block reasons and the index-move expectancy chan
 - **Trend Pulse and VWAP Reclaim** are run unchanged in both variants. They're reported for context only; their
   own point limits aren't part of this study.
 
-### Proposed, not yet registered: V (volatility-scaled)
+### V (volatility-scaled): registered 2026-11-11, owner-approved
 
-The owner asked for this on 11 Nov. It is to be registered **only** if the owner approves this exact text, and
-before the study runs.
+**Approved by the owner on 11 Nov as written, before any run. Scope:** an offline study only, run on cached
+data with no Fyers calls. The post-design sessions (2026-06-15 → 2026-09-07, 60 sessions) are reported
+separately as **out-of-sample**. No live detector, gate, threshold or stop changes.
 
 - **Formula:** `cap_t = point_cap × OR20(t) / OR20_ref`, applied to both the risk cap (80) and the range cap (120).
 - **OR20(t)** is the median opening range (09:15–09:20 high − low, the ORE's own range) of the **20 sessions
