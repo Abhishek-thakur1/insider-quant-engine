@@ -39,7 +39,7 @@ import { feedTick, resetCandles } from '../../src/utils/candleAggregator.js'
 import { resetStructure } from '../../src/utils/marketStructure.js'
 import { pruneStaleStrikes } from '../../src/utils/optionUtils.js'
 import { resetRegimeState } from '../../src/utils/regimeDetector.js'
-import { resetDiagnostics } from '../../src/core/detectorDiagnostics.js'
+import { resetDiagnostics, recentDiagnostics, type DiagRecord } from '../../src/core/detectorDiagnostics.js'
 import { redisClient } from '../../src/config/redis.js'
 import { OiLiquiditySweepDetector } from '../../src/detectors/oiLiquiditySweepDetector.js'
 import { DeltaHedgingPressureDetector } from '../../src/detectors/deltahedgingpressuredetector.js'
@@ -150,6 +150,11 @@ export interface LiveSessionInputs {
 	entries: { symbol: string; group: 'core' | 'rotating'; pick?: 'score' | 'turnover' }[]
 	paper: MemoryPaperTrades
 	config: { capitalBase: number; capitalBehavior: string }
+	/**
+	 * STUDY HOOK (docs/studies/nifty-thresholds): replace the live Opening Range Explosion instance in the Nifty stack
+	 * with a backtest-only variant (backtest/bt6m/oreVariant.ts). Undefined = the live class, as live.
+	 */
+	niftyOre?: () => IDetector
 	/** TESTS ONLY: replace the live equity stack / the filter, to drive a known fire end to end. */
 	testHooks?: { equityStack?: (symbol: string) => IDetector[]; runFilter?: PipelineDeps['runFilter'] }
 }
@@ -163,6 +168,8 @@ export interface LiveSessionResult {
 	adminMessages: number
 	stillOpenAtEnd: number
 	stillOpenSymbols: string[]
+	/** The Nifty detectors' "why no alert" records of this session (src/core/detectorDiagnostics.ts). */
+	diagnostics: DiagRecord[]
 	errors: string[]
 	barsReplayed: number
 	ticksDispatched: number
@@ -260,7 +267,7 @@ export const runLiveSession = async (inp: LiveSessionInputs): Promise<LiveSessio
 
 	// Live constructs the Nifty singletons once per process (one process per day) and one equity stack per symbol.
 	const niftyStack: IDetector[] = [
-		new NiftyOpeningRangeExplosionDetector(),
+		inp.niftyOre?.() ?? new NiftyOpeningRangeExplosionDetector(),
 		new NiftyTrendPulseDetector(),
 		new NiftyVwapReclaimDetector(),
 		new OiLiquiditySweepDetector(),
@@ -382,6 +389,7 @@ export const runLiveSession = async (inp: LiveSessionInputs): Promise<LiveSessio
 		channelMessages,
 		adminMessages,
 		stillOpenAtEnd: openCount(),
+		diagnostics: [...recentDiagnostics()],
 		stillOpenSymbols: [...(positionTracker as unknown as TrackerInternals).openPositions].filter(([, l]) => l.length).map(([s]) => s),
 		errors,
 		barsReplayed: bars.length,

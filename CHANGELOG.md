@@ -2,6 +2,23 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## `feat/nifty-ore-variant-study`: Nifty threshold study tooling (owner, 11 Nov): backtest-only, offline, NOT deployed, no live code changed
+
+- **Scope:** variant V of `docs/studies/nifty-thresholds/PREREGISTRATION.md`, approved by the owner as an offline study, run against the live caps (P). Amendment 1 of that file fixes the run details.
+- **`backtest/bt6m/oreVariant.ts`:** a backtest-only copy of `NiftyOpeningRangeExplosionDetector`, identical except that the two caps (range 120, risk 80) are injected.
+  - **Equivalence:** at 120/80 it reproduced the live class on **all 1,258 study sessions**: every signals row and every ORE block record (`niftyThresholds.ts --mode EQ`: 0 mismatches).
+- **`backtest/bt6m/niftyThresholds.ts`:** the runner (P / V / EQ), plus `simulateIndexExit`. Index-move outcomes use the 6-month study's fill rules (stop first, level fills, gap at the open, 15:15 TIME). Labelled "not tradable as options".
+- **`backtest/bt6m/liveSession.ts`:** a `niftyOre` study hook (default: the live class), and each session's diagnostics in the result.
+- **Tests:** +2 in `tests/bt6m.test.ts` (index exits; variant = live on synthetic sessions).
+- **Review fixes (PASS WITH FIXES, then PASS):** a non-vacuous equivalence (coverage asserted), ORE fire, risk-cap and negative-control tests, OR20 guards, the fire-tick anchor, the geometry exclusion, and failing on errors. Also synchronous run outputs: a write stream never opened inside the in-memory replay, which also affected `liveRun.ts`. Pre-registration amendment 2.
+- **Result (`docs/studies/nifty-thresholds/REPORT.md`, index moves, not tradable as options):**
+  - no ORE fire passed the filter under P or V;
+  - P −0.32R and V −0.37R net per fire at 10 bps;
+  - V − P −0.05R (CI −0.17 to +0.07);
+  - V fires half as often overall but about twice as often in 2026; the out-of-sample segment is too small to read.
+  - No live change.
+- **Checks:** typecheck 0; `npm test` 468/468; lint 20 errors (the baseline).
+
 ## `docs/old-harness-notes-nifty-thresholds`: dated correction notes on old-harness outputs + Nifty threshold study pre-registration (owner, 11 Nov): docs only, nothing run
 
 - **Correction notes (dated 2026-11-11; original text and conclusions unchanged):** `backtest/README.md` (Status, covering `results_5m.json` and `results_nifty_baselines_5m.json`) and `docs/studies/edge-map/REPORT.md`.

@@ -128,3 +128,70 @@ caps (and offsets, for S-full). The live limits are inline numbers and live code
 - Changing a scaled value, the reference date, OR20_ref, the look-back or the cost proxy after any result is seen.
 - Adding variants after seeing results.
 - Choosing which variant to headline after seeing results.
+
+## Amendment 1: run scope and implementation details (11 Nov 2026, before any P or V result)
+
+- **Approval:** the owner approved V as an offline study on 11 Nov, and chose to build and run **V against the
+  live caps (P)** only. **S and S-full aren't run.** No Fyers call; nothing in live changes.
+- **Precondition: equivalence.** Before P or V is read, the backtest-only copy (`backtest/bt6m/oreVariant.ts`) at
+  caps 120/80 must reproduce the live class **exactly** over every study session: every signals row (except its
+  random and paper ids) and every ORE block record. That's `niftyThresholds.ts --mode EQ`. Any difference stops
+  the study.
+- **Sessions:**
+  - the cached sessions with ≥ 300 one-minute bars;
+  - **the first 20 are excluded from both P and V**, because OR20 needs 20 prior sessions;
+  - **out-of-sample:** 2026-06-15 → 2026-09-07 (60 sessions), reported separately. In-sample is everything
+    before.
+- **Opening range:** the high − low of the 09:15–09:19 one-minute bars, which is ORE's own first 5-minute candle.
+  **OR20(t)** is the median of the previous 20 sessions' ranges. **V's caps:** `range = 120 × OR20/69.82`,
+  `risk = 80 × OR20/69.82`, unrounded.
+- **Fires:** every fire of the 5 live Nifty detectors is recorded. ORE is the subject; Trend Pulse and VWAP
+  Reclaim are context, and any P/V difference in them is reported.
+  - **Groups:** **all fires** (before the filter, including hard-gate rejections) and **filter-passed** fires.
+  - **Levels:** entry = the fire's price (the detector's candle close); stop = its trigger `SL ₹`; target = its
+    `T1 ₹`. A fire without both levels is counted and left out of the outcome tables.
+- **Outcome:** `simulateIndexExit` under the 6-month study's fill rules.
+  - **The fire's own bar** continues after the fire tick. It's reordered adverse-first if the fire was on the
+    bar's open tick.
+  - **Later bars:** stop first when both levels are inside a bar. A level crossed between ticks fills at the
+    level. A bar opening beyond a level fills at the open.
+  - **From 15:15:** the close is at the last price. If the data ends first, the exit is at the last close
+    (`SESSION_END`).
+  - **R** = signed index move / |entry − stop|.
+  - **Net R** = R − c × entry / |entry − stop|, with c = **10 bps** of the index (primary), 5 and 20 bps
+    (sensitivity).
+- **Level band:** by the previous session's close: < 17k, 17–20k, 20–23k, ≥ 23k.
+- **Primary comparison:**
+  - ORE fires per session, and ORE net expectancy (10 bps, all fires);
+  - **V − P** as a paired day-block bootstrap difference (B = 10,000, seed 20261111);
+  - reported for in-sample and out-of-sample separately, and pooled.
+- **Multiple comparisons:** BH and Holm over all ORE cells with n ≥ 30, across P and V, split by year, level
+  band, segment, side and group. Exit-type cells are excluded.
+- **Reading rule:** **P stays the reference.** No live change follows; any recommendation says which variant and
+  which segment it rests on.
+
+## Amendment 2: review fixes (11 Nov 2026, before any P or V result)
+
+Prompted by the independent review of PR #75 (PASS WITH FIXES). Not based on any result: P and V haven't been run.
+
+- **The equivalence run can't pass vacuously.** `--mode EQ` now also asserts that **ORE fires, `risk_cap` records
+  and `range_too_wide` records were all compared** (more than zero of each). The counts are asserted, not printed,
+  so no P figure is shown before the study is read.
+  - **New tests:** an ORE breakout that fires through the live class and the 120/80 copy identically; a risk-cap
+    block, which a wider copy cap turns into a fire; a {0, 0} copy that is blocked, as a negative control proving
+    the hook is used.
+- **Missing opening ranges:**
+  - **2021-12-20** has no 09:15 bar (its data starts at 09:19), so its opening range is undefined. The 20
+    sessions after it take OR20 as the median of the **19** defined ranges in their window. This is the only
+    such session in the cache.
+  - Each output line records the window's count (`or20Sessions`).
+  - If a window ever had no defined range, the run **stops** rather than letting V run uncapped.
+- **The fire bar starts from the fire tick's price.** That's the live tracker's last price when the position
+  registers. R is still measured from the entry, the detector's candle close.
+- **Levels on the wrong side are excluded:** a fire is scored only if stop < entry < target (LONG) or the reverse
+  (SHORT). Others are counted as `invalid_geometry`, like the fires without levels (`no_levels`). ORE can't
+  produce either; the context detectors might.
+- **Errors stop the run:** a pipeline error or an unexpected SQL statement fails the run.
+- **A note on the reference value:** the cache's exact median for the reference window is 69.825, and the
+  pre-registered OR20_REF is 69.82. So at the reference, V's caps are 1.00007 × P's. It's kept as registered, and
+  the report says so.
