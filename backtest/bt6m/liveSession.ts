@@ -51,7 +51,7 @@ import { VolatilityContraction } from '../../src/detectors/v2/high_alpha/Volatil
 import { NIFTY_SYMBOL } from '../config.js'
 import { getMemoryRedis } from '../core/memoryRedis.js'
 import { setVirtualNow, istEpoch } from '../core/clock.js'
-import { mergeChronologically, assertChronological, TICKS_PER_BAR } from '../replay/barToTicks.js'
+import { mergeChronologically, assertChronological, looksCircuitLocked, TICKS_PER_BAR } from '../replay/barToTicks.js'
 import type { Bar } from '../data/store.js'
 import type { MemoryPaperTrades, PaperRow } from './memoryPg.js'
 
@@ -71,13 +71,37 @@ export const barPath = (bar: Bar, adverseFirst: 'LONG' | 'SHORT' | null): TickDa
 	return path.map((price, i) => ({ price, volume: v, timestamp: bar.t + i * STEP_MS }))
 }
 
-/** Same-bar rule: the side whose stop must come first in this bar, or null (no position has both levels inside it). */
-export const sameBarSide = (bar: Bar, open: Pick<OpenPosition, 'side' | 'stopLoss' | 'target'>[]): 'LONG' | 'SHORT' | null => {
+type Lv = Pick<OpenPosition, 'side' | 'stopLoss' | 'target'>
+
+/**
+ * Same-bar rule (amendment 1, tie-break amendment 3): of the positions whose stop AND target both lie within
+ * [lo, hi], the side of the one whose stop is nearest `ref` (the bar's open, or the current price mid-bar);
+ * null if there is none.
+ */
+export const stopFirstSide = (lo: number, hi: number, ref: number, open: Lv[]): 'LONG' | 'SHORT' | null => {
+	let best: Lv | null = null
 	for (const p of open) {
-		const inBar = (x: number) => x >= bar.l && x <= bar.h
-		if (inBar(p.stopLoss) && inBar(p.target)) return p.side
+		const inside = (x: number) => x >= lo && x <= hi
+		if (!inside(p.stopLoss) || !inside(p.target)) continue
+		if (!best || Math.abs(p.stopLoss - ref) < Math.abs(best.stopLoss - ref)) best = p
 	}
-	return null
+	return best?.side ?? null
+}
+export const sameBarSide = (bar: Bar, open: Lv[]): 'LONG' | 'SHORT' | null => stopFirstSide(bar.l, bar.h, bar.o, open)
+
+/**
+ * Same-bar rule for a position opened at the bar's OPEN tick (review finding 1): the two extremes still ahead
+ * (path[1], path[2]) are reordered so the adverse one comes first when a position has both levels inside the rest
+ * of the bar. Returns a new path; ticks already dispatched and the closing tick never move.
+ */
+export const reorderAfterOpen = (path: number[], open: Lv[]): number[] => {
+	if (path.length !== 4) return path
+	const rest = path.slice(1)
+	const side = stopFirstSide(Math.min(...rest), Math.max(...rest), path[0]!, open)
+	if (!side) return path
+	const [a, b] = [path[1]!, path[2]!]
+	const lowFirst = side === 'LONG'
+	return lowFirst ? [path[0]!, Math.min(a, b), Math.max(a, b), path[3]!] : [path[0]!, Math.max(a, b), Math.min(a, b), path[3]!]
 }
 
 /** Level ticks between two consecutive prices: every open level strictly between them, in the order price passes them. */
@@ -126,6 +150,8 @@ export interface LiveSessionInputs {
 	entries: { symbol: string; group: 'core' | 'rotating'; pick?: 'score' | 'turnover' }[]
 	paper: MemoryPaperTrades
 	config: { capitalBase: number; capitalBehavior: string }
+	/** TESTS ONLY: replace the live equity stack / the filter, to drive a known fire end to end. */
+	testHooks?: { equityStack?: (symbol: string) => IDetector[]; runFilter?: PipelineDeps['runFilter'] }
 }
 
 export interface LiveSessionResult {
@@ -136,6 +162,7 @@ export interface LiveSessionResult {
 	channelMessages: number
 	adminMessages: number
 	stillOpenAtEnd: number
+	stillOpenSymbols: string[]
 	errors: string[]
 	barsReplayed: number
 	ticksDispatched: number
@@ -240,7 +267,7 @@ export const runLiveSession = async (inp: LiveSessionInputs): Promise<LiveSessio
 		new DeltaHedgingPressureDetector(),
 	]
 	const router = new Map<string, IDetector[]>()
-	for (const s of universe) router.set(s, [new StockMomentumBreakoutDetector(s), new VolatilityContraction(s)])
+	for (const s of universe) router.set(s, inp.testHooks?.equityStack?.(s) ?? [new StockMomentumBreakoutDetector(s), new VolatilityContraction(s)])
 
 	// ── 2. the live alert path ───────────────────────────────────────────────
 	let channelMessages = 0
@@ -250,6 +277,7 @@ export const runLiveSession = async (inp: LiveSessionInputs): Promise<LiveSessio
 		config: inp.config,
 		onChannel: () => void channelMessages++,
 		onAdmin: () => void adminMessages++,
+		...(inp.testHooks?.runFilter ? { runFilter: inp.testHooks.runFilter } : {}),
 	})
 	const signals: SignalRow[] = []
 	const pending: AlertPayload[] = []
@@ -277,50 +305,69 @@ export const runLiveSession = async (inp: LiveSessionInputs): Promise<LiveSessio
 	}
 
 	// ── 3. the replay loop ───────────────────────────────────────────────────
-	const stream = mergeChronologically(barsBySymbol)
-	assertChronological(stream)
+	// Merged at TICK level by (timestamp, symbol) — review finding 5: merging whole bars let a symbol sorting
+	// after Nifty see Nifty's t+45 s close while handling its own t+0 tick. A bar's price path is fixed when its
+	// first tick is reached (same-bar rule from the positions open then), and re-ordered once if a position opens
+	// on the open tick (reorderAfterOpen).
+	const bars = mergeChronologically(barsBySymbol)
+	assertChronological(bars)
+	const stream: { symbol: string; bar: Bar; i: number; ts: number }[] = []
+	for (const { symbol, bar } of bars) {
+		if (symbol !== NIFTY_SYMBOL && !universeSet.has(symbol)) continue
+		for (let i = 0; i < TICKS_PER_BAR; i++) stream.push({ symbol, bar, i, ts: bar.t + i * STEP_MS })
+	}
+	stream.sort((a, b) => a.ts - b.ts || (a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : 0))
+	const paths = new Map<string, number[]>()
 	const lastPx = new Map<string, number>()
 	const squareOffAt = istEpoch(sessionDate, 15 * 60 + 15)
 	let ticksDispatched = 0
 
-	const trackerTick = (symbol: string, price: number, ts: number) => trackerStep(symbol, price, ts, lastPx)
-
 	try {
-		for (const { symbol, bar } of stream) {
+		for (const { symbol, bar, i, ts } of stream) {
 			const isNifty = symbol === NIFTY_SYMBOL
-			if (!isNifty && !universeSet.has(symbol)) continue
-			const ticks = barPath(bar, sameBarSide(bar, openOf(symbol)))
-			for (const t of ticks) {
-				setVirtualNow(t.timestamp)
-				ticksDispatched++
-				// The 15:15 timer (every 5 s live): from 15:15, close at each symbol's last price.
-				if (t.timestamp >= squareOffAt) await positionTracker.squareOffSweep(t.timestamp)
-				positionTracker.notePrice(symbol, t.price, t.timestamp)
-				if (!isNifty && !(t.volume > 0)) {
-					lastPx.set(symbol, t.price)
-					continue // live drops zero-volume equity ticks after noting the price
-				}
-				const liveTick: TickData = { price: t.price, volume: isNifty ? 1 : t.volume, timestamp: t.timestamp }
-				await trackerTick(symbol, t.price, t.timestamp)
+			if (i === 0) paths.set(symbol, barPath(bar, sameBarSide(bar, openOf(symbol))).map((t) => t.price))
+			const price = paths.get(symbol)![i]!
+			const volume = Math.max(0, bar.v) / TICKS_PER_BAR
+			const openBefore = openOf(symbol).length
+			setVirtualNow(ts)
+			ticksDispatched++
+			// The 15:15 timer (every 5 s live): from 15:15, close at each symbol's last price.
+			if (ts >= squareOffAt) await positionTracker.squareOffSweep(ts)
+			positionTracker.notePrice(symbol, price, ts)
+			if (!isNifty && !(volume > 0)) {
+				lastPx.set(symbol, price)
+				continue // live drops zero-volume equity ticks after noting the price
+			}
+			const liveTick: TickData = { price, volume: isNifty ? 1 : volume, timestamp: ts }
+			// Gap-through rule (amendment 3): a bar's OPEN goes to the tracker as it is — no level tick between the
+			// previous price and the open — so a candle opening beyond a stop or target fills at the open.
+			if (i === 0) lastPx.delete(symbol)
+			// Circuit-lock bars (zero range with volume) don't fill a stop: the tracker skips them (PREREGISTRATION §3).
+			if (!looksCircuitLocked(bar)) await trackerStep(symbol, price, ts, lastPx)
+			else lastPx.set(symbol, price)
 
-				if (isNifty) {
-					await onNiftyTick(t.price, t.timestamp)
-					const ref = getLastNiftyVwap()
-					if (ref > 0) await updateNiftyBias(t.price, ref)
-					feedTick(NIFTY_SYMBOL, t.price, liveTick.volume)
-					await getEvShadow()?.onTick(NIFTY_SYMBOL, t.price, t.timestamp).catch(() => {})
-					for (const d of niftyStack) {
-						await analyze(d, liveTick)
-						await drain()
-					}
-					continue
+			if (isNifty) {
+				// Live doesn't await onNiftyTick (websocket.ts), so the bias reads the PREVIOUS reference on a
+				// minute-closing tick; the promise is awaited only after the tick, for determinism (finding 7d).
+				const minute = onNiftyTick(price, ts)
+				const ref = getLastNiftyVwap()
+				if (ref > 0) await updateNiftyBias(price, ref)
+				feedTick(NIFTY_SYMBOL, price, liveTick.volume)
+				await getEvShadow()?.onTick(NIFTY_SYMBOL, price, ts).catch(() => {})
+				for (const d of niftyStack) {
+					await analyze(d, liveTick)
+					await drain()
 				}
-				await updateSessionVwap(symbol, t.price, liveTick.volume, t.timestamp, Math.floor(t.timestamp / 1000))
-				feedTick(symbol, t.price, liveTick.volume)
-				await getEvShadow()?.onTick(symbol, t.price, t.timestamp).catch(() => {})
+				await minute.catch((e) => errors.push(`onNiftyTick: ${(e as Error)?.message ?? e}`))
+			} else {
+				await updateSessionVwap(symbol, price, liveTick.volume, ts, Math.floor(ts / 1000))
+				feedTick(symbol, price, liveTick.volume)
+				await getEvShadow()?.onTick(symbol, price, ts).catch(() => {})
 				await Promise.all((router.get(symbol) ?? []).map((d) => analyze(d, liveTick)))
 				await drain()
 			}
+			// A position opened on this bar's open tick: the same-bar rule for the rest of this bar (finding 1).
+			if (i === 0 && openOf(symbol).length > openBefore) paths.set(symbol, reorderAfterOpen(paths.get(symbol)!, openOf(symbol)))
 		}
 	} finally {
 		backtestSink.collect = null
@@ -335,8 +382,9 @@ export const runLiveSession = async (inp: LiveSessionInputs): Promise<LiveSessio
 		channelMessages,
 		adminMessages,
 		stillOpenAtEnd: openCount(),
+		stillOpenSymbols: [...(positionTracker as unknown as TrackerInternals).openPositions].filter(([, l]) => l.length).map(([s]) => s),
 		errors,
-		barsReplayed: stream.length,
+		barsReplayed: bars.length,
 		ticksDispatched,
 		missingSymbols: universe.filter((s) => !barsBySymbol.has(s)),
 	}

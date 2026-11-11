@@ -44,14 +44,15 @@ const main = async (): Promise<void> => {
 	const reasons: Record<string, Record<string, number>> = {}
 	const fires: Record<string, number> = {}
 	const daysWithReason: Record<string, Record<string, number>> = {}
-	const or: { day: string; range: number | null }[] = []
+	const or: { day: string; range: number | null; reasons: Record<string, Record<string, number>>; fires: Record<string, number> }[] = []
 	const log = console.log
 	let sessions = 0
 	try {
 		for (const day of days) {
 			const bars = barsInRange(series.bars, istEpoch(day, 0), istEpoch(day, 0) + DAY_MS)
 			if (bars.length < 300) continue // half or broken sessions: skipped and counted below
-			or.push({ day, range: openingRange(bars) })
+			const day0: { day: string; range: number | null; reasons: Record<string, Record<string, number>>; fires: Record<string, number> } = { day, range: openingRange(bars), reasons: {}, fires: {} }
+			or.push(day0)
 			console.log = () => {} // the detectors' [Diag] lines; the records are read below
 			const res = await replaySession({ sessionDate: day, barsBySymbol: new Map([[NIFTY_SYMBOL, bars]]), specs })
 			console.log = log
@@ -59,10 +60,14 @@ const main = async (): Promise<void> => {
 			const seen = new Set<string>()
 			for (const r of recentDiagnostics()) {
 				;(reasons[r.detector] ??= {})[r.reason] = (reasons[r.detector]![r.reason] ?? 0) + 1
+				;(day0.reasons[r.detector] ??= {})[r.reason] = (day0.reasons[r.detector]![r.reason] ?? 0) + 1
 				const k = `${r.detector}|${r.reason}`
 				if (!seen.has(k)) { seen.add(k); (daysWithReason[r.detector] ??= {})[r.reason] = (daysWithReason[r.detector]![r.reason] ?? 0) + 1 }
 			}
-			for (const s of res.signals) fires[s.detectorId] = (fires[s.detectorId] ?? 0) + 1
+			for (const s of res.signals) {
+				fires[s.detectorId] = (fires[s.detectorId] ?? 0) + 1
+				day0.fires[s.detectorId] = (day0.fires[s.detectorId] ?? 0) + 1
+			}
 		}
 	} finally {
 		console.log = log

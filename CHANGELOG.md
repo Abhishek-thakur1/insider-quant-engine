@@ -26,8 +26,9 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
   - Matching: same detector, symbol and side within ±60 s.
   - PASS: ≥80% of live fires matched and a median score difference within ±3.
 - **`backtest/bt6m/niftyHistory.ts`:** owner extra (a), a read-only tally of Nifty opening ranges and block reasons over the cached history.
-- **Tests:** `tests/bt6m.test.ts` (17).
-- **Checks:** typecheck 0; `npm test` 456/456; lint 20 errors (the baseline).
+- **Review fixes (independent review PASS WITH FIXES, 11 Nov):** the same-bar rule on the entry bar, gap-through fills at the open, circuit-lock bars, a tick-level time merge, and fetch caps, dates and manifest checks in code (Stage B cap 0); pre-registration amendment 3.
+- **Tests:** `tests/bt6m.test.ts` (24).
+- **Checks:** typecheck 0; `npm test` 463/463; lint 20 errors (the baseline).
 
 ## `fix/daily-list-sources`: no meta-file warning on the daily list; daily-list promotion sources + migration 0008 (owner, 4 Nov): deployed 4 Nov ~20:20 IST (engine `01274fe52b94`, 0008 applied; first boot Thu 5 Nov)
 

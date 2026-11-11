@@ -24,6 +24,8 @@ const DAY_MS = 86_400_000
 export const LIVE_ENV = { SHADOW_MODE: 'true', CONFIRMATION_THRESHOLD: '78' } as const
 /** Live defaults (src/config/env.ts); the server's .env sets neither (checked 10 Nov). */
 export const LIVE_CAPITAL = { capitalBase: 100_000, capitalBehavior: 'REDUCE' } as const
+/** Flags whose live value is their default (the server .env leaves them unset); asserted and recorded in run.json. */
+export const LIVE_DEFAULTS = { TELEGRAM_MAX_ALERTS_PER_DAY: '20', VWAP_SESSION_GATE: 'true', SQUARE_OFF_TIMER: 'true', EV_SHADOW_ENABLED: 'true', NIFTY_DIAG_ENABLED: 'true', PAPER_CAPITAL_BASE: '100000', CAPITAL_CONSTRAINT_BEHAVIOR: 'REDUCE' } as const
 
 export interface DayList { forSession: string; symbols: string[]; entries: { symbol: string; group: 'core' | 'rotating'; pick?: 'score' | 'turnover' }[] }
 
@@ -48,6 +50,8 @@ const arg = (name: string): string | undefined => {
 const main = async (): Promise<void> => {
 	if (process.env.BACKTEST_MODE !== 'true') throw new Error('BACKTEST_MODE=true is required')
 	for (const [k, v] of Object.entries(LIVE_ENV)) if (process.env[k] !== v) throw new Error(`${k} must be ${v} (live setting)`)
+	// Live defaults that a stray local .env could change: must be unset (or the live value).
+	for (const [k, ok] of Object.entries(LIVE_DEFAULTS)) if (process.env[k] !== undefined && process.env[k] !== ok) throw new Error(`${k}=${process.env[k]} differs from live (${ok})`)
 	if (process.env.BACKTEST_RES && process.env.BACKTEST_RES !== '1') throw new Error('1-minute bars only')
 	const dir = process.env.BT6M_DIR
 	if (!dir) throw new Error('set BT6M_DIR')
@@ -117,7 +121,7 @@ const main = async (): Promise<void> => {
 		unRedis()
 		for (const s of [sigOut, paperOut, evOut]) s.end()
 	}
-	fs.writeFileSync(path.join(out, 'run.json'), JSON.stringify({ label, from, to, sessions, unknownSql: paper.unknown, env: LIVE_ENV, capital: LIVE_CAPITAL }, null, 1))
+	fs.writeFileSync(path.join(out, 'run.json'), JSON.stringify({ label, from, to, sessions, unknownSql: paper.unknown, env: LIVE_ENV, liveDefaults: LIVE_DEFAULTS, capital: LIVE_CAPITAL }, null, 1))
 	if (paper.unknown.length) throw new Error(`unexpected SQL: ${paper.unknown.length} statement(s), see run.json`)
 }
 

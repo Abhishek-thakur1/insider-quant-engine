@@ -59,6 +59,10 @@ export interface FetchOptions {
 	onBars: (item: ManifestItem, bars: Bar[]) => void
 	onDone: (item: ManifestItem) => void
 	log: (line: string) => void
+	/** Requests already sent for this stage by earlier processes (persisted; failed sends included). */
+	sentBefore?: number
+	/** Called with the stage's running total right before each send, so the CLI can persist it first. */
+	onSent?: (totalForStage: number) => void
 	now?: () => number
 	sleep?: (ms: number) => Promise<void>
 }
@@ -66,15 +70,47 @@ export interface FetchOptions {
 export const toBars = (candles: unknown[][]): Bar[] =>
 	candles.map((c) => ({ t: (c[0] as number) * 1000, o: c[1] as number, h: c[2] as number, l: c[3] as number, c: c[4] as number, v: c[5] as number }))
 
+/** Owner decisions (10 Nov): the stage caps and approved dates are code, not configuration (review finding 4, 9). */
+export const STAGE_CAP: Record<'A' | 'B', number> = { A: 159, B: 0 }
+export const APPROVED_DATES: Record<'A' | 'B', string[]> = { A: ['2026-11-16'], B: [] }
+export const STAGE_A_DATES = { from: '2026-11-04', to: '2026-11-09' } as const
+
+/** Refuses a manifest that isn't exactly what was fixed for its stage: stage, resolution, cap, windows, dates. */
+export const validateManifest = (m: Manifest, stage: 'A' | 'B'): void => {
+	const bad = (why: string) => {
+		throw new StopRun(`manifest refused: ${why}`)
+	}
+	if (m.stage !== stage) bad(`stage ${m.stage} ≠ ${stage}`)
+	if (m.resolution !== '1') bad('resolution must be 1')
+	if (m.cap > STAGE_CAP[stage]) bad(`cap ${m.cap} above the stage cap ${STAGE_CAP[stage]}`)
+	if (m.items.length > m.cap) bad(`${m.items.length} items above its cap ${m.cap}`)
+	const ns = new Set<number>()
+	for (const it of m.items) {
+		if (ns.has(it.n)) bad(`duplicate item #${it.n}`)
+		ns.add(it.n)
+		if (!/^NSE:[A-Z0-9&_.-]+-(EQ|INDEX)$/.test(it.symbol)) bad(`bad symbol ${it.symbol}`)
+		const span = (Date.parse(`${it.to}T00:00:00Z`) - Date.parse(`${it.from}T00:00:00Z`)) / 86_400_000
+		if (!(span >= 0 && span < 100)) bad(`#${it.n} spans ${span} days`)
+		if (stage === 'A' && (it.from < STAGE_A_DATES.from || it.to > STAGE_A_DATES.to)) bad(`#${it.n} outside the Stage A sessions`)
+		if (stage === 'B' && it.to >= STAGE_A_DATES.from) bad(`#${it.n} overlaps Stage A`)
+	}
+}
+
 /** Runs the manifest under every guard; returns how many requests were sent and why it stopped. */
 export const runFetch = async (o: FetchOptions): Promise<{ sent: number; completed: number; stopped: string }> => {
 	const now = o.now ?? Date.now
-	if (!(o.maxRequests > 0) || o.maxRequests > o.manifest.cap) throw new StopRun(`max requests ${o.maxRequests} must be 1..${o.manifest.cap} (the manifest cap)`)
+	const stage = o.manifest.stage
+	validateManifest(o.manifest, stage)
+	const cap = Math.min(o.manifest.cap, STAGE_CAP[stage])
+	if (!(o.maxRequests > 0) || o.maxRequests > cap) throw new StopRun(`max requests ${o.maxRequests} must be 1..${cap} (stage ${stage} cap)`)
+	if (!APPROVED_DATES[stage].includes(o.window.date)) throw new StopRun(`${o.window.date} is not an approved date for stage ${stage}: nothing sent`)
+	const priorSent = o.sentBefore ?? 0 // sends of earlier processes for this stage, failed ones included
 	const inWindow = () => {
 		const p = istParts(now())
 		return p.date === o.window.date && p.minutes >= o.window.fromMin && p.minutes < o.window.toMin
 	}
 	if (!inWindow()) throw new StopRun(`outside the approved window (${o.window.date} ${o.window.fromMin}–${o.window.toMin} min IST): nothing sent`)
+	if (priorSent >= o.maxRequests) return { sent: 0, completed: 0, stopped: `hard cap of ${o.maxRequests} already used by earlier runs (${priorSent} sent)` }
 	// Strictest settings: one throttle stops the day's run, no automatic retry inside the gate.
 	const gate = createQuotaGate({
 		job: 'backtest',
@@ -85,31 +121,48 @@ export const runFetch = async (o: FetchOptions): Promise<{ sent: number; complet
 	})
 	let sent = 0
 	let completed = 0
+	class WindowClosed extends Error {}
+	class CapReached extends Error {}
 	for (const item of o.manifest.items) {
 		if (o.done.has(item.n)) continue
 		for (let attempt = 1; ; attempt++) {
-			if (sent >= o.maxRequests) return { sent, completed, stopped: `hard cap of ${o.maxRequests} requests reached` }
+			if (priorSent + sent >= o.maxRequests) return { sent, completed, stopped: `hard cap of ${o.maxRequests} requests reached` }
 			if (!inWindow()) return { sent, completed, stopped: 'approved window ended' }
+			let res: Awaited<ReturnType<HistoryFn>>
 			try {
-				const res = await gate.call(async () => {
+				res = await gate.call(async () => {
+					// Re-checked here: pacing or a cooldown inside the gate may have slept past the window's end.
+					if (!inWindow()) throw new WindowClosed()
+					if (priorSent + sent >= o.maxRequests) throw new CapReached()
 					sent++
-					return o.history({ symbol: item.symbol, resolution: o.manifest.resolution, date_format: '1', range_from: item.from, range_to: item.to, cont_flag: '1' })
+					o.onSent?.(priorSent + sent)
+					const r = await o.history({ symbol: item.symbol, resolution: o.manifest.resolution, date_format: '1', range_from: item.from, range_to: item.to, cont_flag: '1' })
+					// A body-level error is thrown INSIDE the gate, so its throttle / daily-limit handling sees it (finding 8).
+					if (r.s !== 'ok' && r.s !== 'no_data') throw r
+					return r
 				})
-				if (res.s !== 'ok' && res.s !== 'no_data') throw res
-				const bars = res.s === 'ok' && res.candles ? toBars(res.candles) : []
-				o.onBars(item, bars)
-				o.onDone(item)
-				completed++
-				o.log(`#${item.n} ${item.symbol} ${item.from}..${item.to} ok bars=${bars.length}`)
-				break
 			} catch (err) {
+				if (err instanceof WindowClosed) return { sent, completed, stopped: 'approved window ended' }
+				if (err instanceof CapReached) return { sent, completed, stopped: `hard cap of ${o.maxRequests} requests reached` }
 				if (isAuthFailure(err)) return { sent, completed, stopped: `auth error on #${item.n} (${safeErr(err)}): stopped` }
 				if (err instanceof QuotaStopError) return { sent, completed, stopped: `quota gate stop on #${item.n}: ${err.constructor.name}` }
 				const throttle = /429|1015|-360|rate|limit/i.test(String((err as { message?: string })?.message ?? '')) || [429, -429, -360].includes(Number((err as { code?: number })?.code))
 				if (throttle) return { sent, completed, stopped: `throttled on #${item.n} (${safeErr(err)}): stopped` }
 				o.log(`#${item.n} ${item.symbol} failed attempt ${attempt} (${safeErr(err)})`)
 				if (attempt >= 2) return { sent, completed, stopped: `#${item.n} failed twice: stopped` }
+				continue
 			}
+			try {
+				const bars = res.s === 'ok' && res.candles ? toBars(res.candles) : []
+				o.onBars(item, bars)
+				o.onDone(item)
+				completed++
+				o.log(`#${item.n} ${item.symbol} ${item.from}..${item.to} ok bars=${bars.length}`)
+			} catch {
+				// Saving failed: stop rather than re-send a request that already succeeded (finding 9).
+				return { sent, completed, stopped: `#${item.n} could not be saved: stopped` }
+			}
+			break
 		}
 	}
 	return { sent, completed, stopped: 'manifest complete' }
@@ -139,6 +192,10 @@ const main = async (): Promise<void> => {
 	const manifest = JSON.parse(fs.readFileSync(path.join(dir, `manifest_${stage}.json`), 'utf8')) as Manifest
 	const progressFile = path.join(dir, `fetch_progress_${stage}.json`)
 	const done = new Set<number>(fs.existsSync(progressFile) ? (JSON.parse(fs.readFileSync(progressFile, 'utf8')) as number[]) : [])
+	// Every send of this stage, by any process, failed ones included: the hard cap is per stage, not per run.
+	const sentFile = path.join(dir, `fetch_sent_${stage}.json`)
+	const sentBefore = fs.existsSync(sentFile) ? Number((JSON.parse(fs.readFileSync(sentFile, 'utf8')) as { sent: number }).sent) : 0
+	if (!Number.isInteger(sentBefore) || sentBefore < 0) throw new Error(`${sentFile} is unreadable: refusing to run`)
 	const cacheDir = path.join(dir, 'cache', 'res-1')
 	fs.mkdirSync(cacheDir, { recursive: true })
 	const logFile = path.join(dir, 'logs', `fetch_${stage}.log`)
@@ -157,6 +214,8 @@ const main = async (): Promise<void> => {
 		ledger: new FileLedger(path.join(dir, 'quota-ledger.json')),
 		quota: loadQuotaConfig(),
 		done,
+		sentBefore,
+		onSent: (total) => fs.writeFileSync(sentFile, JSON.stringify({ sent: total, at: new Date().toISOString() })),
 		onBars: (item, bars) => mergeSave(path.join(cacheDir, `${safeFileName(item.symbol)}.json`), item.symbol, bars),
 		onDone: (item) => {
 			done.add(item.n)
@@ -164,7 +223,7 @@ const main = async (): Promise<void> => {
 		},
 		log,
 	})
-	log(`STOP sent=${r.sent} completed=${r.completed} reason=${r.stopped}`)
+	log(`STOP sent=${r.sent} (stage total ${sentBefore + r.sent}) completed=${r.completed} reason=${r.stopped}`)
 	console.log(JSON.stringify({ stage, ...r, remaining: manifest.items.length - done.size }))
 }
 

@@ -11,7 +11,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { NIFTY_SYMBOL } from '../config.js'
-import { istDateStringOf } from '../core/clock.js'
+import { istDateStringOf, istMinutesOf } from '../core/clock.js'
 import { safeFileName } from '../data/store.js'
 import { readSeriesFile } from './liveRun.js'
 
@@ -22,6 +22,18 @@ export interface ManifestItem { n: number; symbol: string; from: string; to: str
 export interface Manifest { stage: 'A' | 'B'; createdAt: string; resolution: '1'; cap: number; items: ManifestItem[] }
 
 const dayMs = (d: string) => Date.parse(`${d}T00:00:00Z`)
+
+/** Sessions that are complete in a cached series: at least 370 one-minute bars and a bar at 15:29 IST. */
+export const fullSessionDays = (bars: { t: number }[]): Set<string> => {
+	const n = new Map<string, number>()
+	const closed = new Set<string>()
+	for (const b of bars) {
+		const d = istDateStringOf(b.t)
+		n.set(d, (n.get(d) ?? 0) + 1)
+		if (istMinutesOf(b.t) === 15 * 60 + 29) closed.add(d)
+	}
+	return new Set([...n].filter(([d, k]) => k >= 370 && closed.has(d)).map(([d]) => d))
+}
 
 /** Cut sorted session days into windows whose span (first..last) is < MAX_WINDOW_DAYS calendar days. */
 export const windowsOf = (days: string[]): { from: string; to: string; sessions: number }[] => {
@@ -64,6 +76,7 @@ const main = (): void => {
 	const stage = arg('stage')
 	const cap = Number(arg('cap'))
 	if (stage !== 'A' && stage !== 'B') throw new Error('--stage A|B')
+	if (stage === 'B' && process.env.BT6M_STAGE_B_APPROVED !== 'yes') throw new Error('Stage B is blocked until the owner approves it after the parity result')
 	if (!Number.isInteger(cap) || cap <= 0) throw new Error('--cap <n> is required')
 	const file = path.join(dir, `manifest_${stage}.json`)
 	if (fs.existsSync(file)) throw new Error(`${file} exists — a manifest is fixed once written`)
@@ -73,7 +86,8 @@ const main = (): void => {
 		for (const s of [...l.symbols, NIFTY_SYMBOL]) (need.get(s) ?? need.set(s, []).get(s)!).push(l.forSession)
 	}
 	const oldCache = path.resolve(process.cwd(), 'backtest', 'data', 'cache', 'res-1')
-	const cachedDays = (s: string) => new Set(readSeriesFile(path.join(oldCache, `${safeFileName(s)}.json`)).map((b) => istDateStringOf(b.t)))
+	// A day counts as cached only when it is a full session there (≥ 370 bars and a 15:29 bar), so a partial day is re-fetched.
+	const cachedDays = (s: string) => fullSessionDays(readSeriesFile(path.join(oldCache, `${safeFileName(s)}.json`)))
 	const m = buildManifest(need, cachedDays, stage, cap, new Date().toISOString())
 	fs.writeFileSync(file, JSON.stringify(m, null, 1))
 	console.log(JSON.stringify({ stage, requests: m.items.length, symbols: new Set(m.items.map((i) => i.symbol)).size, cap, file }))

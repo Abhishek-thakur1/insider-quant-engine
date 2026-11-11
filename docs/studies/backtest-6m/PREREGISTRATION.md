@@ -398,3 +398,70 @@ The filter has no Nifty point limits; its EV slippage is 5 bps of price.
   - **Equivalence test:** with `close(t−1)` equal to the reference close, each copy must reproduce the live
     class's fires and block reasons exactly on the cached history.
   - **Approval:** this is a separate PR, for the owner to approve. It isn't in #73.
+
+## Amendment 3: fill rules made explicit, and the review fixes (11 Nov 2026, before any run or Fyers request)
+
+Not based on any result. Nothing has been fetched and no session has been replayed for results. Prompted by the
+owner (the gap-through rule) and by the independent review of PR #73 (PASS WITH FIXES). Each rule is pinned by a
+test in `tests/bt6m.test.ts`.
+
+**Gap-through rule (owner, 11 Nov).**
+- **The rule:** if a candle **opens beyond** an open position's stop or target, the position fills **at the
+  open**, not at the stop or target price.
+- **How:** a bar's open goes to the live tracker as it is, with no level tick between the previous price and the
+  open. Level ticks (amendment 1) are inserted only **within** a bar, between its own ticks.
+- **Supersedes:** this replaces the cross-bar level ticks of the first implementation. Those filled a gapped stop
+  at the stop price, contrary to amendment 1's own wording.
+- **Tests:** a stop at 498 with the next candle opening at 496 fills at **496**. A target at 503 with a candle
+  opening at 505 fills at **505**.
+
+**Same-bar rule on the entry bar (review finding 1).**
+- **The problem:** amendment 1's path was fixed at the bar's first tick. A position that opens **on** that tick
+  missed the rule.
+- **The fix:** if a position opens on a bar's open tick and has both levels inside the rest of that bar, the two
+  remaining extremes are reordered so the adverse one comes first. The open and the close never move.
+- **Test:** a LONG entered at the open of a bearish candle that holds both levels fills at the stop (498), not
+  the target.
+- **Tie-break (finding 11):** when positions on opposite sides both qualify, the one whose stop is nearest the
+  open (or the current price) decides the order.
+
+**Circuit-lock bars (finding 3).**
+- **The rule (§3):** a bar with zero range and volume isn't given to the tracker, so no stop fills on it.
+  Detectors still see it.
+- **Then:** the position fills on the next tradable bar, at its open if that gaps beyond the level.
+- **Test:** a lock at 490, then a 491 open, fills at **491** on the next bar.
+
+**Time order (finding 5).** Synthetic ticks are merged across symbols by (timestamp, symbol), not bar by bar, so no
+symbol sees another's later tick of the same minute.
+
+**Nifty minute state (finding 7d).** As live, `onNiftyTick` isn't awaited before the bias check, so a minute-closing
+tick reads the previous session reference.
+
+**Parity gate, refined (findings 7a, 12):**
+- **Anomaly promotions:** live fires with `promotion_source = 'ANOMALY'` aren't modelled. They're left out of the
+  denominator and reported as a count. The 4–9 Nov rows have none.
+- **Stop check:** the stop comparison uses the **live paper stop** (`paper_trades.stop_price` via `signals.trade_id`)
+  against the backtest paper stop, as a median and 90th-percentile absolute difference in bps of entry. This
+  replaces the VWAP-snapshot comparison named in §6. It is reported, not part of PASS.
+- **PASS is unchanged:** ≥ 80% of live fires matched, and a median score difference within ±3.
+
+**Fetch guards, in code, not configuration (findings 4, 8, 9, 13):**
+- **Stage A:** cap **159 per stage**, counted across runs, failed sends included (persisted). The only approved
+  date is **2026-11-16**, and the window, 16:15 ≤ IST < 17:00, is re-checked right before each send.
+- **Manifest:** refused unless the stage, resolution (1-min), cap, windows (< 100 days) and dates match Stage A.
+- **Stage B:** cap **0** until the owner approves it, so it can't be fetched, or even have a manifest written,
+  without a code change.
+- **Errors:** body-level errors are thrown inside the quota gate, so throttles are recorded in the ledger. A
+  failed save stops the run instead of re-sending.
+- **Cache:** a cached day counts only if it's a full session (≥ 370 bars, with a 15:29 bar).
+
+**Settings pinned (finding 10):**
+- the 28 Apr `fyersUniverse.json` blob is hard-coded;
+- each as-of day must be the previous trading session;
+- the live flags must be at their live values and are recorded in `run.json`: daily cap 20, VWAP session gate on,
+  15:15 timer on, EV shadow on, ₹100k REDUCE.
+
+**Known and stated, not modelled:**
+- **Pre-open Nifty ticks:** live boots at 09:00 and feeds them to the regime returns; history starts at 09:15.
+- **Zero-volume quotes:** the live 15:15 sweep uses them as last prices. A symbol with no bar in the last
+  120 seconds before 15:15 isn't swept here, so it stays open and is reported in `stillOpenSymbols`.

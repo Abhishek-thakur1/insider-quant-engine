@@ -13,9 +13,21 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { runBhavScan } from '../../src/screener/bhavcopy.js'
+import { loadHolidays, tradingDayVerdict } from '../../src/core/sessionGuard.js'
+
+/** The trading session before `day` (weekends and scheduler/nse_holidays.txt skipped). */
+export const previousTradingDay = (day: string, holidays: Set<string>): string => {
+	let t = Date.parse(`${day}T00:00:00Z`)
+	for (let i = 0; i < 15; i++) {
+		t -= 86_400_000
+		const d = new Date(t).toISOString().slice(0, 10)
+		if (tradingDayVerdict(d, holidays).trading) return d
+	}
+	throw new Error(`no trading day within 15 days before ${day}`)
+}
 
 /** git blob SHA-1 of fyersUniverse.json at ac7e962 (28 Apr 2026): the file the live Fyers check used. */
-export const FYERS_UNIVERSE_BLOB_AC7E962 = process.env.BT6M_FYERS_BLOB ?? ''
+export const FYERS_UNIVERSE_BLOB_AC7E962 = '6ed579b57527f03e10f46dbd545559bb62e3978b' // git rev-parse ac7e962:fyersUniverse.json
 export const FYERS_UNIVERSE_AS_OF = '2026-04-28'
 
 export const gitBlobSha1 = (buf: Buffer): string =>
@@ -39,8 +51,7 @@ const main = async (): Promise<number> => {
 	if (!dir) throw new Error('set BT6M_DIR')
 	const uniBuf = fs.readFileSync(path.resolve(process.cwd(), 'fyersUniverse.json'))
 	const blob = gitBlobSha1(uniBuf)
-	if (!FYERS_UNIVERSE_BLOB_AC7E962 || blob !== FYERS_UNIVERSE_BLOB_AC7E962)
-		throw new Error(`fyersUniverse.json blob ${blob} is not the ac7e962 file (set BT6M_FYERS_BLOB from \`git rev-parse ac7e962:fyersUniverse.json\`)`)
+	if (blob !== FYERS_UNIVERSE_BLOB_AC7E962) throw new Error(`fyersUniverse.json blob ${blob} is not the ac7e962 file (28 Apr): refusing — use \`git show ac7e962:fyersUniverse.json\``)
 	const fyers = { file: 'fyersUniverse.json', asOf: FYERS_UNIVERSE_AS_OF, symbols: new Set(JSON.parse(uniBuf.toString('utf8')) as string[]) }
 	const core = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'config', 'daily_watchlist_core.json'), 'utf8')) as string[]
 	const outDir = path.join(dir, 'lists')
@@ -48,7 +59,10 @@ const main = async (): Promise<number> => {
 
 	const summary: { session: string; asOf: string; kind: string; stocks?: number; dropped?: number; reason?: string }[] = []
 	const rotatingUnion = new Map<string, number>()
+	const holidays = loadHolidays()
+	if (!holidays) throw new Error('holiday file unreadable')
 	for (const { session, asOf } of readAsofDays(path.join(dir, 'asof_days.txt'))) {
+		if (previousTradingDay(session, holidays) !== asOf) throw new Error(`as-of ${asOf} is not the trading session before ${session}`)
 		const zipPath = path.join(dir, 'bhav', `${asOf}.csv.zip`)
 		const r = await runBhavScan({
 			asOf,
