@@ -477,7 +477,7 @@ test('same-bar tie-break and entry-bar reorder', () => {
 })
 
 // ── end to end: a synthetic session through the live pipeline ───────────────
-test('live session: fires go through runAlertPipeline, the tracker closes equity positions by 15:15, no unknown SQL', async () => {
+test('live session smoke: the real detector stack on synthetic data runs through the pipeline without errors or unknown SQL', async () => {
 	const DATE = '2026-03-02'
 	const { uninstall } = installMemoryRedis()
 	const { store: paper, uninstall: unPg } = installMemoryPg()
@@ -499,6 +499,7 @@ test('live session: fires go through runAlertPipeline, the tracker closes equity
 		})
 		console.log = log
 		assert.deepEqual(r.errors, [])
+		assert.ok(r.signals.length >= 1, 'the real detectors fired at least once on the synthetic session')
 		assert.equal(paper.unknown.length, 0, 'only the tracker statements reached the pg stand-in')
 		assert.equal(r.channelMessages <= 20, true, 'the daily cap holds')
 		// every paper row came from a signals row with a trade id, and every equity row is closed or skipped

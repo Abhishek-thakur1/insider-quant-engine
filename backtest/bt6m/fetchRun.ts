@@ -21,7 +21,8 @@ import path from 'node:path'
 import fyers from 'fyers-api-v3'
 import { createQuotaGate, FileLedger, loadQuotaConfig, QuotaStopError, type QuotaConfig, type QuotaLedger } from '../../src/fyers/quota.js'
 import { safeFileName, type Bar } from '../data/store.js'
-import type { Manifest, ManifestItem } from './fetchPlan.js'
+import { STAGE_CAP, type Manifest, type ManifestItem } from './fetchPlan.js'
+export { STAGE_CAP }
 import { readSeriesFile } from './liveRun.js'
 
 export type HistoryRequest = { symbol: string; resolution: string; date_format: string; range_from: string; range_to: string; cont_flag: string }
@@ -71,7 +72,6 @@ export const toBars = (candles: unknown[][]): Bar[] =>
 	candles.map((c) => ({ t: (c[0] as number) * 1000, o: c[1] as number, h: c[2] as number, l: c[3] as number, c: c[4] as number, v: c[5] as number }))
 
 /** Owner decisions (10 Nov): the stage caps and approved dates are code, not configuration (review finding 4, 9). */
-export const STAGE_CAP: Record<'A' | 'B', number> = { A: 159, B: 0 }
 export const APPROVED_DATES: Record<'A' | 'B', string[]> = { A: ['2026-11-16'], B: [] }
 export const STAGE_A_DATES = { from: '2026-11-04', to: '2026-11-09' } as const
 
@@ -190,6 +190,7 @@ const main = async (): Promise<void> => {
 	if (!dir || (stage !== 'A' && stage !== 'B') || !date || !tokenFile || !appIdFile) throw new Error('set BT6M_DIR, BT6M_STAGE, BT6M_MAX_REQUESTS, BT6M_WINDOW_DATE, BT6M_TOKEN_FILE, BT6M_APP_ID_FILE')
 	if (stage === 'B' && process.env.BT6M_STAGE_B_APPROVED !== 'yes') throw new Error('Stage B is blocked until the owner approves it after the parity result')
 	const manifest = JSON.parse(fs.readFileSync(path.join(dir, `manifest_${stage}.json`), 'utf8')) as Manifest
+	validateManifest(manifest, stage) // against the stage asked for, not the file's own claim
 	const progressFile = path.join(dir, `fetch_progress_${stage}.json`)
 	const done = new Set<number>(fs.existsSync(progressFile) ? (JSON.parse(fs.readFileSync(progressFile, 'utf8')) as number[]) : [])
 	// Every send of this stage, by any process, failed ones included: the hard cap is per stage, not per run.

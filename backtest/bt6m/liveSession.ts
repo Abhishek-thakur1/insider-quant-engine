@@ -349,7 +349,7 @@ export const runLiveSession = async (inp: LiveSessionInputs): Promise<LiveSessio
 			if (isNifty) {
 				// Live doesn't await onNiftyTick (websocket.ts), so the bias reads the PREVIOUS reference on a
 				// minute-closing tick; the promise is awaited only after the tick, for determinism (finding 7d).
-				const minute = onNiftyTick(price, ts)
+				const minute = onNiftyTick(price, ts).catch((e) => void errors.push(`onNiftyTick: ${(e as Error)?.message ?? e}`))
 				const ref = getLastNiftyVwap()
 				if (ref > 0) await updateNiftyBias(price, ref)
 				feedTick(NIFTY_SYMBOL, price, liveTick.volume)
@@ -358,7 +358,7 @@ export const runLiveSession = async (inp: LiveSessionInputs): Promise<LiveSessio
 					await analyze(d, liveTick)
 					await drain()
 				}
-				await minute.catch((e) => errors.push(`onNiftyTick: ${(e as Error)?.message ?? e}`))
+				await minute
 			} else {
 				await updateSessionVwap(symbol, price, liveTick.volume, ts, Math.floor(ts / 1000))
 				feedTick(symbol, price, liveTick.volume)

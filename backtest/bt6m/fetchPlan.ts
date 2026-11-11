@@ -15,6 +15,8 @@ import { istDateStringOf, istMinutesOf } from '../core/clock.js'
 import { safeFileName } from '../data/store.js'
 import { readSeriesFile } from './liveRun.js'
 
+/** Owner decisions (10 Nov), in code: Stage A at most 159 requests; Stage B 0 until the owner approves it. */
+export const STAGE_CAP: Record<'A' | 'B', number> = { A: 159, B: 0 }
 export const MAX_WINDOW_DAYS = 100 // Fyers: "Up to 100 days of data per request" for minute resolutions
 export const STAGE_A = { from: '2026-11-04', to: '2026-11-09' } as const
 
@@ -76,7 +78,7 @@ const main = (): void => {
 	const stage = arg('stage')
 	const cap = Number(arg('cap'))
 	if (stage !== 'A' && stage !== 'B') throw new Error('--stage A|B')
-	if (stage === 'B' && process.env.BT6M_STAGE_B_APPROVED !== 'yes') throw new Error('Stage B is blocked until the owner approves it after the parity result')
+	if (cap > STAGE_CAP[stage]) throw new Error(`--cap ${cap} is above the stage ${stage} cap of ${STAGE_CAP[stage]}${stage === 'B' ? ' (Stage B is blocked until the owner approves it; changing that needs a code change)' : ''}`)
 	if (!Number.isInteger(cap) || cap <= 0) throw new Error('--cap <n> is required')
 	const file = path.join(dir, `manifest_${stage}.json`)
 	if (fs.existsSync(file)) throw new Error(`${file} exists — a manifest is fixed once written`)

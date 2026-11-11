@@ -24,7 +24,7 @@ const DAY_MS = 86_400_000
 export const LIVE_ENV = { SHADOW_MODE: 'true', CONFIRMATION_THRESHOLD: '78' } as const
 /** Live defaults (src/config/env.ts); the server's .env sets neither (checked 10 Nov). */
 export const LIVE_CAPITAL = { capitalBase: 100_000, capitalBehavior: 'REDUCE' } as const
-/** Flags whose live value is their default (the server .env leaves them unset); asserted and recorded in run.json. */
+/** Live values of flags a local .env could change (EV_SHADOW_ENABLED is 'true' on the server; the rest are unset there = default). Asserted unset-or-equal and recorded in run.json; the harness always runs EV shadow. */
 export const LIVE_DEFAULTS = { TELEGRAM_MAX_ALERTS_PER_DAY: '20', VWAP_SESSION_GATE: 'true', SQUARE_OFF_TIMER: 'true', EV_SHADOW_ENABLED: 'true', NIFTY_DIAG_ENABLED: 'true', PAPER_CAPITAL_BASE: '100000', CAPITAL_CONSTRAINT_BEHAVIOR: 'REDUCE' } as const
 
 export interface DayList { forSession: string; symbols: string[]; entries: { symbol: string; group: 'core' | 'rotating'; pick?: 'score' | 'turnover' }[] }
