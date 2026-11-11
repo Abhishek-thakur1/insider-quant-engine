@@ -83,7 +83,13 @@ const main = async (): Promise<void> => {
 
 	const out = path.join(dir, 'runs', label)
 	fs.mkdirSync(out, { recursive: true })
-	const w = (f: string) => fs.createWriteStream(path.join(out, f), { flags: 'w' })
+	// Synchronous appends: the replay never yields to the event loop's I/O phase, so write streams would never open and
+	// process.exit would drop their buffers (found 11 Nov in niftyThresholds.ts). Each file is truncated first.
+	const w = (f: string) => {
+		const file = path.join(out, f)
+		fs.writeFileSync(file, '')
+		return { write: (line: string) => fs.appendFileSync(file, line), end: () => {} }
+	}
 	const sigOut = w('signals.jsonl')
 	const paperOut = w('paper.jsonl')
 	const evOut = w('ev_shadow.jsonl')

@@ -136,7 +136,10 @@ const main = async (): Promise<number> => {
 	const { uninstall: unRedis } = installMemoryRedis()
 	const { store: paper, uninstall: unPg } = installMemoryPg()
 	const unClock = installVirtualClock(istEpoch(sessions[0]!.day, 9 * 60))
-	const w = out ? fs.createWriteStream(out, { flags: 'w' }) : null
+	// Synchronous appends: the replay never yields to the event loop's I/O phase, so a write stream would never open
+	// and process.exit would drop its buffer (found 11 Nov: P and V produced no file). See also liveRun.ts.
+	if (out) fs.writeFileSync(out, '')
+	const w = out ? { write: (line: string) => fs.appendFileSync(out, line) } : null
 	const log = console.log
 	const warn = console.warn
 	let mismatches = 0
@@ -203,7 +206,6 @@ const main = async (): Promise<number> => {
 		}
 	} finally {
 		console.log = log
-		w?.end()
 		unClock()
 		unPg()
 		unRedis()
