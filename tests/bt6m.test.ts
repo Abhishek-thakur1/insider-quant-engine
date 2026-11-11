@@ -515,3 +515,62 @@ test('live session smoke: the real detector stack on synthetic data runs through
 		uninstall()
 	}
 })
+
+// ── Nifty threshold study (docs/studies/nifty-thresholds): index exits and the ORE variant ──────────
+test('index exit: the 6-month fill rules — level fill, gap at the open, stop first on the fire bar, 15:15 TIME', async () => {
+	const { simulateIndexExit, vCaps, LIVE_CAPS, OR20_REF } = await import('../backtest/bt6m/niftyThresholds.js')
+	const D = '2026-03-06'
+	const t = (m: number) => clock.istEpoch(D, m)
+	const sq = t(15 * 60 + 15)
+	const mk = (from: number, rows: [number, number, number, number][]) => rows.map(([o, h, l, c], i) => bar(o, h, l, c, t(from + i), 0))
+	// LONG entry 24000, stop 23950, target 24075; fire on the 10:00 bar's tick 1.
+	const fire = t(600) + 15_000
+	// level fill: the 10:01 bar falls through the stop between its ticks → 23950
+	assert.deepEqual(simulateIndexExit(mk(600, [[24000, 24010, 23990, 24005], [24005, 24006, 23900, 23920]]), fire, 'LONG', 24000, 23950, 24075, sq).exit, 23950)
+	// gap: the 10:01 bar opens at 23930, beyond the stop → filled at the open
+	const g = simulateIndexExit(mk(600, [[24000, 24010, 23990, 24005], [23930, 23940, 23920, 23935]]), fire, 'LONG', 24000, 23950, 24075, sq)
+	assert.deepEqual([g.reason, g.exit], ['STOP_LOSS', 23930])
+	// fire on the OPEN tick of a bearish bar holding both levels → stop first (default path would reach 24080 first)
+	const e = simulateIndexExit(mk(600, [[24000, 24080, 23940, 23990]]), t(600), 'LONG', 24000, 23950, 24075, sq)
+	assert.deepEqual([e.reason, e.exit], ['STOP_LOSS', 23950])
+	// nothing hit: the 15:15 timer closes at the last price (the 15:14 close)
+	const rows: [number, number, number, number][] = []
+	for (let m = 600; m < 15 * 60 + 30; m++) rows.push([24000, 24010, 23990, 24001])
+	const z = simulateIndexExit(mk(600, rows), fire, 'LONG', 24000, 23950, 24075, sq)
+	assert.deepEqual([z.reason, z.exit], ['TIME', 24001])
+	// SHORT target filled at the level
+	const s = simulateIndexExit(mk(600, [[24000, 24010, 23990, 24005], [24005, 24006, 23900, 23920]]), fire, 'SHORT', 24000, 24050, 23925, sq)
+	assert.deepEqual([s.reason, s.exit], ['TARGET', 23925])
+	// V's caps equal the live ones when OR20 = the reference
+	assert.deepEqual(vCaps(OR20_REF), LIVE_CAPS)
+	assert.deepEqual(vCaps(OR20_REF * 1.5), { range: 180, risk: 120 })
+})
+
+test('ORE variant at caps 120/80 reproduces the live class (signals and every ORE block record)', async () => {
+	const { NiftyOreVariant } = await import('../backtest/bt6m/oreVariant.js')
+	const { decision } = await import('./helpers/workerScenarios.js')
+	const log = console.log
+	for (const [DATE, base] of [['2026-03-09', 24000], ['2026-03-10', 23000], ['2026-03-11', 25000]] as const) {
+		const { uninstall } = installMemoryRedis()
+		const { store: paper, uninstall: unPg } = installMemoryPg()
+		const off = clock.installVirtualClock(clock.istEpoch(DATE, 9 * 60))
+		console.log = () => {}
+		try {
+			const bars = new Map([[NIFTY_SYMBOL, syntheticIndexSession(DATE, base)]])
+			const go = (ore?: () => InstanceType<typeof NiftyOreVariant>) =>
+				runLiveSession({ sessionDate: DATE, barsBySymbol: bars, entries: [], paper, config: { capitalBase: 100_000, capitalBehavior: 'REDUCE' }, testHooks: { runFilter: async () => decision() }, ...(ore ? { niftyOre: ore } : {}) })
+			const a = await go()
+			const b = await go(() => new NiftyOreVariant({ range: 120, risk: 80 }))
+			const strip = (rows: Record<string, unknown>[]) => rows.map(({ signal_id: _x, trade_id: tid, ...r }) => ({ ...r, has_trade: tid !== null }))
+			assert.deepEqual(strip(b.signals as never), strip(a.signals as never), DATE)
+			const ore = (r: typeof a) => r.diagnostics.filter((d) => d.detector === 'Nifty Opening Range Explosion')
+			assert.deepEqual(ore(b), ore(a), DATE)
+			assert.ok(ore(a).length > 0, 'the ORE evaluated candles on the synthetic session')
+		} finally {
+			console.log = log
+			off()
+			unPg()
+			uninstall()
+		}
+	}
+})
