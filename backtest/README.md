@@ -10,6 +10,45 @@ Lives entirely under `backtest/`. Nothing here runs in production.
 
 ## Status
 
+> **Correction note, 2026-11-11 (dated; the text below is unchanged).** Checked against the live engine
+> (`src/ingestion/websocket.ts`, `src/workers/alertPipeline.ts`, `src/core/positionTracker.ts`) while building
+> the live-path replay (`backtest/bt6m/`, PR #73). How each committed output here is affected:
+>
+> **1. CE/PE symbol routing.** The substring test that sent RELIANCE, ULTRACEMCO, CEATLTD, BAJFINANCE and
+> KAJARIACER to the option branch was replaced by `endsWith`, in **both** live and `core/symbolClass.ts`, on
+> **2026-09-08** (`428215c`).
+> - Only `output/results_5m.json` / `backtest-report_5m.html` (generated 2026-09-07, `e170317`) excluded those 5
+>   names. That matched live at the time.
+> - Every later run includes them. "A live bug this work found" below describes the code as it was before
+>   8 Sep. The comment on it in `replay/engine.ts` is stale.
+>
+> **2. Session VWAP and the Nifty regime.**
+> - The harness calls the ungated `updateVwap` and pushes one Nifty return per bar. Live (from 2 Nov) uses
+>   the 09:15 session gate (#40), the last-trade-time gate (#68) and `onNiftyTick`.
+> - Fyers 1-minute history starts at 09:15. In the 91-symbol cache only **one day** (2026-09-07) has pre-09:15
+>   bars: 5 Nifty bars and 1 equity symbol-day. So the difference is **negligible for every committed output**.
+> - Whether Fyers' 09:15 bar includes the pre-open auction volume isn't documented. That applies to any replay
+>   of this data, old or new.
+>
+> **3. What does differ, and affects every R figure from `run.ts` → `replay/engine.ts` → `sim/exit.ts`:**
+> - **(a) The exit model.** Outcomes use the detector's trigger SL/T1 and 5 bps slippage per leg. Live tracks
+>   equities with stop = VWAP × 0.998 / × 1.002 and T1 = 1.5R (`computeTradeLevels`).
+>   - On the same signals the live stop was 0.02–0.05R less negative (edge-map REPORT §2). Same sign.
+>   - Nifty option-routed fires already use the trigger levels live too, so only the slippage differs for them.
+> - **(b) Not modelled:** capital sizing (₹100k REDUCE), the duplicate and one-per-symbol-side rules, the
+>   daily alert cap, EV shadow, and the 15:15 **timer** at the last price. The harness exits at the first bar
+>   at or after 15:15.
+> - **(c) A small look-ahead in signal generation.** Bars are merged bar by bar, so equities whose symbol
+>   sorts after `NSE:NIFTY50-INDEX` saw the full Nifty minute (up to 45 s ahead) in the Nifty bias the filter
+>   and SMB read. Effect: unmeasured, expected small.
+>
+> **Outputs affected: `results_5m.json` (1, 3a–c) and `results_nifty_baselines_5m.json` (3a slippage, 3b).**
+> - The conclusions stand as written: both reported negative expectancy, and none of 1–3 is large enough to be
+>   shown to flip a sign.
+> - None of these figures is a live-rule result. The live-path replay (`bt6m/`) supersedes them for that
+>   purpose once it passes its parity gate.
+
+
 > **Updated 2026-10-20.** The harness *has* since been run on market data elsewhere. Two outputs
 > are committed, and they disagree:
 > - `output/results_5m.json`: 365 sessions, 2025-03-17 → 2026-09-04, 91 symbols. Stock Momentum
