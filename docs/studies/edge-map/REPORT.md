@@ -1,5 +1,22 @@
 # Edge-map study: report
 
+> **Correction note, 2026-11-11 (dated; the report below is unchanged).** The signals were generated with the
+> old harness (`replay/engine.ts`), and the exits were re-simulated in `analyze.ts`. Checked against the live
+> path (PR #73):
+> - **CE/PE routing: not affected.** It was fixed in live and the harness on 2026-09-08, before this study.
+> - **Session VWAP and Nifty regime: negligible.** Only 1 cached day has pre-09:15 bars (see
+>   `backtest/README.md`).
+> - **What does differ:**
+>   - **(a) Gapped stops.** `simExit` fills a stop at the stop price even when a bar opens beyond it. Live, and
+>     the live-path replay (amendment 3), fill at that open. So S0–S3 stop exits are slightly optimistic on gaps.
+>   - **(b) The 15:15 exit** is the close of the first bar at or after 15:15. Live it's the 15:15 timer at the
+>     last price.
+>   - **(c) Not modelled:** capital sizing, the duplicate and one-per-symbol-side rules, and the daily alert cap.
+>   - **(d) A small look-ahead** in signal generation: bar-level merging let symbols sorting after Nifty see the
+>     full Nifty minute in the bias. Unmeasured, expected small.
+> - **The verdict ("no edge found") stands.** (a) and (d) can only have flattered the results, and they were
+>   negative anyway.
+
 **Verdict: no edge found.** No detector × side × time × regime × score cell shows a positive expectancy after costs, in the replay or in live paper trading. Higher scores do lose less, for SMB-LONG and VCP-LONG, but every score tier still loses. A wider ATR stop also loses less, mostly because costs are a smaller share of a wider stop. It doesn't create an edge.
 
 - **Pre-registration:** `PREREGISTRATION.md`, committed in `54cf86f` at 19:20 IST on 2026-10-23, before any analysis.

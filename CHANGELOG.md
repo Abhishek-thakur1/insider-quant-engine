@@ -2,6 +2,18 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## `docs/old-harness-notes-nifty-thresholds`: dated correction notes on old-harness outputs + Nifty threshold study pre-registration (owner, 11 Nov): docs only, nothing run
+
+- **Correction notes (dated 2026-11-11; original text and conclusions unchanged):** `backtest/README.md` (Status, covering `results_5m.json` and `results_nifty_baselines_5m.json`) and `docs/studies/edge-map/REPORT.md`.
+  - **CE/PE routing** was fixed in live and the harness on 2026-09-08. Only the 7 Sep `results_5m` excluded the 5 names.
+  - **Session VWAP and Nifty regime:** negligible. Only 1 cached day has pre-09:15 bars.
+  - **What differs:** the old exit model (trigger SL/T1 + slippage); sizing, duplicate rules, the cap and the 15:15 timer not modelled; gapped stops filled at the stop (edge-map); a small bar-merge look-ahead in the Nifty bias.
+  - **Verdicts stand.**
+- **`docs/studies/nifty-thresholds/PREREGISTRATION.md`:** ORE caps in points (live) vs scaled to the previous close (the amendment-2 reference, 23,631.75 on 2026-06-12).
+  - Reports signal counts, block reasons and index-move expectancy at a 10 bps cost proxy (5 and 20 bps sensitivity), labelled "not tradable as options".
+  - A volatility-scaled variant V (OR20 / 69.82) is included as a **proposal awaiting approval**.
+  - Not run. Its variant detector class isn't built (needs approval).
+
 ## `fix/daily-list-sources`: no meta-file warning on the daily list; daily-list promotion sources + migration 0008 (owner, 4 Nov): deployed 4 Nov ~20:20 IST (engine `01274fe52b94`, 0008 applied; first boot Thu 5 Nov)
 
 - **Warning:** the `watchlist_meta.json` age check (and its Telegram) runs only when the static list is in use. Its message names the static file actually loaded. On the daily list there is nothing to check: it is used only when it is for today.
