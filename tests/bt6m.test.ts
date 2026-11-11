@@ -574,3 +574,102 @@ test('ORE variant at caps 120/80 reproduces the live class (signals and every OR
 		}
 	}
 })
+
+// ── review of #75: ORE's fire path through the hook, a negative control, and the exit edge cases ──
+const oreSession = (DATE: string, close929: number): ReturnType<typeof bar>[] => {
+	// 09:15–09:19 inside 23990–24020 (range 30); 09:20–09:24 flat; 09:25 opens 24012 and climbs to close929 at 09:29.
+	const out: ReturnType<typeof bar>[] = []
+	for (let m = 9 * 60 + 15; m < 15 * 60 + 30; m++) {
+		const t = clock.istEpoch(DATE, m)
+		if (m < 9 * 60 + 20) out.push(bar(24005, 24020, 23990, 24005, t, 0))
+		else if (m < 9 * 60 + 25) out.push(bar(24006, 24008, 24004, 24006, t, 0))
+		else if (m < 9 * 60 + 30) {
+			const k = m - (9 * 60 + 25)
+			const o = 24012 + (k * (close929 - 24012)) / 5
+			const c = 24012 + ((k + 1) * (close929 - 24012)) / 5
+			out.push(bar(o, c + 1, o - 1, c, t, 0))
+		} else out.push(bar(close929, close929 + 2, close929 - 2, close929, t, 0))
+	}
+	return out
+}
+const runNifty = async (DATE: string, bars: ReturnType<typeof bar>[], ore?: () => import('../src/core/types.js').IDetector) => {
+	const { decision } = await import('./helpers/workerScenarios.js')
+	const { uninstall } = installMemoryRedis()
+	const { store: paper, uninstall: unPg } = installMemoryPg()
+	const off = clock.installVirtualClock(clock.istEpoch(DATE, 9 * 60))
+	const log = console.log
+	console.log = () => {}
+	try {
+		return await runLiveSession({ sessionDate: DATE, barsBySymbol: new Map([[NIFTY_SYMBOL, bars]]), entries: [], paper, config: { capitalBase: 100_000, capitalBehavior: 'REDUCE' }, testHooks: { runFilter: async () => decision() }, ...(ore ? { niftyOre: ore } : {}) })
+	} finally {
+		console.log = log
+		off()
+		unPg()
+		uninstall()
+	}
+}
+const oreSignals = (r: Awaited<ReturnType<typeof runNifty>>) => r.signals.filter((s) => s.detector === 'Nifty Opening Range Explosion')
+const oreReasons = (r: Awaited<ReturnType<typeof runNifty>>) => r.diagnostics.filter((d) => d.detector === 'Nifty Opening Range Explosion').map((d) => d.reason)
+
+test('ORE fires on a narrow-range breakout — live class and the 120/80 copy identically; a {0,0} copy does not (the hook is used)', async () => {
+	const { NiftyOreVariant } = await import('../backtest/bt6m/oreVariant.js')
+	const DATE = '2026-03-12'
+	const bars = oreSession(DATE, 24040) // risk = 24040 − (23990 − 5) = 55 ≤ 80
+	const live = await runNifty(DATE, bars)
+	const copy = await runNifty(DATE, bars, () => new NiftyOreVariant({ range: 120, risk: 80 }))
+	assert.equal(oreSignals(live).length, 1, 'ORE fired once (live class)')
+	assert.equal(oreSignals(live)[0]!.direction, 'LONG')
+	assert.equal(Number(oreSignals(live)[0]!.trigger_sl), 23985)
+	const strip = (rows: Record<string, unknown>[]) => rows.map(({ signal_id: _x, trade_id: tid, ...r }) => ({ ...r, has_trade: tid !== null }))
+	assert.deepEqual(strip(oreSignals(copy) as never), strip(oreSignals(live) as never))
+	assert.deepEqual(oreReasons(copy), oreReasons(live))
+	const zero = await runNifty(DATE, bars, () => new NiftyOreVariant({ range: 0, risk: 0 }))
+	assert.equal(oreSignals(zero).length, 0, 'caps {0,0}: no ORE fire')
+	assert.ok(oreReasons(zero).includes('range_too_wide'), 'caps {0,0}: blocked as range_too_wide')
+})
+
+test('ORE risk cap: blocked at 80 by the live class and the copy; fires under a wider copy cap', async () => {
+	const { NiftyOreVariant } = await import('../backtest/bt6m/oreVariant.js')
+	const DATE = '2026-03-13'
+	const bars = oreSession(DATE, 24090) // risk = 24090 − 23985 = 105 > 80
+	const live = await runNifty(DATE, bars)
+	const copy = await runNifty(DATE, bars, () => new NiftyOreVariant({ range: 120, risk: 80 }))
+	assert.equal(oreSignals(live).length, 0)
+	assert.ok(oreReasons(live).includes('risk_cap'))
+	assert.deepEqual(oreReasons(copy), oreReasons(live))
+	const wide = await runNifty(DATE, bars, () => new NiftyOreVariant({ range: 120, risk: 120 }))
+	assert.equal(oreSignals(wide).length, 1, 'risk cap 120: the same breakout fires')
+})
+
+test('index exit edge cases: fire on the last tick of a bar, at 15:15, session end, a price exactly at a level, SHORT gap, geometry', async () => {
+	const { simulateIndexExit, usableLevels } = await import('../backtest/bt6m/niftyThresholds.js')
+	const D = '2026-03-16'
+	const t = (m: number) => clock.istEpoch(D, m)
+	const sq = t(15 * 60 + 15)
+	const mk = (from: number, rows: [number, number, number, number][]) => rows.map(([o, h, l, c], i) => bar(o, h, l, c, t(from + i), 0))
+	// fire on tick 3 of the 10:00 bar: the next bar decides
+	const last = simulateIndexExit(mk(600, [[24000, 24010, 23990, 24005], [24005, 24080, 24000, 24070]]), t(600) + 45_000, 'LONG', 24000, 23950, 24075, sq)
+	assert.deepEqual([last.reason, last.exit], ['TARGET', 24075])
+	// a fire at 15:15: closed at once at the fire tick's price
+	const late = simulateIndexExit(mk(15 * 60 + 15, [[24010, 24020, 24000, 24015]]), t(15 * 60 + 15), 'LONG', 24000, 23950, 24075, sq)
+	assert.deepEqual([late.reason, late.exit], ['TIME', 24010])
+	// data ends before 15:15: the last price
+	const end = simulateIndexExit(mk(600, [[24000, 24010, 23990, 24005], [24005, 24008, 24001, 24003]]), t(600) + 15_000, 'LONG', 24000, 23950, 24075, sq)
+	assert.deepEqual([end.reason, end.exit], ['SESSION_END', 24003])
+	// a tick exactly at the stop fills there
+	const at = simulateIndexExit(mk(600, [[24000, 24010, 23990, 24005], [24005, 24006, 23950, 23960]]), t(600) + 15_000, 'LONG', 24000, 23950, 24075, sq)
+	assert.deepEqual([at.reason, at.exit], ['STOP_LOSS', 23950])
+	// SHORT: a bar opening above the stop fills at the open
+	const sg = simulateIndexExit(mk(600, [[24000, 24010, 23990, 24005], [24070, 24080, 24060, 24075]]), t(600) + 15_000, 'SHORT', 24000, 24050, 23925, sq)
+	assert.deepEqual([sg.reason, sg.exit], ['STOP_LOSS', 24070])
+	// the fire bar starts from the fire tick's price, not from the entry (finding 3): fired on the open tick 23940 (already
+	// beyond the stop); the bearish path's next tick is 23945 → STOP at 23945, as the live tracker (lastPx = 23940) would.
+	// Anchored at the entry (24000) it would have filled at a level tick of 23950 instead.
+	const anchor = simulateIndexExit(mk(600, [[23940, 23945, 23930, 23935]]), t(600), 'LONG', 24000, 23950, 24075, sq)
+	assert.deepEqual([anchor.reason, anchor.exit], ['STOP_LOSS', 23945])
+	assert.equal(usableLevels('LONG', 24000, 23950, 24075), true)
+	assert.equal(usableLevels('LONG', 24000, 24010, 24075), false, 'stop above a LONG entry')
+	assert.equal(usableLevels('SHORT', 24000, 24050, 23925), true)
+	assert.equal(usableLevels('LONG', 24000, 24000, 24075), false, 'stop equal to entry')
+	assert.equal(usableLevels('LONG', 24000, null, 24075), false)
+})

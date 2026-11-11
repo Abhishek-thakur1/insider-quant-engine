@@ -6,7 +6,7 @@
 // `risk > 80` (both sides), plus the `max` / `cap` numbers in their noteBlocked records — with `this.caps.range`
 // and `this.caps.risk`. Everything else (name, offsets, buffer, body rule, cooldown key, triggers, alert payload)
 // is identical, so with caps { range: 120, risk: 80 } it must reproduce the live class exactly: proven over every
-// cached session by backtest/bt6m/niftyThresholds.ts --equivalence, and by tests/bt6m.test.ts.
+// cached session by backtest/bt6m/niftyThresholds.ts --mode EQ, and by tests/bt6m.test.ts.
 // Never imported by src/. Live code is unchanged.
 // ============================================================
 

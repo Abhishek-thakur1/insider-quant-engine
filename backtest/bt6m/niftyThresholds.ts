@@ -46,6 +46,10 @@ const median = (xs: number[]): number => {
 
 export const vCaps = (or20: number): OreCaps => ({ range: LIVE_CAPS.range * (or20 / OR20_REF), risk: LIVE_CAPS.risk * (or20 / OR20_REF) })
 
+/** A fire is scored only with both levels on the right sides of entry (review of #75, finding 4). */
+export const usableLevels = (side: 'LONG' | 'SHORT', entry: number, sl: number | null, t1: number | null): boolean =>
+	sl !== null && t1 !== null && (side === 'LONG' ? sl < entry && entry < t1 : t1 < entry && entry < sl)
+
 export interface IndexExit { exit: number; reason: 'STOP_LOSS' | 'TARGET' | 'TIME' | 'SESSION_END'; exitTs: number }
 
 /**
@@ -62,6 +66,13 @@ export const simulateIndexExit = (bars: Bar[], fireTs: number, side: 'LONG' | 'S
 	let lastTs = fireTs
 	const b0 = bars.findIndex((b) => b.t <= fireTs && fireTs < b.t + 60_000)
 	if (b0 < 0) return { exit: entry, reason: 'SESSION_END', exitTs: fireTs }
+	// The live tracker's last price when the position registers is the FIRE TICK's price, not the candle close the
+	// detector reports as the entry (review of #75, finding 3). R stays measured from `entry`.
+	{
+		const k = Math.floor((fireTs - bars[b0]!.t) / STEP_MS)
+		const p0 = barPath(bars[b0]!, null).map((t) => t.price)
+		last = p0[Math.min(k, 3)]!
+	}
 	for (let bi = b0; bi < bars.length; bi++) {
 		const bar = bars[bi]!
 		let path = barPath(bar, bi === b0 ? null : sameBarSide(bar, [pos])).map((t) => t.price)
@@ -127,19 +138,26 @@ const main = async (): Promise<number> => {
 	const unClock = installVirtualClock(istEpoch(sessions[0]!.day, 9 * 60))
 	const w = out ? fs.createWriteStream(out, { flags: 'w' }) : null
 	const log = console.log
+	const warn = console.warn
 	let mismatches = 0
 	let compared = 0
+	let errorCount = 0
+	const eqCoverage = { oreSignals: 0, riskCap: 0, rangeTooWide: 0 }
 	try {
 		for (let si = WARMUP_SESSIONS; si < sessions.length; si++) {
 			const s = sessions[si]!
 			const prior = sessions.slice(si - WARMUP_SESSIONS, si).map((x) => x.or).filter((x): x is number => x !== null)
+			if (prior.length === 0) throw new Error(`${s.day}: no opening range in the 20 prior sessions — OR20 undefined`)
 			const or20 = median(prior)
+			if (!Number.isFinite(or20) || or20 <= 0) throw new Error(`${s.day}: OR20 ${or20} is not a positive number`)
 			const run = async (ore?: () => NiftyOreVariant) => {
 				console.log = () => {}
+				console.warn = () => {} // the tracker's "option position has no price" notes (expected: no option feed)
 				try {
 					return await runLiveSession({ sessionDate: s.day, barsBySymbol: new Map([[NIFTY_SYMBOL, s.bars]]), entries: [], paper, config: LIVE_CAPITAL, ...(ore ? { niftyOre: ore } : {}) })
 				} finally {
 					console.log = log
+					console.warn = warn
 				}
 			}
 			if (mode === 'EQ') {
@@ -150,6 +168,10 @@ const main = async (): Promise<number> => {
 				const da = JSON.stringify(a.diagnostics.filter((d) => d.detector === 'Nifty Opening Range Explosion'))
 				const db = JSON.stringify(b.diagnostics.filter((d) => d.detector === 'Nifty Opening Range Explosion'))
 				compared++
+				errorCount += a.errors.length + b.errors.length
+				eqCoverage.oreSignals += a.signals.filter((x) => (x as Record<string, unknown>).detector === 'Nifty Opening Range Explosion').length
+				eqCoverage.riskCap += a.diagnostics.filter((d) => d.detector === 'Nifty Opening Range Explosion' && d.reason === 'risk_cap').length
+				eqCoverage.rangeTooWide += a.diagnostics.filter((d) => d.detector === 'Nifty Opening Range Explosion' && d.reason === 'range_too_wide').length
 				if (JSON.stringify(sa) !== JSON.stringify(sb) || da !== db || a.errors.length || b.errors.length) {
 					mismatches++
 					if (mismatches <= 5) log(JSON.stringify({ session: s.day, signals: [sa.length, sb.length], diagEqual: da === db, errors: [a.errors.slice(0, 2), b.errors.slice(0, 2)] }))
@@ -158,6 +180,7 @@ const main = async (): Promise<number> => {
 			}
 			const caps = mode === 'P' ? LIVE_CAPS : vCaps(or20)
 			const r = await run(mode === 'V' ? () => new NiftyOreVariant(caps) : undefined)
+			errorCount += r.errors.length
 			const squareOffAt = istEpoch(s.day, 15 * 60 + 15)
 			const signals = r.signals.map((x) => {
 				const sig = x as Record<string, unknown>
@@ -165,17 +188,18 @@ const main = async (): Promise<number> => {
 				const t1 = sig.trigger_t1 == null ? null : Number(sig.trigger_t1)
 				const entry = Number(sig.price)
 				const side = sig.direction as 'LONG' | 'SHORT'
-				const outcome = sl !== null && t1 !== null && sl !== entry ? simulateIndexExit(s.bars, Date.parse(String(sig.fired_at)), side, entry, sl, t1, squareOffAt) : null
+				const geometryOk = usableLevels(side, entry, sl, t1)
+				const outcome = geometryOk ? simulateIndexExit(s.bars, Date.parse(String(sig.fired_at)), side, entry, sl!, t1!, squareOffAt) : null
 				const grossR = outcome ? ((side === 'LONG' ? outcome.exit - entry : entry - outcome.exit) / Math.abs(entry - sl!)) : null
 				return {
 					detector: sig.detector, direction: side, fired_at: sig.fired_at, price: entry, sl, t1, score: sig.score, filter_result: sig.filter_result,
 					rejected_at: sig.rejected_at, alert_sent: sig.alert_sent, alert_suppressed_reason: sig.alert_suppressed_reason,
-					riskPts: sl === null ? null : Math.abs(entry - sl), outcome, grossR,
+					riskPts: sl === null ? null : Math.abs(entry - sl), excluded: geometryOk ? null : sl === null || t1 === null ? 'no_levels' : 'invalid_geometry', outcome, grossR,
 				}
 			})
 			const diag: Record<string, number> = {}
 			for (const d of r.diagnostics) diag[`${d.detector}|${d.reason}`] = (diag[`${d.detector}|${d.reason}`] ?? 0) + 1
-			w!.write(JSON.stringify({ session: s.day, mode, or: s.or, or20, prevClose: s.prevClose, caps, signals, diag, errors: r.errors.slice(0, 5) }) + '\n')
+			w!.write(JSON.stringify({ session: s.day, mode, or: s.or, or20, or20Sessions: prior.length, prevClose: s.prevClose, caps, signals, diag, errors: r.errors.slice(0, 5) }) + '\n')
 		}
 	} finally {
 		console.log = log
@@ -184,11 +208,16 @@ const main = async (): Promise<number> => {
 		unPg()
 		unRedis()
 	}
+	if (paper.unknown.length) throw new Error(`unexpected SQL: ${paper.unknown.length} statement(s)`)
 	if (mode === 'EQ') {
-		log(JSON.stringify({ mode, sessionsCompared: compared, mismatches, verdict: mismatches === 0 ? 'IDENTICAL' : 'DIFFERENT' }))
-		return mismatches === 0 ? 0 : 2
+		// Not vacuous (review of #75, finding 1): ORE fires and both cap blocks must have been compared. Asserted, not
+		// printed, so no P result is shown before the study is read.
+		const covered = eqCoverage.oreSignals > 0 && eqCoverage.riskCap > 0 && eqCoverage.rangeTooWide > 0
+		log(JSON.stringify({ mode, sessionsCompared: compared, mismatches, sessionErrors: errorCount, coverage: covered ? 'ORE fires, risk_cap and range_too_wide records all compared' : 'INCOMPLETE', verdict: mismatches === 0 && covered && errorCount === 0 ? 'IDENTICAL' : 'NOT PROVEN' }))
+		return mismatches === 0 && covered && errorCount === 0 ? 0 : 2
 	}
-	log(JSON.stringify({ mode, out, sessions: sessions.length - WARMUP_SESSIONS }))
+	log(JSON.stringify({ mode, out, sessions: sessions.length - WARMUP_SESSIONS, sessionErrors: errorCount }))
+	if (errorCount) return 2
 	return 0
 }
 
