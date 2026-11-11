@@ -282,3 +282,37 @@ All backtest-side. Each needs its own approval and a PR; none touches anything l
 3. The Fyers call plan, Stage A only (159 requests, one evening, token handling as in section 5). Then the
    parity gate.
 4. Stage B: the exact remaining manifest count and the evening(s). Only after parity passes.
+
+## Amendment 1 (10–11 Nov 2026, before any Fyers request or run; not based on any result)
+
+**What step 0 produced (owner OK, 10 Nov).**
+- **NSE files:** 122 bhavcopies downloaded from the NSE archive, one per 2 s. 123 requests reached NSE: the 122,
+  plus one diagnostic re-request of 6 Nov that was discarded. The 4 held files (3–6 Nov) were copied from the
+  server. All 126 as-of files are in `C:\trade-data\backtest-6m\bhav\` (25 MB).
+- **Lists:** rebuilt offline by `backtest/bt6m/rebuildLists.ts` (the live `runBhavScan`, the 28 Apr
+  `fyersUniverse.json`, asserted by git blob). **All 126 were written.**
+- **Check against live:** the rebuilt lists for 4, 5, 6 and 9 Nov are **identical** to the lists live used
+  (`watchlist_daily_history`): symbols, groups, picks, funnel and dropped names.
+- **The exact symbol count replaces the estimate in §4:** **909 symbols** = 52 core + **856 rotating** + Nifty.
+  - Rotating names by days listed: 286 on 1 day, 430 on 2–5, 121 on 6–20, and 19 on more than 20.
+  - The most-listed are BHARTIARTL (108 days) and ETERNAL (50).
+- **The exact request counts replace §5's estimate:**
+  - **Stage A = 140 requests** (140 symbols on the 4–9 Nov lists; `manifest_A.json`, fixed 11 Nov). That's
+    within the owner's cap of 159.
+  - **Stage B = 1,103 requests**, computed and not written. Its manifest is only written after the owner
+    approves Stage B.
+
+**Two fill rules, made exact (they implement §3's same-bar rule; not tuned):**
+1. **Same-bar rule:** if an open position's stop and target both lie inside a 1-min bar, that bar's 4 synthetic
+   ticks take the adverse extreme first (LONG O→L→H→C, SHORT O→H→L→C). So the stop is reached first.
+2. **Level ticks (the tracker only):** between two consecutive prices of a symbol, the live tracker first gets a
+   tick **at** each open stop or target lying strictly between them.
+   - **Why:** live, real ticks cross a level close to it. With 4 synthetic ticks per bar, the tracker would
+     otherwise fill a stop at the bar's low and a target at the bar's high. The first biases losses down; the
+     second inflates wins.
+   - **Gaps:** a jump through a level with no price in between (e.g. a bar opening beyond the stop) still fills
+     at the first price beyond it, as live.
+   - **Detectors are unaffected:** they get the plain 4 ticks.
+
+**Parity sessions:** 4, 5, 6 and 9 Nov (4 sessions). The "5 lists" in §5 counted the 11 Nov list, which is
+outside the window.
