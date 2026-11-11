@@ -13,6 +13,33 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
   - Reports signal counts, block reasons and index-move expectancy at a 10 bps cost proxy (5 and 20 bps sensitivity), labelled "not tradable as options".
   - A volatility-scaled variant V (OR20 / 69.82) is included as a **proposal awaiting approval**.
   - Not run. Its variant detector class isn't built (needs approval).
+## `docs/backtest-6m-design`: 6-month live-rules backtest tooling (owner, 10 Nov): backtest-only, NOT deployed, no live code changed
+
+- **Scope:** the engineering the owner approved for `docs/studies/backtest-6m/PREREGISTRATION.md` (design `6613d60`, amendment 1). Everything is under `backtest/` and `tests/`. **No file under `src/` changed**, nothing runs on EC2, and nothing here makes a Fyers call by itself.
+- **`backtest/bt6m/liveSession.ts`:** one session through the **live** path.
+  - The live tick-handler order is kept (`websocket.ts`): tracker, Nifty minute state and bias, session VWAP, then the live detector stack.
+  - Every fire goes through the real `runAlertPipeline`: filter, `computeTradeLevels`, geometry guard, capital sizing, duplicate and one-per-symbol-side claims, the daily cap, EV shadow.
+  - Positions run in the real `positionTracker`, including the 15:15 timer. Signals rows come from the live `buildSignalRow`.
+  - **Fill rules (amendment 1):** stop first when both levels are inside one bar; the tracker gets a tick at a level it crosses.
+- **`backtest/bt6m/memoryPg.ts`:** an in-memory stand-in for the tracker's three `paper_trades` statements. Any other statement is recorded, and the run fails on it.
+- **`backtest/core/memoryRedis.ts` (additive):** `SET NX/EX/PX`, `incr`/`decr`/`incrByFloat`, `hSet`/`hGet`/`hDel`/`hKeys`, `publish` (dropped), `eval` (the two alert-policy scripts only), and `multi` `hSet`/`hDel`/`incrByFloat`. Existing commands are unchanged.
+- **`backtest/bt6m/rebuildLists.ts`:** point-in-time dw-3 lists from saved NSE bhavcopies, with the live `runBhavScan` and the 28 Apr `fyersUniverse.json` (asserted by git blob).
+  - 126 sessions (11 May – 9 Nov) produce 909 symbols.
+  - The lists for 4, 5, 6 and 9 Nov are identical to the live ones.
+- **`backtest/bt6m/liveRun.ts`:** the per-day watchlist driver (lists → bars from both caches → `liveSession`).
+- **`backtest/bt6m/fetchPlan.ts` / `fetchRun.ts`:** the fixed manifest and the capped fetch.
+  - It sends only the requests in the manifest, under a hard cap, and only inside the approved IST window.
+  - Pacing is the live quota gate (4/s, 40/min, the `backtest` allocation), with one throttle allowed and no retry.
+  - It stops on an auth error. Any other failure is retried once, then it stops.
+  - The token and app id are read from files and never logged.
+  - Stage B refuses to start without an explicit approval flag.
+- **`backtest/bt6m/parity.ts`:** the parity gate against the live `signals` table.
+  - Matching: same detector, symbol and side within ±60 s.
+  - PASS: ≥80% of live fires matched and a median score difference within ±3.
+- **`backtest/bt6m/niftyHistory.ts`:** owner extra (a), a read-only tally of Nifty opening ranges and block reasons over the cached history.
+- **Review fixes (independent review PASS WITH FIXES, 11 Nov):** the same-bar rule on the entry bar, gap-through fills at the open, circuit-lock bars, a tick-level time merge, and fetch caps, dates and manifest checks in code (Stage B cap 0); pre-registration amendment 3.
+- **Tests:** `tests/bt6m.test.ts` (24).
+- **Checks:** typecheck 0; `npm test` 463/463; lint 20 errors (the baseline).
 
 ## `fix/daily-list-sources`: no meta-file warning on the daily list; daily-list promotion sources + migration 0008 (owner, 4 Nov): deployed 4 Nov ~20:20 IST (engine `01274fe52b94`, 0008 applied; first boot Thu 5 Nov)
 

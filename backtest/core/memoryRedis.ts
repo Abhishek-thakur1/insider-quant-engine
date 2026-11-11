@@ -28,8 +28,11 @@
 // everyone at once. That is what install() does.
 //
 // SUPPORTED SURFACE — exactly what src/ actually calls (verified by grep):
-//   get set setEx del lPush lTrim lRange hIncrBy hGetAll
-//   multi().<cmd>…​.exec()   (chainable, incl. expire)
+//   get set (incl. NX/EX/PX) setEx del lPush lTrim lRange hIncrBy hGetAll
+//   hSet hGet hDel hKeys incr decr incrByFloat publish (dropped) eval (the two alert-policy scripts only)
+//   multi().<cmd>…​.exec()   (chainable, incl. expire, hSet, hDel, incrByFloat)
+// The hash/counter/eval/publish commands were added for the live alert pipeline and position tracker
+// (backtest/bt6m, 2026-11-10); nothing that used the store before changes behaviour.
 //   isOpen connect quit on
 // Anything outside that list throws loudly rather than returning a plausible
 // wrong answer.
@@ -37,6 +40,10 @@
 
 import { redisClient } from '../../src/config/redis.js'
 import { getVirtualNow } from './clock.js'
+import { COMPARE_AND_DELETE_LUA, COMPARE_AND_SET_LUA } from '../../src/workers/alertPolicy.js'
+
+const COMPARE_AND_SET_LUA_TEXT: string = COMPARE_AND_SET_LUA
+const COMPARE_AND_DELETE_LUA_TEXT: string = COMPARE_AND_DELETE_LUA
 
 type Entry = { value: string; expiresAt: number | null }
 type ListEntry = { value: string[]; expiresAt: number | null }
@@ -96,10 +103,55 @@ export class MemoryRedis {
 		return this.reapString(key)?.value ?? null
 	}
 
-	async set(key: string, value: string): Promise<'OK'> {
+	/** SET, with the node-redis options the live alert policy uses: { NX, EX } (and PX). */
+	async set(key: string, value: string, opts?: { NX?: boolean; EX?: number; PX?: number }): Promise<'OK' | null> {
+		if (opts?.NX && this.reapString(key)) return null
 		this.stats.writes++
-		this.strings.set(key, { value: String(value), expiresAt: null })
+		const ttlMs = opts?.EX !== undefined ? opts.EX * 1000 : opts?.PX
+		this.strings.set(key, { value: String(value), expiresAt: ttlMs !== undefined ? getVirtualNow() + ttlMs : null })
 		return 'OK'
+	}
+
+	private async addNumber(key: string, by: number): Promise<number> {
+		this.stats.writes++
+		const e = this.reapString(key)
+		const next = Number(e?.value ?? '0') + by
+		this.strings.set(key, { value: String(next), expiresAt: e?.expiresAt ?? null })
+		return next
+	}
+	async incr(key: string): Promise<number> {
+		return this.addNumber(key, 1)
+	}
+	async decr(key: string): Promise<number> {
+		return this.addNumber(key, -1)
+	}
+	async incrByFloat(key: string, by: number): Promise<number> {
+		return this.addNumber(key, Number(by))
+	}
+
+	/** No subscribers in a backtest (the live SSE fan-out): accepted and dropped. */
+	async publish(): Promise<number> {
+		return 0
+	}
+
+	/**
+	 * Only the two Lua scripts the live alert policy sends (src/workers/alertPolicy.ts), by exact text;
+	 * any other script throws rather than returning a plausible wrong answer.
+	 */
+	async eval(script: string, opts: { keys: string[]; arguments: string[] }): Promise<number> {
+		const key = opts.keys[0]!
+		const [expected, next, ttl] = opts.arguments
+		const cur = this.reapString(key)?.value ?? null
+		if (script === COMPARE_AND_SET_LUA_TEXT) {
+			if (cur !== expected) return 0
+			await this.set(key, next!, { EX: Number(ttl) })
+			return 1
+		}
+		if (script === COMPARE_AND_DELETE_LUA_TEXT) {
+			if (cur !== expected) return 0
+			return this.del(key)
+		}
+		throw new Error('[memoryRedis] eval: unsupported script')
 	}
 
 	async setEx(key: string, seconds: number, value: string): Promise<'OK'> {
@@ -192,6 +244,31 @@ export class MemoryRedis {
 		return Object.fromEntries(h.value)
 	}
 
+	async hSet(key: string, field: string, value: string): Promise<number> {
+		this.stats.writes++
+		const h = this.reapHash(key) ?? { value: new Map<string, string>(), expiresAt: null }
+		const isNew = !h.value.has(field)
+		h.value.set(field, String(value))
+		this.hashes.set(key, h)
+		return isNew ? 1 : 0
+	}
+
+	async hGet(key: string, field: string): Promise<string | null> {
+		this.stats.gets++
+		return this.reapHash(key)?.value.get(field) ?? null
+	}
+
+	async hDel(key: string, field: string): Promise<number> {
+		this.stats.deletes++
+		const h = this.reapHash(key)
+		return h && h.value.delete(field) ? 1 : 0
+	}
+
+	async hKeys(key: string): Promise<string[]> {
+		this.stats.gets++
+		return [...(this.reapHash(key)?.value.keys() ?? [])]
+	}
+
 	// ── MULTI ───────────────────────────────────────────────────────────────
 	// The codebase uses `redisClient.multi().lPush(…).lTrim(…).exec()`. Real
 	// Redis queues then applies atomically; here everything is synchronous and
@@ -264,6 +341,18 @@ class MultiChain {
 		this.ops.push(() => this.store.hIncrBy(k, f, by))
 		return this
 	}
+	hSet(k: string, f: string, v: string) {
+		this.ops.push(() => this.store.hSet(k, f, v))
+		return this
+	}
+	hDel(k: string, f: string) {
+		this.ops.push(() => this.store.hDel(k, f))
+		return this
+	}
+	incrByFloat(k: string, by: number) {
+		this.ops.push(() => this.store.incrByFloat(k, by))
+		return this
+	}
 
 	async exec(): Promise<unknown[]> {
 		const results: unknown[] = []
@@ -286,6 +375,15 @@ const PATCHED_METHODS = [
 	'lRange',
 	'hIncrBy',
 	'hGetAll',
+	'hSet',
+	'hGet',
+	'hDel',
+	'hKeys',
+	'incr',
+	'decr',
+	'incrByFloat',
+	'publish',
+	'eval',
 	'multi',
 	'connect',
 	'quit',

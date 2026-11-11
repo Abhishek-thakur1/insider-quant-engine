@@ -355,3 +355,39 @@ backtest/
 ```
 
 Tests live in `tests/backtestUnits.test.ts` and `tests/backtestReplay.test.ts` (`npm test`).
+
+---
+
+## 6-month live-rules backtest (`backtest/bt6m/`, 2026-11)
+
+Pre-registration: `docs/studies/backtest-6m/PREREGISTRATION.md` (amendment 1). The older harness path
+(`run.ts` → `replay/engine.ts` → `sim/exit.ts`) scores fires with the filter and then simulates exits **its own
+way**: trigger SL/T1, 5 bps slippage, CE/PE substring routing and the plain VWAP. It is kept unchanged.
+`bt6m/` instead replays sessions through the **live** path:
+
+- `liveSession.ts`: the live tick-handler order, `runAlertPipeline` and the live `positionTracker`. It adds two
+  pre-registered fill rules: stop first in an ambiguous bar, and level ticks.
+- `memoryPg.ts`: paper_trades in memory.
+- `rebuildLists.ts` → `liveRun.ts`: point-in-time dw-3 lists, then the per-day driver.
+- `fetchPlan.ts` → `fetchRun.ts`: the fixed manifest, then the capped, windowed fetch.
+- `parity.ts`: the 4–9 Nov gate against the live `signals` table, with the stop difference against live paper
+  stops. No result is read before it passes.
+- **Fill rules (amendments 1 and 3):** stop first in an ambiguous bar, including the entry bar; level ticks only
+  within a bar; a candle opening beyond a level fills at the open; circuit-locked bars don't fill.
+
+```bash
+# offline: lists, then the manifest (no network)
+BT6M_DIR=C:/trade-data/backtest-6m npx tsx backtest/bt6m/rebuildLists.ts   # the 28 Apr fyersUniverse.json blob is pinned in code
+BT6M_DIR=C:/trade-data/backtest-6m npx tsx backtest/bt6m/fetchPlan.ts --stage A --cap 159
+# owner-approved window only (Stage A: Mon 16 Nov 16:15-17:00 IST, at most 159 requests)
+BT6M_DIR=… BT6M_STAGE=A BT6M_MAX_REQUESTS=159 BT6M_WINDOW_DATE=2026-11-16 BT6M_TOKEN_FILE=… BT6M_APP_ID_FILE=… npx tsx backtest/bt6m/fetchRun.ts
+# replay + parity
+BACKTEST_MODE=true SHADOW_MODE=true CONFIRMATION_THRESHOLD=78 BT6M_DIR=… npx tsx backtest/bt6m/liveRun.ts --label parity --from 2026-11-04 --to 2026-11-09
+npx tsx backtest/bt6m/parity.ts <live signals.csv> C:/trade-data/backtest-6m/runs/parity/signals.jsonl <live paper_trades.csv> C:/trade-data/backtest-6m/runs/parity/paper.jsonl
+```
+
+**Known limits:**
+- **No pre-open ticks.** Fyers 1-min history starts at 09:15, so the 09:00–09:15 pre-open ticks live receives are
+  absent.
+- **Synthetic ticks:** 4 per bar.
+- **Nifty option-routed positions** never close without an option feed. Live without options behaves the same.
