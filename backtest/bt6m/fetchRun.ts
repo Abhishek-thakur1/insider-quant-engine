@@ -1,7 +1,7 @@
 // ============================================================
 // backtest/bt6m/fetchRun.ts — the capped Fyers fetch for the 6-month backtest (PC only)
 //
-// PREREGISTRATION.md §5; owner decisions of 10 Nov: Stage A on Mon 16 Nov, 16:15–17:00 IST only, at most 159
+// PREREGISTRATION.md §5; owner decisions of 10 Nov (date moved to Mon 23 Nov on 20 Nov): Stage A 16:15–17:00 IST only, at most 159
 // requests; Stage B blocked until the owner has seen the parity result. Guarantees, each tested:
 //   - only requests listed in the fixed manifest (<BT6M_DIR>/manifest_<stage>.json), in order, resumable;
 //   - a hard cap (BT6M_MAX_REQUESTS, required, and never above the manifest's own cap) on requests SENT;
@@ -72,7 +72,7 @@ export const toBars = (candles: unknown[][]): Bar[] =>
 	candles.map((c) => ({ t: (c[0] as number) * 1000, o: c[1] as number, h: c[2] as number, l: c[3] as number, c: c[4] as number, v: c[5] as number }))
 
 /** Owner decisions (10 Nov): the stage caps and approved dates are code, not configuration (review finding 4, 9). */
-export const APPROVED_DATES: Record<'A' | 'B', string[]> = { A: ['2026-11-16'], B: [] }
+export const APPROVED_DATES: Record<'A' | 'B', string[]> = { A: ['2026-11-23'], B: [] } // moved from 2026-11-16 (missed) by the owner, 20 Nov
 export const STAGE_A_DATES = { from: '2026-11-04', to: '2026-11-09' } as const
 
 /** Refuses a manifest that isn't exactly what was fixed for its stage: stage, resolution, cap, windows, dates. */

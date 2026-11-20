@@ -160,18 +160,18 @@ test('manifest: windows under 100 calendar days, cached sessions skipped, stage 
 })
 
 // ── the capped fetch ────────────────────────────────────────────────────────
-const IST_1620_16NOV = Date.parse('2026-11-16T10:50:00Z') // 16:20 IST
+const IST_1620_23NOV = Date.parse('2026-11-23T10:50:00Z') // 16:20 IST
 const fakeClock = (start: number) => {
 	let t = start
 	return { now: () => t, sleep: async (ms: number) => void (t += ms), advance: (ms: number) => void (t += ms) }
 }
 const manifest = (n: number) => ({ stage: 'A' as const, createdAt: 'x', resolution: '1' as const, cap: 159, items: Array.from({ length: n }, (_, i) => ({ n: i + 1, symbol: `NSE:S${i}-EQ`, from: '2026-11-04', to: '2026-11-09', sessions: 4 })) })
-const baseOpts = (n: number, history: (req: unknown) => Promise<{ s: string; candles?: unknown[][]; code?: number; message?: string }>, c = fakeClock(IST_1620_16NOV)) => {
+const baseOpts = (n: number, history: (req: unknown) => Promise<{ s: string; candles?: unknown[][]; code?: number; message?: string }>, c = fakeClock(IST_1620_23NOV)) => {
 	const done = new Set<number>()
 	return {
 		manifest: manifest(n),
 		maxRequests: 159,
-		window: { date: '2026-11-16', fromMin: 16 * 60 + 15, toMin: 17 * 60 },
+		window: { date: '2026-11-23', fromMin: 16 * 60 + 15, toMin: 17 * 60 },
 		history,
 		ledger: new MemoryLedger(),
 		quota: loadQuotaConfig(),
@@ -187,12 +187,12 @@ const ok = async () => ({ s: 'ok', candles: [[1_793_000_000, 1, 2, 0.5, 1.5, 100
 
 test('fetch: refuses outside the approved window and sends nothing', async () => {
 	let calls = 0
-	const o = { ...baseOpts(3, async () => (calls++, ok())), now: () => Date.parse('2026-11-16T10:40:00Z') } // 16:10 IST
+	const o = { ...baseOpts(3, async () => (calls++, ok())), now: () => Date.parse('2026-11-23T10:40:00Z') } // 16:10 IST
 	await assert.rejects(runFetch(o), StopRun)
 	assert.equal(calls, 0)
-	const late = { ...baseOpts(3, async () => (calls++, ok())), now: () => Date.parse('2026-11-16T11:30:00Z') } // 17:00 IST
+	const late = { ...baseOpts(3, async () => (calls++, ok())), now: () => Date.parse('2026-11-23T11:30:00Z') } // 17:00 IST
 	await assert.rejects(runFetch(late), StopRun)
-	const otherDay = { ...baseOpts(3, async () => (calls++, ok())), now: () => Date.parse('2026-11-17T10:50:00Z') }
+	const otherDay = { ...baseOpts(3, async () => (calls++, ok())), now: () => Date.parse('2026-11-24T10:50:00Z') }
 	await assert.rejects(runFetch(otherDay), StopRun)
 	assert.equal(calls, 0)
 })
@@ -238,7 +238,7 @@ test('fetch: another failure is retried once, then the run stops', async () => {
 })
 
 test('fetch: the window end stops the run between requests', async () => {
-	const c = fakeClock(Date.parse('2026-11-16T11:29:59Z')) // 16:59:59 IST
+	const c = fakeClock(Date.parse('2026-11-23T11:29:59Z')) // 16:59:59 IST
 	let calls = 0
 	const r = await runFetch({ ...baseOpts(5, async () => (calls++, c.advance(2000), ok()), c) })
 	assert.equal(calls, 1)
@@ -272,7 +272,7 @@ test('fetch: a REJECTED request (how the SDK reports HTTP 429) goes through the 
 	const r = await runFetch(o)
 	assert.equal(calls, 1)
 	assert.match(r.stopped, /quota gate stop|throttled/)
-	const st = await o.ledger.state(istParts(IST_1620_16NOV).date)
+	const st = await o.ledger.state(istParts(IST_1620_23NOV).date)
 	assert.equal(st.breaches, 1, 'the ledger saw the throttle, so a same-day re-run is blocked by the gate')
 })
 
@@ -281,7 +281,8 @@ test('fetch: refuses a manifest that is not the fixed Stage A one, and an unappr
 	await assert.rejects(runFetch({ ...baseOpts(2, ok), manifest: { ...m, cap: 160 } }), /stage cap/)
 	await assert.rejects(runFetch({ ...baseOpts(2, ok), manifest: { ...m, items: [{ ...m.items[0]!, from: '2026-10-01' }] } }), /outside the Stage A/)
 	await assert.rejects(runFetch({ ...baseOpts(2, ok), manifest: { ...m, stage: 'B' as never } }), /stage cap|overlaps/)
-	await assert.rejects(runFetch({ ...baseOpts(2, ok), window: { date: '2026-11-17', fromMin: 16 * 60 + 15, toMin: 17 * 60 } }), /not an approved date/)
+	await assert.rejects(runFetch({ ...baseOpts(2, ok), window: { date: '2026-11-24', fromMin: 16 * 60 + 15, toMin: 17 * 60 } }), /not an approved date/)
+	await assert.rejects(runFetch({ ...baseOpts(2, ok), window: { date: '2026-11-16', fromMin: 16 * 60 + 15, toMin: 17 * 60 } }), /not an approved date/, 'the missed 16 Nov date is no longer approved')
 })
 
 test('fetch: a save failure stops the run instead of re-sending a request that succeeded', async () => {
