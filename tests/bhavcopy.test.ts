@@ -175,7 +175,8 @@ test('bad files fail (alerted, not retried) and write no list', async () => {
 	const cases: [string, Buffer, RegExp][] = [
 		["yesterday's file", zipOf('f.csv', day(120, { day: '2026-11-02' })), /trade date .*2026-11-02.* ≠ as-of 2026-11-03/],
 		['too few rows', zipOf('f.csv', [HEADER, ...REAL].join('\n')), /only 3 Main Board EQ rows/],
-		['too few eligible', zipOf('f.csv', day(0)), /validation: .*56 stocks, need 60/],
+		// 55, not 56: the fixture's ANDCO (+45%) is excluded by the dw-3 amendment 2 move cap
+		['too few eligible', zipOf('f.csv', day(0)), /validation: .*55 stocks, need 60/],
 		['duplicate symbol', zipOf('f.csv', day(120) + REAL[0] + '\n'), /duplicate symbol/],
 	]
 	for (const [name, zip, re] of cases) {
@@ -215,7 +216,8 @@ test('amendment 1b: 22 rotating by score + 5 by turnover (highest turnover not a
 	// every turnover pick out-trades every eligible name left out
 	const b = parseBhavcopy(day(120))
 	const inList = new Set(f.symbols as string[])
-	const left = [...b.mainBoard].filter(([s, q]) => !inList.has(s) && q.lp >= 50 && q.lp * q.volume >= 50e7 && q.high > q.low).map(([, q]) => q.lp * q.volume)
+	// eligible = the floors AND (amendment 2) |move| ≤ 40% — the fixture's ANDCO (+45%) is excluded, not "left out"
+	const left = [...b.mainBoard].filter(([s, q]) => !inList.has(s) && q.lp >= 50 && q.lp * q.volume >= 50e7 && q.high > q.low && Math.abs(q.lp - q.prevClose) / q.prevClose <= 0.4).map(([, q]) => q.lp * q.volume)
 	const minPick = Math.min(...byTurnover.map((e) => e.turnover))
 	assert.ok(left.every((t) => t <= minPick), 'turnover picks are the highest-turnover eligible names not already in')
 	for (let i = 1; i < byTurnover.length; i++) assert.ok(byTurnover[i - 1]!.turnover >= byTurnover[i]!.turnover, 'turnover order')
@@ -257,4 +259,28 @@ test('Fyers check: a list that falls below 60 after the drops is rejected (stati
 	assert.equal(r.kind, 'failed')
 	assert.match((r as { reason: string }).reason, /52 stocks, need 60.*Fyers check dropped [0-9]+/)
 	assert.equal(writes.size, 0)
+})
+
+test('dw-3 amendment 2: a rotating candidate with |source-day move| > 40% is excluded (score and turnover picks), recorded in moveCap; exactly 40% stays; the core is exempt', async () => {
+	const { MAX_ABS_MOVE, overMoveCap } = await import('../src/screener/bhavcopy.js')
+	assert.equal(MAX_ABS_MOVE, 0.4)
+	// ANDCO (fixture): 200 → 290 = +45%, turnover ₹2,610 cr, the largest — without the cap it would be a turnover pick
+	const big = row({ sym: 'BIGMOVE', high: 290, low: 140, last: 141, prev: 300, vol: 9e7 }) // −53%
+	const edge = row({ sym: 'EDGE40', high: 145, low: 99, last: 140, prev: 100, vol: 9e7 }) // +40.0% exactly: stays
+	const csv = `${day(120)}${big}
+${edge}
+`
+	const { d, writes } = deps(zipOf('f.csv', csv))
+	const r = await runBhavScan(d)
+	assert.equal(r.kind, 'written')
+	const f = JSON.parse(writes.get(DAILY_FILE) as string)
+	assert.equal(f.moveCap.max, 0.4)
+	assert.deepEqual(f.moveCap.excluded.map((e: { symbol: string }) => e.symbol), ['NSE:BIGMOVE-EQ', 'NSE:ANDCO-EQ'], 'largest move first')
+	assert.equal(f.moveCap.excluded[1].move, 0.45)
+	assert.ok(!f.symbols.includes('NSE:ANDCO-EQ') && !f.symbols.includes('NSE:BIGMOVE-EQ'), 'excluded from every pick')
+	assert.ok(f.symbols.includes('NSE:EDGE40-EQ'), 'exactly 40% is not over the cap (high turnover: a turnover pick)')
+	assert.equal(f.symbols.length, 79, 'the walk refills to 27 rotating')
+	// the core is never excluded, whatever its move
+	const b = parseBhavcopy(`${csv}`)
+	assert.deepEqual(overMoveCap(b.mainBoard, ['NSE:ANDCO-EQ'], '2026-11-03').map((e) => e.symbol), ['NSE:BIGMOVE-EQ'])
 })

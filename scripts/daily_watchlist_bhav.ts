@@ -24,8 +24,9 @@ import { atomicWriter, DAILY_FILE, HISTORY_DIR, RULES_VERSION } from '../src/scr
 import { bhavcopyUrl, runBhavScan } from '../src/screener/bhavcopy.js'
 
 const FINAL_MIN = 22 * 60 // the 22:00 run is the last of the evening
-// fyersUniverse.json carries no date of its own; this is when it last changed in git (ac7e962). Update with the file.
-const FYERS_UNIVERSE_AS_OF = '2026-04-28'
+// fyersUniverse.json carries no date of its own; this is the date of the Fyers symbol-master download it was built from
+// (2026-11-12, dw-3 amendment 2; previously 2026-04-28, ac7e962). Update with the file.
+const FYERS_UNIVERSE_AS_OF = '2026-11-12'
 const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
 
 const nextTradingDay = (day: string, holidays: Set<string>): string => {
@@ -109,7 +110,7 @@ const main = async (): Promise<number> => {
 		const core = result.file.entries.length - rot.length
 		const dropped = result.file.fyersCheck?.dropped ?? []
 		await notifyAdmin(
-			`✅ Daily watchlist (${RULES_VERSION}, NSE bhavcopy ${asOf}) for ${forSession}: ${result.file.symbols.length} stocks + Nifty (core ${core} + ${rot.length} rotating). Used at the next 09:00 boot when SCREENER_ENABLED=true.\nBy score (${byScore.length}): ${byScore.join(', ')}\nBy turnover (${byTurnover.length}): ${byTurnover.join(', ')}\nSkipped (not in fyersUniverse.json of ${FYERS_UNIVERSE_AS_OF}): ${dropped.map(short).join(', ') || 'none'}`,
+			`✅ Daily watchlist (${RULES_VERSION}, NSE bhavcopy ${asOf}) for ${forSession}: ${result.file.symbols.length} stocks + Nifty (core ${core} + ${rot.length} rotating). Used at the next 09:00 boot when SCREENER_ENABLED=true.\nBy score (${byScore.length}): ${byScore.join(', ')}\nBy turnover (${byTurnover.length}): ${byTurnover.join(', ')}\nSkipped (not in fyersUniverse.json of ${FYERS_UNIVERSE_AS_OF}): ${dropped.map(short).join(', ') || 'none'}\nExcluded (source-day move over ${(result.file.moveCap?.max ?? 0) * 100}%): ${(result.file.moveCap?.excluded ?? []).map((e) => `${short(e.symbol)} ${(e.move * 100).toFixed(0)}%`).join(', ') || 'none'}`,
 		)
 		return 0
 	}

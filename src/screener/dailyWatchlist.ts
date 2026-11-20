@@ -58,6 +58,7 @@ export interface DailyWatchlistFile {
 	requests: number
 	source?: string // dw-3: 'nse-bhavcopy <file name>'
 	fyersCheck?: { file: string; asOf: string; symbols: number; dropped: string[] } // dw-3 amendment 1
+	moveCap?: { max: number; excluded: { symbol: string; move: number }[] } // dw-3 amendment 2
 	funnel?: ReturnType<typeof eligibilityFunnel>
 	symbols: string[]
 	entries: RankedEntry[]
