@@ -2,6 +2,17 @@
 
 Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 
+## `feat/fyers-universe-refresh-dw3-move-cap`: refreshed Fyers list + dw-3 amendment 2 (move cap) (owner, 20 Nov): list job only, deploy tonight after the 22:00 run
+
+- **Pre-registered first:** `PREREGISTRATION_dw3.md` amendment 2 (`1c4ee07`, before the code).
+- **`fyersUniverse.json`:** 2,158 → **2,394** symbols, from one owner-approved download of the public Fyers symbol master on 2026-11-12 (`-EQ` + `INE` ISIN, as `universeBuilder.ts`).
+  - 376 added, 140 removed. Of the removed, 121 moved to the BE/BZ series, 11 were renamed (same ISIN, new symbol added) and 8 are gone.
+  - All core 52 are in the new file (JPL now included). `FYERS_UNIVERSE_AS_OF` = 2026-11-12.
+- **Move cap:** rotating candidates with |source-day move| > 40% are excluded before the ranking. The core is exempt, and exactly 40% stays. The excluded names are recorded in `moveCap` and in the Telegram. `src/screener/bhavcopy.ts`, `src/screener/dailyWatchlist.ts` (type), `scripts/daily_watchlist_bhav.ts`.
+- **Effect:** only on the 19:00 list job (`quant_watchlist` image). The engine doesn't read `fyersUniverse.json`, and the list file format only gains an optional field the engine ignores.
+- **Tests:** `tests/bhavcopy.test.ts`: two expectations follow the cap (the fixture's ANDCO is +45%), plus a new amendment-2 test.
+- **Checks:** typecheck 0; `npm test` 469/469; lint 20 errors (the baseline).
+
 ## `feat/nifty-ore-variant-study`: Nifty threshold study tooling (owner, 11 Nov): backtest-only, offline, NOT deployed, no live code changed
 
 - **Scope:** variant V of `docs/studies/nifty-thresholds/PREREGISTRATION.md`, approved by the owner as an offline study, run against the live caps (P). Amendment 1 of that file fixes the run details.

@@ -11,6 +11,7 @@
 import zlib from 'node:zlib'
 import {
 	CORE_SIZE,
+	eligible,
 	eligibilityFunnel,
 	HISTORY_DIR,
 	DAILY_FILE,
@@ -23,6 +24,19 @@ import {
 	type DailyWatchlistFile,
 	type RankedEntry,
 } from './dailyWatchlist.js'
+
+/** dw-3 amendment 2 (owner, 20 Nov): a rotating candidate whose |source-day move| is above 40% is excluded. */
+export const MAX_ABS_MOVE = 0.4
+const absMove = (q: DailyQuote): number => Math.abs(q.lp - q.prevClose) / q.prevClose
+
+/** The eligible non-core names over the move cap, largest move first (ties by symbol). The core is never excluded. */
+export const overMoveCap = (quotes: Map<string, DailyQuote>, core: string[], asOf: string): { symbol: string; move: number }[] => {
+	const coreSet = new Set(core)
+	return [...quotes]
+		.filter(([s, q]) => !coreSet.has(s) && eligible(q, asOf) && absMove(q) > MAX_ABS_MOVE)
+		.map(([symbol, q]) => ({ symbol, move: absMove(q) }))
+		.sort((a, b) => b.move - a.move || (a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : 0))
+}
 
 /** Amendment 1b: of the 27 rotating slots, 5 go to the highest-turnover eligible names not already in. */
 export const TURNOVER_SLOTS = 5
@@ -185,7 +199,12 @@ export const runBhavScan = async (d: BhavScanDeps): Promise<BhavScanResult> => {
 	const funnelText = `Main Board EQ ${funnel.quoted} → as-of day ${funnel.asOfDay} → price ${funnel.price} → turnover ${funnel.turnover} → eligible ${funnel.eligible}`
 	log.log(`[DailyWatchlist] ${funnelText}`)
 	// Every eligible non-core name, in dw-2 score order (rank = score rank).
-	const ranked = rankRotating(bhav.mainBoard, d.core, d.asOf, Number.POSITIVE_INFINITY)
+	// Amendment 2: names over the move cap are taken out before the ranking; the rest rank among themselves (dw-2).
+	const capped = overMoveCap(bhav.mainBoard, d.core, d.asOf)
+	const cappedSet = new Set(capped.map((c) => c.symbol))
+	const ranked = rankRotating(new Map([...bhav.mainBoard].filter(([s]) => !cappedSet.has(s))), d.core, d.asOf, Number.POSITIVE_INFINITY)
+	const moveCap = { max: MAX_ABS_MOVE, excluded: capped.map((c) => ({ symbol: c.symbol, move: Number(c.move.toFixed(4)) })) }
+	log.log(`[DailyWatchlist] Move cap (|move| > ${MAX_ABS_MOVE * 100}%): excluded ${capped.length}${capped.length ? ` (${capped.map((c) => `${c.symbol} ${(c.move * 100).toFixed(0)}%`).join(', ')})` : ''}`)
 	// Amendment 1/1a: rotating names must be in the Fyers symbol list; the core (the live watchlist the engine
 	// already subscribes to) is exempt; its format was checked above.
 	// Amendment 1b: names not found are skipped and the walk continues down the order (refill), in two groups:
@@ -225,6 +244,7 @@ export const runBhavScan = async (d: BhavScanDeps): Promise<BhavScanResult> => {
 		source: `nse-bhavcopy ${entry}`,
 		funnel,
 		fyersCheck,
+		moveCap,
 		symbols,
 		entries: [...core.map((symbol) => ({ symbol, group: 'core' as const })), ...rotating],
 	}

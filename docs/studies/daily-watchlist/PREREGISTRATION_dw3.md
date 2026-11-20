@@ -79,3 +79,27 @@ No session has used a dw-3 list yet. The version stays **`dw-3`**. The filters, 
    - **`turnover` (5):** the 5 highest-turnover (`LastPric × TtlTradgVol`) eligible, Fyers-checked names not already in the core or the score group. Ties go to the symbol, alphabetically.
    - The engine reads only `symbols`, so the tag is for evidence and analysis. The groups are a population label for any later per-group table.
 3. **Symbol mapping:** NSE `TckrSymb` maps to Fyers `NSE:<TckrSymb>-EQ` unchanged, `&` included. M&M → `NSE:M&M-EQ`, which is in `fyersUniverse.json` (it is checked in the tests and the dry run).
+
+## Amendment 2 (owner, 20 Nov 2026, before the code): exclude extreme source-day moves; Fyers list refreshed
+
+Committed before any code for it. It's an owner decision prompted by listing-day outliers, such as BLSPOLY at +81%
+on its source day. It isn't based on any trading result. The version stays **`dw-3`**.
+
+1. **Move cap:** a rotating candidate is **excluded** if its absolute source-day move is **greater than 40%**.
+   - The move is the dw-2 measure: |`LastPric` − `PrvsClsgPric`| / `PrvsClsgPric`, on the as-of day's bhavcopy row.
+   - A move of exactly 40% stays eligible.
+   - **Where it applies:** after the existing floors (price ≥ ₹50, turnover ≥ ₹50 crore, previous close > 0,
+     high > low) and **before** the ranking. So it excludes names from both the 22 score picks and the 5 turnover
+     picks, and the remaining eligible names are ranked among themselves with the unchanged dw-2 score and order.
+   - **Refill:** the walk down the order continues to fill 22 + 5, exactly as for the Fyers check (amendment 1b).
+2. **The core 52 are not affected.** They are never ranked; they're the owner's list and always in, as in
+   amendment 1a.
+3. **Recorded:** the excluded names and their moves go into the list file (`moveCap`) and the evening Telegram,
+   like the Fyers-check drops.
+4. **The Fyers check uses a refreshed `fyersUniverse.json`:** the public Fyers symbol master downloaded once on
+   2026-11-12 (owner-approved), with the same rule (`-EQ`, `INE` ISIN). It has 2,394 symbols, replacing the
+   2,158 of 28 Apr (`ac7e962`). The as-of date recorded in each list becomes 2026-11-12.
+5. **Unchanged:** every other rule. That covers the source, floors, score, weights, order, list size (79 + Nifty),
+   validation, schedule and failure handling.
+6. **The 6-month backtest** (`docs/studies/backtest-6m/`) is unaffected. Its point-in-time lists were rebuilt and
+   frozen on 11 Nov under amendments 1–1b with the 28 Apr Fyers file, which its code pins by git blob.
