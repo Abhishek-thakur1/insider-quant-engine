@@ -379,8 +379,8 @@ way**: trigger SL/T1, 5 bps slippage, CE/PE substring routing and the plain VWAP
 # offline: lists, then the manifest (no network)
 BT6M_DIR=C:/trade-data/backtest-6m npx tsx backtest/bt6m/rebuildLists.ts   # the 28 Apr fyersUniverse.json blob is pinned in code
 BT6M_DIR=C:/trade-data/backtest-6m npx tsx backtest/bt6m/fetchPlan.ts --stage A --cap 159
-# owner-approved window only (Stage A: Mon 16 Nov 16:15-17:00 IST, at most 159 requests)
-BT6M_DIR=… BT6M_STAGE=A BT6M_MAX_REQUESTS=159 BT6M_WINDOW_DATE=2026-11-16 BT6M_TOKEN_FILE=… BT6M_APP_ID_FILE=… npx tsx backtest/bt6m/fetchRun.ts
+# owner-approved window only (Stage A: Mon 23 Nov 16:15-17:00 IST, at most 159 requests; moved from 16 Nov, amendment 4)
+BT6M_DIR=… BT6M_STAGE=A BT6M_MAX_REQUESTS=159 BT6M_WINDOW_DATE=2026-11-23 BT6M_TOKEN_FILE=… BT6M_APP_ID_FILE=… npx tsx backtest/bt6m/fetchRun.ts
 # replay + parity
 BACKTEST_MODE=true SHADOW_MODE=true CONFIRMATION_THRESHOLD=78 BT6M_DIR=… npx tsx backtest/bt6m/liveRun.ts --label parity --from 2026-11-04 --to 2026-11-09
 npx tsx backtest/bt6m/parity.ts <live signals.csv> C:/trade-data/backtest-6m/runs/parity/signals.jsonl <live paper_trades.csv> C:/trade-data/backtest-6m/runs/parity/paper.jsonl

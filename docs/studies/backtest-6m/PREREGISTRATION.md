@@ -470,7 +470,7 @@ tick reads the previous session reference.
 
 - **What happened:** Stage A was approved for Mon 16 Nov and **did not run**. The session holding the scheduled job
   restarted, and the job was lost. No token was copied and no request was sent.
-- **The owner moved it to Mon 23 Nov 2026** (decision of 20 Nov). Everything else is unchanged: 16:15 ≤ IST < 17:00,
+- **The owner moved it to Mon 23 Nov 2026** (decision of 20 Nov). **This supersedes the date in §5 (Timing) and in amendment 3** ("the only approved date is 2026-11-16"); those lines stay as the record. Everything else is unchanged: 16:15 ≤ IST < 17:00,
   at most 159 requests (the fixed `manifest_A.json` has 140), the same token safeguards, and Stage B blocked
   (cap 0).
 - **Code:** only the approved date changes, `APPROVED_DATES.A = ['2026-11-23']` in `backtest/bt6m/fetchRun.ts`.
