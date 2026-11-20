@@ -103,3 +103,16 @@ on its source day. It isn't based on any trading result. The version stays **`dw
    validation, schedule and failure handling.
 6. **The 6-month backtest** (`docs/studies/backtest-6m/`) is unaffected. Its point-in-time lists were rebuilt and
    frozen on 11 Nov under amendments 1–1b with the 28 Apr Fyers file, which its code pins by git blob.
+
+### Amendment 2: clarifications (owner, 20 Nov 2026, after the independent review, before any deploy)
+
+- **The core is exempt: confirmed by the owner.** The cap applies to **rotating** candidates only. The core 52 are
+  never excluded, whatever their move.
+- **The exact boundary is computed in whole paise.** Over the cap means |last − prev| × 1000 > 400 × prev, in
+  paise. Floating point could otherwise push an exact 40% move just over the cap: ₹50.30 → ₹70.42 is exactly +40%,
+  but computes to 0.40000000000000013. Exactly ±40% stays eligible, as §1 says.
+- **Percentiles cover the remaining names only.** Removing a capped name can therefore change other names' dw-2
+  scores. That's what "ranked among themselves" means in §1.
+- **The recorded move is signed** (for example −53.0%), shown to one decimal place in the Telegram.
+- **The 6-month backtest's list rebuild switches the cap off** (`moveCap: null`) and reads the 28 Apr Fyers file
+  from git. A rerun reproduces its 11 Nov lists byte for byte (checked 20 Nov on all 126 sessions).

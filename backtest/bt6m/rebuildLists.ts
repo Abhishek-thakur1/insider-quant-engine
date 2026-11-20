@@ -2,9 +2,11 @@
 // backtest/bt6m/rebuildLists.ts — point-in-time dw-3 lists for the 6-month backtest (offline, no network)
 //
 // docs/studies/backtest-6m/PREREGISTRATION.md §4. For each session in <BT6M_DIR>/asof_days.txt
-// ("<session> <asOf>"), runs the live dw-3 ranking (src/screener/bhavcopy.ts runBhavScan, unchanged) on the
+// ("<session> <asOf>"), runs the live dw-3 ranking (src/screener/bhavcopy.ts runBhavScan) with the dw-3 amendment 2
+// move cap SWITCHED OFF (`moveCap: null`; the cap postdates these lists) on the
 // locally saved NSE bhavcopy <BT6M_DIR>/bhav/<asOf>.csv.zip, with the live core 52 and the 28 Apr
-// fyersUniverse.json (ac7e962; asserted, so a refreshed file can't leak in). Writes <BT6M_DIR>/lists/<session>.json
+// fyersUniverse.json, read from git (`git show ac7e962:fyersUniverse.json`, blob asserted), so neither the refreshed
+// file nor amendment 2 can leak in and a rerun reproduces the lists frozen on 11 Nov. Writes <BT6M_DIR>/lists/<session>.json
 // and a summary. No Fyers call, no download, no Telegram (runBhavScan never alerts; notifyAdmin isn't imported).
 // Usage: BT6M_DIR=C:/trade-data/backtest-6m npx tsx backtest/bt6m/rebuildLists.ts
 // ============================================================
@@ -12,6 +14,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { runBhavScan } from '../../src/screener/bhavcopy.js'
 import { loadHolidays, tradingDayVerdict } from '../../src/core/sessionGuard.js'
 
@@ -49,7 +52,8 @@ export const readAsofDays = (file: string): { session: string; asOf: string }[] 
 const main = async (): Promise<number> => {
 	const dir = process.env.BT6M_DIR
 	if (!dir) throw new Error('set BT6M_DIR')
-	const uniBuf = fs.readFileSync(path.resolve(process.cwd(), 'fyersUniverse.json'))
+	// The 28 Apr file from git, not the working tree: the repo's fyersUniverse.json was refreshed on 20 Nov (dw-3 amendment 2).
+	const uniBuf = execFileSync('git', ['show', 'ac7e962:fyersUniverse.json'], { maxBuffer: 16 * 1024 * 1024 })
 	const blob = gitBlobSha1(uniBuf)
 	if (blob !== FYERS_UNIVERSE_BLOB_AC7E962) throw new Error(`fyersUniverse.json blob ${blob} is not the ac7e962 file (28 Apr): refusing — use \`git show ac7e962:fyersUniverse.json\``)
 	const fyers = { file: 'fyersUniverse.json', asOf: FYERS_UNIVERSE_AS_OF, symbols: new Set(JSON.parse(uniBuf.toString('utf8')) as string[]) }
@@ -72,6 +76,7 @@ const main = async (): Promise<number> => {
 			fyers,
 			fetchZip: async () => (fs.existsSync(zipPath) ? fs.readFileSync(zipPath) : null),
 			writeFile: () => {}, // nothing written by the scan; the driver writes the list below
+			moveCap: null, // amendment 2 (20 Nov) postdates the frozen study lists: off, so a rerun reproduces them
 			log: { log: () => {}, warn: () => {} },
 		})
 		if (r.kind === 'written') {

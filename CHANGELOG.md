@@ -8,10 +8,19 @@ Newest first. Paper trading only. "Not deployed" means it isn't running on EC2.
 - **`fyersUniverse.json`:** 2,158 → **2,394** symbols, from one owner-approved download of the public Fyers symbol master on 2026-11-12 (`-EQ` + `INE` ISIN, as `universeBuilder.ts`).
   - 376 added, 140 removed. Of the removed, 121 moved to the BE/BZ series, 11 were renamed (same ISIN, new symbol added) and 8 are gone.
   - All core 52 are in the new file (JPL now included). `FYERS_UNIVERSE_AS_OF` = 2026-11-12.
-- **Move cap:** rotating candidates with |source-day move| > 40% are excluded before the ranking. The core is exempt, and exactly 40% stays. The excluded names are recorded in `moveCap` and in the Telegram. `src/screener/bhavcopy.ts`, `src/screener/dailyWatchlist.ts` (type), `scripts/daily_watchlist_bhav.ts`.
+- **Move cap:** rotating candidates with |source-day move| > 40% are excluded before the ranking, compared in whole paise so exact ±40% stays. The core is exempt (owner-confirmed). Percentiles are computed over the remaining names, and the recorded move is signed. The excluded names are recorded in `moveCap` and in the Telegram. `src/screener/bhavcopy.ts`, `src/screener/dailyWatchlist.ts` (type), `scripts/daily_watchlist_bhav.ts`.
 - **Effect:** only on the 19:00 list job (`quant_watchlist` image). The engine doesn't read `fyersUniverse.json`, and the list file format only gains an optional field the engine ignores.
-- **Tests:** `tests/bhavcopy.test.ts`: two expectations follow the cap (the fixture's ANDCO is +45%), plus a new amendment-2 test.
-- **Checks:** typecheck 0; `npm test` 469/469; lint 20 errors (the baseline).
+- **Backtest:** `rebuildLists.ts` passes `moveCap: null` and reads the 28 Apr file from git, so a rerun reproduces the frozen 6-month lists byte for byte (verified on all 126).
+- **Tests:** `tests/bhavcopy.test.ts`: two expectations follow the cap (the fixture's ANDCO is +45%), plus amendment-2 tests:
+  - paise boundary (₹50.30 → ₹70.42 and ₹100.35 → ₹60.21 stay; one paisa over is excluded);
+  - core exempt through the scan;
+  - signed move;
+  - not a Fyers drop;
+  - empty list;
+  - `null` switches the cap off;
+  - the funnel shows the cap step.
+- **Review:** PASS WITH FIXES; fixes applied, re-review pending.
+- **Checks:** typecheck 0; `npm test` passing; lint 20 errors (the baseline).
 
 ## `feat/nifty-ore-variant-study`: Nifty threshold study tooling (owner, 11 Nov): backtest-only, offline, NOT deployed, no live code changed
 

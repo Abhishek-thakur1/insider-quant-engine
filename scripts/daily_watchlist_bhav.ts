@@ -110,7 +110,7 @@ const main = async (): Promise<number> => {
 		const core = result.file.entries.length - rot.length
 		const dropped = result.file.fyersCheck?.dropped ?? []
 		await notifyAdmin(
-			`✅ Daily watchlist (${RULES_VERSION}, NSE bhavcopy ${asOf}) for ${forSession}: ${result.file.symbols.length} stocks + Nifty (core ${core} + ${rot.length} rotating). Used at the next 09:00 boot when SCREENER_ENABLED=true.\nBy score (${byScore.length}): ${byScore.join(', ')}\nBy turnover (${byTurnover.length}): ${byTurnover.join(', ')}\nSkipped (not in fyersUniverse.json of ${FYERS_UNIVERSE_AS_OF}): ${dropped.map(short).join(', ') || 'none'}\nExcluded (source-day move over ${(result.file.moveCap?.max ?? 0) * 100}%): ${(result.file.moveCap?.excluded ?? []).map((e) => `${short(e.symbol)} ${(e.move * 100).toFixed(0)}%`).join(', ') || 'none'}`,
+			`✅ Daily watchlist (${RULES_VERSION}, NSE bhavcopy ${asOf}) for ${forSession}: ${result.file.symbols.length} stocks + Nifty (core ${core} + ${rot.length} rotating). Used at the next 09:00 boot when SCREENER_ENABLED=true.\nBy score (${byScore.length}): ${byScore.join(', ')}\nBy turnover (${byTurnover.length}): ${byTurnover.join(', ')}\nSkipped (not in fyersUniverse.json of ${FYERS_UNIVERSE_AS_OF}): ${dropped.map(short).join(', ') || 'none'}\nExcluded (source-day move over ${(result.file.moveCap?.max ?? 0) * 100}%, rotating only): ${(result.file.moveCap?.excluded ?? []).map((e) => `${short(e.symbol)} ${e.move > 0 ? '+' : ''}${(e.move * 100).toFixed(1)}%`).join(', ') || 'none'}`,
 		)
 		return 0
 	}

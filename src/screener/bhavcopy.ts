@@ -25,17 +25,29 @@ import {
 	type RankedEntry,
 } from './dailyWatchlist.js'
 
-/** dw-3 amendment 2 (owner, 20 Nov): a rotating candidate whose |source-day move| is above 40% is excluded. */
+/** dw-3 amendment 2 (owner, 20 Nov): a ROTATING candidate whose |source-day move| is above 40% is excluded; core exempt. */
 export const MAX_ABS_MOVE = 0.4
-const absMove = (q: DailyQuote): number => Math.abs(q.lp - q.prevClose) / q.prevClose
 
-/** The eligible non-core names over the move cap, largest move first (ties by symbol). The core is never excluded. */
-export const overMoveCap = (quotes: Map<string, DailyQuote>, core: string[], asOf: string): { symbol: string; move: number }[] => {
+/**
+ * Over the cap, compared in whole paise so an exact 40% move is never pushed over by floating point (review of #77):
+ * |last − prev| / prev > cap  ⇔  |Δpaise| × 1000 > round(cap × 1000) × prevPaise.
+ */
+export const overCap = (lp: number, prevClose: number, cap: number = MAX_ABS_MOVE): boolean => {
+	const lpP = Math.round(lp * 100)
+	const pvP = Math.round(prevClose * 100)
+	return Math.abs(lpP - pvP) * 1000 > Math.round(cap * 1000) * pvP
+}
+
+/**
+ * The eligible, well-formed non-core names over the move cap, largest |move| first (ties by symbol), with the SIGNED
+ * move. The core is never excluded (owner, 20 Nov).
+ */
+export const overMoveCap = (quotes: Map<string, DailyQuote>, core: string[], asOf: string, cap: number = MAX_ABS_MOVE): { symbol: string; move: number }[] => {
 	const coreSet = new Set(core)
 	return [...quotes]
-		.filter(([s, q]) => !coreSet.has(s) && eligible(q, asOf) && absMove(q) > MAX_ABS_MOVE)
-		.map(([symbol, q]) => ({ symbol, move: absMove(q) }))
-		.sort((a, b) => b.move - a.move || (a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : 0))
+		.filter(([s, q]) => !coreSet.has(s) && SYMBOL_RE.test(s) && eligible(q, asOf) && overCap(q.lp, q.prevClose, cap))
+		.map(([symbol, q]) => ({ symbol, move: (q.lp - q.prevClose) / q.prevClose }))
+		.sort((a, b) => Math.abs(b.move) - Math.abs(a.move) || (a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : 0))
 }
 
 /** Amendment 1b: of the 27 rotating slots, 5 go to the highest-turnover eligible names not already in. */
@@ -154,12 +166,17 @@ export interface BhavScanDeps {
 	forSession: string
 	nowMs: number
 	core: string[]
-	/** The Fyers NSE EQ symbol list (amendment 1): the image's fyersUniverse.json and the date it was last changed. */
+	/** The Fyers NSE EQ symbol list (amendment 1): the image's fyersUniverse.json and the date of the Fyers download it was built from. */
 	fyers: { file: string; asOf: string; symbols: Set<string> }
 	/** The zip, or null when NSE hasn't published it yet (HTTP 404). Throws on other errors. */
 	fetchZip: () => Promise<Buffer | null>
 	writeFile: (name: string, content: string | Buffer) => void // atomic, relative to the data dir
 	log?: Pick<Console, 'log' | 'warn'>
+	/**
+	 * The amendment-2 move cap. Default MAX_ABS_MOVE (the live job). `null` switches it off and leaves `moveCap` out of the
+	 * file: the 6-month backtest's rebuild uses that to reproduce its lists frozen before amendment 2 (review of #77).
+	 */
+	moveCap?: number | null
 }
 
 /** One attempt: download, parse, rank (dw-2 rules), validate, write. Never alerts; the caller decides. */
@@ -196,15 +213,17 @@ export const runBhavScan = async (d: BhavScanDeps): Promise<BhavScanResult> => {
 	if (bhav.duplicates.length) return { kind: 'failed', reason: `${bhav.duplicates.length} duplicate symbol(s): ${bhav.duplicates.slice(0, 3).join(', ')}` }
 
 	const funnel = eligibilityFunnel(bhav.mainBoard, d.core, d.asOf)
-	const funnelText = `Main Board EQ ${funnel.quoted} → as-of day ${funnel.asOfDay} → price ${funnel.price} → turnover ${funnel.turnover} → eligible ${funnel.eligible}`
+	// Amendment 2: rotating names over the move cap are taken out before the ranking; the rest rank among themselves, so
+	// the dw-2 percentiles are computed over the remaining names only.
+	const cap = d.moveCap === undefined ? MAX_ABS_MOVE : d.moveCap
+	const capped = cap === null ? [] : overMoveCap(bhav.mainBoard, d.core, d.asOf, cap)
+	const cappedSet = new Set(capped.map((c) => c.symbol))
+	const funnelText = `Main Board EQ ${funnel.quoted} → as-of day ${funnel.asOfDay} → price ${funnel.price} → turnover ${funnel.turnover} → eligible ${funnel.eligible}${cap === null ? '' : ` → move cap −${capped.length} → ${funnel.eligible - capped.length}`}`
 	log.log(`[DailyWatchlist] ${funnelText}`)
 	// Every eligible non-core name, in dw-2 score order (rank = score rank).
-	// Amendment 2: names over the move cap are taken out before the ranking; the rest rank among themselves (dw-2).
-	const capped = overMoveCap(bhav.mainBoard, d.core, d.asOf)
-	const cappedSet = new Set(capped.map((c) => c.symbol))
 	const ranked = rankRotating(new Map([...bhav.mainBoard].filter(([s]) => !cappedSet.has(s))), d.core, d.asOf, Number.POSITIVE_INFINITY)
-	const moveCap = { max: MAX_ABS_MOVE, excluded: capped.map((c) => ({ symbol: c.symbol, move: Number(c.move.toFixed(4)) })) }
-	log.log(`[DailyWatchlist] Move cap (|move| > ${MAX_ABS_MOVE * 100}%): excluded ${capped.length}${capped.length ? ` (${capped.map((c) => `${c.symbol} ${(c.move * 100).toFixed(0)}%`).join(', ')})` : ''}`)
+	const moveCap = cap === null ? undefined : { max: cap, excluded: capped.map((c) => ({ symbol: c.symbol, move: Number(c.move.toFixed(4)) })) }
+	if (moveCap) log.log(`[DailyWatchlist] Move cap (|move| > ${cap! * 100}%): excluded ${capped.length}${capped.length ? ` (${capped.map((c) => `${c.symbol} ${c.move > 0 ? '+' : ''}${(c.move * 100).toFixed(1)}%`).join(', ')})` : ''}`)
 	// Amendment 1/1a: rotating names must be in the Fyers symbol list; the core (the live watchlist the engine
 	// already subscribes to) is exempt; its format was checked above.
 	// Amendment 1b: names not found are skipped and the walk continues down the order (refill), in two groups:
@@ -244,7 +263,7 @@ export const runBhavScan = async (d: BhavScanDeps): Promise<BhavScanResult> => {
 		source: `nse-bhavcopy ${entry}`,
 		funnel,
 		fyersCheck,
-		moveCap,
+		...(moveCap ? { moveCap } : {}),
 		symbols,
 		entries: [...core.map((symbol) => ({ symbol, group: 'core' as const })), ...rotating],
 	}

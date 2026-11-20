@@ -284,3 +284,53 @@ ${edge}
 	const b = parseBhavcopy(`${csv}`)
 	assert.deepEqual(overMoveCap(b.mainBoard, ['NSE:ANDCO-EQ'], '2026-11-03').map((e) => e.symbol), ['NSE:BIGMOVE-EQ'])
 })
+
+test('dw-3 amendment 2: the cap compares in whole paise — exact ±40% stays even where floating point lands above 0.4', async () => {
+	const { overCap } = await import('../src/screener/bhavcopy.js')
+	assert.ok((70.42 - 50.3) / 50.3 > 0.4, 'the floating-point trap the review found: exactly +40% computes above 0.4')
+	assert.equal(overCap(70.42, 50.3), false, '₹50.30 → ₹70.42 is exactly +40%: stays')
+	assert.equal(overCap(60.21, 100.35), false, '₹100.35 → ₹60.21 is exactly −40%: stays')
+	assert.equal(overCap(140, 100), false)
+	assert.equal(overCap(70.43, 50.3), true, 'one paisa over +40%')
+	assert.equal(overCap(60.2, 100.35), true, 'one paisa over −40%')
+	assert.equal(overCap(140.01, 100), true)
+	// through the scan: both exact-boundary names stay eligible (high turnover, so they're picked)
+	const a = row({ sym: 'EXACTUP', high: 71, low: 50.3, last: 70.42, prev: 50.3, vol: 9e8 })
+	const b = row({ sym: 'EXACTDN', high: 100.35, low: 60, last: 60.21, prev: 100.35, vol: 9e8 }) // above the ₹50 floor
+	const { d, writes } = deps(zipOf('f.csv', `${day(120)}${a}\n${b}\n`))
+	assert.equal((await runBhavScan(d)).kind, 'written')
+	const f = JSON.parse(writes.get(DAILY_FILE) as string)
+	assert.ok(f.symbols.includes('NSE:EXACTUP-EQ') && f.symbols.includes('NSE:EXACTDN-EQ'))
+	assert.ok(!f.moveCap.excluded.some((e: { symbol: string }) => /EXACT/.test(e.symbol)))
+})
+
+test('dw-3 amendment 2: the core is exempt through the scan; signed moves recorded; capped names are not Fyers drops; null switches the cap off', async () => {
+	const bigCore = row({ sym: 'CORE05', high: 170, low: 99, last: 165, prev: 100, vol: 9e7 }) // core, +65%
+	const csv = `${day(120)}${bigCore}\n`
+	const { d, writes } = deps(zipOf('f.csv', csv))
+	assert.equal((await runBhavScan(d)).kind, 'written')
+	const f = JSON.parse(writes.get(DAILY_FILE) as string)
+	assert.ok(f.symbols.includes('NSE:CORE05-EQ'), 'a core name over 40% stays in the list')
+	assert.equal(f.entries.find((e: { symbol: string }) => e.symbol === 'NSE:CORE05-EQ').group, 'core')
+	assert.ok(!f.moveCap.excluded.some((e: { symbol: string }) => e.symbol === 'NSE:CORE05-EQ'), 'and is not recorded as excluded')
+	assert.deepEqual(f.moveCap.excluded, [{ symbol: 'NSE:ANDCO-EQ', move: 0.45 }], 'signed move')
+	assert.ok(!f.fyersCheck.dropped.includes('NSE:ANDCO-EQ'), 'a capped name is not also a Fyers drop')
+	// no exclusions: a wider cap records an empty list
+	const { d: d2, writes: w2 } = deps(zipOf('f.csv', csv), { moveCap: 0.5 })
+	await runBhavScan(d2)
+	assert.deepEqual(JSON.parse(w2.get(DAILY_FILE) as string).moveCap, { max: 0.5, excluded: [] })
+	// switched off (the backtest's frozen lists): no moveCap field, and ANDCO is back in the ranking pool
+	const { d: d3, writes: w3 } = deps(zipOf('f.csv', csv), { moveCap: null })
+	await runBhavScan(d3)
+	const f3 = JSON.parse(w3.get(DAILY_FILE) as string)
+	assert.equal(f3.moveCap, undefined)
+	assert.ok(f3.symbols.includes('NSE:ANDCO-EQ'), 'without the cap the +45% name is picked (it has the top turnover)')
+	assert.ok(!f.symbols.includes('NSE:ANDCO-EQ'), 'with the cap it is not')
+})
+
+test('dw-3 amendment 2: the failure text shows the move-cap step in the funnel', async () => {
+	const { d } = deps(zipOf('f.csv', day(0)))
+	const r = await runBhavScan(d)
+	assert.equal(r.kind, 'failed')
+	assert.match((r as { reason: string }).reason, /→ eligible \d+ → move cap −1 → \d+/)
+})
